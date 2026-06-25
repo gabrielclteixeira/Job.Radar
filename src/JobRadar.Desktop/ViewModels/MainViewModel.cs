@@ -13,6 +13,7 @@ public partial class MainViewModel : ObservableObject
     private AppConfig _cfg;
     private UserProfile _profile = new();
     private List<JobVm> _all = new();
+    private bool _isDemoProfile; // true while the John Doe sample is loaded → never persisted
 
     public MainViewModel()
     {
@@ -86,12 +87,42 @@ public partial class MainViewModel : ObservableObject
 
             if (_profile.SalaryTargetEur == 0) _profile.SalaryTargetEur = _cfg.Salary.TargetEur;
             if (_profile.SalaryFloorEur == 0) _profile.SalaryFloorEur = _cfg.Salary.FloorEur;
+            _isDemoProfile = false; // a real CV the user picked
             LoadFormFromProfile();
             SaveProfile(); // persist so we don't re-parse the CV (and spend tokens) next time
             ShowOnly(profile: true);
         }
         finally { Busy = false; }
     }
+
+    /// <summary>Loads a ready-made sample profile (John Doe) so people can try the app instantly,
+    /// with no tokens and without touching their own saved profile.</summary>
+    [RelayCommand]
+    private void LoadDemoCv()
+    {
+        _profile = DemoProfile();
+        _isDemoProfile = true;
+        LoadFormFromProfile();
+        Status = "Perfil de exemplo (John Doe) — experimenta a pesquisa. Não substitui o teu perfil guardado.";
+        ShowOnly(profile: true);
+    }
+
+    private static UserProfile DemoProfile() => new()
+    {
+        Name = "John Doe",
+        Summary = "Backend-leaning full-stack engineer with ~7 years building distributed systems in C#/.NET and Go.",
+        Field = "Software Engineering",
+        JobTitles = new() { "Backend Developer", "Full-Stack Developer", ".NET Developer", "Software Engineer", "Go Developer" },
+        CoreSkills = new() { "C#", ".NET", "Go", "SQL" },
+        Skills = new() { "ASP.NET Core", "PostgreSQL", "Docker", "Kubernetes", "Azure", "gRPC" },
+        Locations = new() { "Porto", "Portugal" },
+        Languages = new() { "English C2", "Portuguese native" },
+        YearsExperience = 7,
+        SeniorityTarget = "senior",
+        SalaryFloorEur = 45000,
+        SalaryTargetEur = 70000,
+        Remote = true, Hybrid = true, Onsite = false,
+    };
 
     [RelayCommand]
     private void EditProfile()
@@ -109,6 +140,7 @@ public partial class MainViewModel : ObservableObject
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (p is null) return;
             _profile = p;
+            _isDemoProfile = false;
             LoadFormFromProfile();
             HasSavedProfile = true;
             SavedProfileLabel = string.IsNullOrWhiteSpace(p.Field) ? p.Name : $"{p.Name} · {p.Field}";
@@ -118,6 +150,7 @@ public partial class MainViewModel : ObservableObject
 
     private void SaveProfile()
     {
+        if (_isDemoProfile) return; // never overwrite the user's real saved profile with the sample
         try
         {
             File.WriteAllText(_profilePath, JsonSerializer.Serialize(_profile, new JsonSerializerOptions { WriteIndented = true }));

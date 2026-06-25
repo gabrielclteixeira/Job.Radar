@@ -23,7 +23,7 @@
         <Style Selector="TextBlock.h1"><Setter Property="FontSize" Value="26"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Foreground" Value="{StaticResource Ink}"/></Style>
         <Style Selector="TextBlock.sub"><Setter Property="FontSize" Value="13"/><Setter Property="Foreground" Value="{StaticResource Muted}"/></Style>
         <Style Selector="TextBlock.fld"><Setter Property="FontSize" Value="11"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{StaticResource Accent}"/><Setter Property="Margin" Value="0,12,0,3"/></Style>
-        <Style Selector="Border.card"><Setter Property="Background" Value="White"/><Setter Property="CornerRadius" Value="12"/><Setter Property="BorderBrush" Value="{StaticResource Line}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="22"/></Style>
+        <Style Selector="Border.card"><Setter Property="Background" Value="White"/><Setter Property="CornerRadius" Value="14"/><Setter Property="BorderBrush" Value="{StaticResource Line}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Padding" Value="22"/><Setter Property="BoxShadow" Value="0 12 34 0 #12000000"/></Style>
         <Style Selector="Button.accent"><Setter Property="Background" Value="{StaticResource Accent}"/><Setter Property="Foreground" Value="White"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="14,9"/><Setter Property="FontWeight" Value="SemiBold"/></Style>
         <Style Selector="Button.accent:pointerover /template/ ContentPresenter"><Setter Property="Background" Value="#3F24A0"/></Style>
         <Style Selector="Button.ghost"><Setter Property="Background" Value="White"/><Setter Property="Foreground" Value="{StaticResource Accent}"/><Setter Property="BorderBrush" Value="{StaticResource Accent2}"/><Setter Property="BorderThickness" Value="1"/><Setter Property="CornerRadius" Value="8"/><Setter Property="Padding" Value="14,9"/></Style>
@@ -38,39 +38,59 @@
             <Grid Margin="40,28,40,48" MaxWidth="980" HorizontalAlignment="Stretch">
 
                 <!-- ============ WELCOME ============ -->
-                <StackPanel IsVisible="{Binding IsWelcome}" Spacing="10" HorizontalAlignment="Center" MaxWidth="640" Margin="0,40,0,0">
-                    <TextBlock Classes="h1" HorizontalAlignment="Center" Text="Job Radar"/>
-                    <TextBlock Classes="sub" TextAlignment="Center" TextWrapping="Wrap"
-                               Text="Dá o teu CV (PDF) — a IA monta o teu perfil, fazes uns ajustes, e encontramos vagas remotas/híbridas que encaixam, pontuadas pelo teu stack."/>
+                <StackPanel IsVisible="{Binding IsWelcome}" Spacing="0" HorizontalAlignment="Center" MaxWidth="600" Margin="0,52,0,0">
+                    <Border Width="78" Height="78" CornerRadius="22" HorizontalAlignment="Center"
+                            Background="{StaticResource TopBar}" BoxShadow="0 14 34 0 #444C2DBE">
+                        <TextBlock Text="🎯" FontSize="38" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="Job Radar" FontSize="36" FontWeight="Bold" HorizontalAlignment="Center"
+                               Margin="0,20,0,0" Foreground="{StaticResource Ink}"/>
+                    <TextBlock Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="470" Margin="0,9,0,0" FontSize="14"
+                               Text="Dá o teu CV — a IA monta o teu perfil e encontramos as vagas que encaixam, pontuadas e explicadas. Tudo local, com o teu Claude CLI (BYOK)."/>
+
                     <!-- Returning user: saved profile (no CV re-parse, no tokens) -->
-                    <Border Classes="card" Margin="0,14,0,0" IsVisible="{Binding HasSavedProfile}">
-                        <StackPanel Spacing="12" HorizontalAlignment="Center">
-                            <TextBlock Text="Perfil guardado" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                            <TextBlock Text="{Binding SavedProfileLabel}" Classes="sub" HorizontalAlignment="Center" FontSize="14"/>
+                    <Border Classes="card" Margin="0,28,0,0" IsVisible="{Binding HasSavedProfile}">
+                        <StackPanel Spacing="14" HorizontalAlignment="Center">
+                            <Border Background="{StaticResource Accent2}" CornerRadius="9" Padding="12,7" HorizontalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Spacing="9">
+                                    <TextBlock Text="👤" FontSize="15" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding SavedProfileLabel}" Foreground="{StaticResource Accent}"
+                                               FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Border>
                             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
                                 <Button Classes="accent" Content="🔍  Procurar vagas" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}"/>
                                 <Button Classes="ghost" Content="✎ Ver / editar perfil" Command="{Binding EditProfileCommand}"/>
                             </StackPanel>
-                            <Button Classes="ghost" Content="📄 Carregar outro CV" HorizontalAlignment="Center" Click="OnPickCv" IsEnabled="{Binding !Busy}"/>
+                            <Button Classes="link" Content="📄 Carregar outro CV" HorizontalAlignment="Center" Click="OnPickCv" IsEnabled="{Binding !Busy}"/>
                         </StackPanel>
                     </Border>
 
                     <!-- First time: upload a CV -->
-                    <Border Classes="card" Margin="0,14,0,0" IsVisible="{Binding !HasSavedProfile}">
-                        <StackPanel Spacing="12" HorizontalAlignment="Center">
-                            <TextBlock Text="Carrega o teu CV em PDF" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                    <Border Classes="card" Margin="0,28,0,0" IsVisible="{Binding !HasSavedProfile}">
+                        <StackPanel Spacing="13" HorizontalAlignment="Center">
+                            <TextBlock Text="Começa pelo teu CV" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center"/>
+                            <TextBlock Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="380"
+                                       Text="PDF de texto. A IA extrai o perfil e tu confirmas antes de procurar."/>
                             <Button Classes="accent" Content="📄  Escolher CV (PDF)…" HorizontalAlignment="Center"
                                     Click="OnPickCv" IsEnabled="{Binding !Busy}"/>
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Classes="sub" Text="{Binding Status}" HorizontalAlignment="Center"
+                    <TextBlock Classes="sub" Text="{Binding Status}" HorizontalAlignment="Center" TextWrapping="Wrap"
+                               TextAlignment="Center" Margin="0,12,0,0"
                                IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                    <Button Classes="ghost" Content="▶  Ver demonstração (sem IA)" HorizontalAlignment="Center"
-                            Command="{Binding RunDemoCommand}" IsEnabled="{Binding !Busy}"/>
-                    <Border Background="{StaticResource Accent2}" CornerRadius="8" Padding="12" Margin="0,8,0,0">
-                        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource Ink}"
-                                   Text="Privado e local. A leitura do CV e a pontuação usam o teu Claude CLI local (BYOK) — nada é enviado para servidores. A demonstração não chama IA nenhuma."/>
+
+                    <!-- Try-it-now: sample CV + zero-token demo -->
+                    <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,20,0,0">
+                        <Button Classes="ghost" Content="🧪 Usar CV de exemplo" Command="{Binding LoadDemoCvCommand}" IsEnabled="{Binding !Busy}"
+                                ToolTip.Tip="Carrega o perfil de exemplo (John Doe) — sem tokens, não mexe no teu perfil."/>
+                        <Button Classes="ghost" Content="▶ Ver demonstração (sem IA)" Command="{Binding RunDemoCommand}" IsEnabled="{Binding !Busy}"/>
+                    </StackPanel>
+
+                    <Border Background="{StaticResource Accent2}" CornerRadius="10" Padding="13" Margin="0,18,0,0">
+                        <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{StaticResource Ink}" TextAlignment="Center"
+                                   Text="Privado e local. A leitura do CV e a pontuação usam o teu Claude CLI (BYOK) — nada é enviado para servidores. A demonstração e o CV de exemplo não gastam tokens."/>
                     </Border>
                 </StackPanel>
 

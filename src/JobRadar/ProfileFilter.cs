@@ -10,16 +10,24 @@ public static class ProfileFilter
     public static (bool relevant, int preScore, string explanation) Evaluate(JobEntity j, UserProfile profile, AppConfig cfg)
     {
         string hay = $"{j.Title} {j.Description} {j.Location}".ToLowerInvariant();
+        string title = j.Title.ToLowerInvariant();
         string titleLoc = $"{j.Title} {j.Location} {j.Remote}".ToLowerInvariant();
 
         var core = Lower(profile.CoreSkills);
-        var fieldWords = Lower(SplitWords(profile.Field));
-        var include = core
-            .Concat(Lower(profile.Skills))
-            .Concat(Lower(profile.JobTitles))
-            .Concat(fieldWords)
-            .Where(s => s.Length > 1)
-            .Distinct().ToList();
+        // Keyword *words* from skills/titles/field. Tokenising avoids missing "Backend Engineer"
+        // when the title is the phrase "Backend Developer", and lets us match on word boundaries.
+        var tokens = new HashSet<string>();
+        void AddWords(IEnumerable<string> xs)
+        {
+            foreach (var x in Lower(xs))
+                foreach (var w in SplitWords(x))
+                    if (w.Length > 1 && !Generic.Contains(w)) tokens.Add(w);
+        }
+        AddWords(profile.CoreSkills);
+        AddWords(profile.Skills);
+        AddWords(profile.JobTitles);
+        AddWords(new[] { profile.Field });
+
         var excludes = Lower(profile.DealBreakers).Concat(Lower(cfg.ExcludeKeywords)).ToList();
         var seniority = SeniorityExcludes(profile.SeniorityTarget, cfg);
         var locations = Lower(profile.Locations);
@@ -28,11 +36,13 @@ public static class ProfileFilter
         foreach (var ex in excludes)
             if (ex.Length > 1 && hay.Contains(ex)) return (false, 0, "");
         foreach (var sx in seniority)
-            if (j.Title.ToLowerInvariant().Contains(sx)) return (false, 0, "");
+            if (title.Contains(sx)) return (false, 0, "");
 
-        if (include.Count == 0) return (false, 0, ""); // no profile yet
+        if (tokens.Count == 0) return (false, 0, ""); // no profile yet
 
-        var matched = include.Where(k => hay.Contains(k)).ToList();
+        // Relevance gate: a keyword must appear in the TITLE (word boundary), not buried in the
+        // noisy description — otherwise short tokens like "go" match "good"/"category" everywhere.
+        var matched = tokens.Where(t => WordIn(title, t)).ToList();
         if (matched.Count == 0) return (false, 0, "");
 
         // Location gate honouring the user's prefs.
@@ -47,7 +57,7 @@ public static class ProfileFilter
         int score = matched.Count * 5;
         parts.Add($"{matched.Count} termo(s) ({Trunc(string.Join(", ", matched), 60)}) +{matched.Count * 5}");
 
-        var coreHits = core.Where(s => hay.Contains(s)).ToList();
+        var coreHits = core.Where(s => WordIn(hay, s)).ToList();
         if (coreHits.Count > 0) { score += cfg.StackBonus; parts.Add($"competências-chave ({string.Join(", ", coreHits)}) +{cfg.StackBonus}"); }
         else { score -= cfg.OffStackPenalty; parts.Add($"sem competência-chave −{cfg.OffStackPenalty}"); }
 
@@ -67,6 +77,31 @@ public static class ProfileFilter
         int final = Math.Clamp(score, 1, 100);
         string explanation = string.Join(" · ", parts) + $"  =  {final}";
         return (true, final, explanation);
+    }
+
+    /// <summary>Over-generic words that shouldn't gate relevance on their own.</summary>
+    private static readonly HashSet<string> Generic = new()
+    {
+        "and", "or", "the", "of", "for", "with", "in", "to", "a", "an",
+    };
+
+    /// <summary>
+    /// True if <paramref name="token"/> occurs in <paramref name="text"/> as a whole word
+    /// (no alphanumeric neighbour). Handles tokens with symbols like "c#"/".net" since the
+    /// boundary test only looks at letters/digits. Prevents "go" matching "good"/"category".
+    /// </summary>
+    private static bool WordIn(string text, string token)
+    {
+        int i = 0;
+        while ((i = text.IndexOf(token, i, StringComparison.Ordinal)) >= 0)
+        {
+            bool leftOk = i == 0 || !char.IsLetterOrDigit(text[i - 1]);
+            int end = i + token.Length;
+            bool rightOk = end >= text.Length || !char.IsLetterOrDigit(text[end]);
+            if (leftOk && rightOk) return true;
+            i = end;
+        }
+        return false;
     }
 
     private static List<string> Lower(IEnumerable<string> xs)

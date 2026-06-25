@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace JobRadar;
 
@@ -43,6 +44,10 @@ public static class FetcherRunner
         psi.RedirectStandardError = true;
         psi.UseShellExecute = false;
         psi.CreateNoWindow = true;
+        // The Go fetcher emits UTF-8; without this it's decoded with the console's
+        // ANSI/OEM codepage, mangling accents and non-Latin text (e.g. "Educación" → "EducaciÃ³n").
+        psi.StandardOutputEncoding = Encoding.UTF8;
+        psi.StandardErrorEncoding = Encoding.UTF8;
 
         try
         {

@@ -16,8 +16,8 @@ public static class Pipeline
 {
     private static readonly JsonSerializerOptions J = new() { PropertyNameCaseInsensitive = true };
 
-    /// <summary>Bump when JobEntity columns change so the cache DB is recreated.</summary>
-    private const string SchemaVersion = "2";
+    /// <summary>Bump when JobEntity columns change (or cached data must be discarded) so the DB is recreated.</summary>
+    private const string SchemaVersion = "5"; // 5: re-evaluate relevance with title-based filter
 
     public static async Task<PipelineResult> RunAsync(
         UserProfile profile, AppConfig cfg, string root, bool useAi,
@@ -86,8 +86,13 @@ public static class Pipeline
 
             var e = new JobEntity
             {
-                Key = key, Title = r.Title, Company = r.Company, Location = r.Location,
-                Remote = r.Remote, Url = r.Url, Description = r.Description,
+                // Fix HTML entities ("&amp;") and source-side mojibake ("EducaciÃ³n" → "Educación").
+                Key = key,
+                Title = TextClean.Clean(r.Title),
+                Company = TextClean.Clean(r.Company),
+                Location = TextClean.Clean(r.Location),
+                Remote = r.Remote, Url = r.Url,
+                Description = TextClean.Clean(r.Description),
                 Source = r.Source, PostedAt = r.PostedAt, FirstSeen = DateTime.UtcNow,
                 SalaryMin = r.SalaryMin, SalaryMax = r.SalaryMax, SalaryCurrency = r.SalaryCurrency,
             };

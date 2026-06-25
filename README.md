@@ -62,6 +62,11 @@ Secrets stay out of git (`appsettings.local.json`, `.gitignore`).
 - LinkedIn isn't scraped (ToS); an optional `linkedin-jobs.json` lets you merge a manual pass.
 - The Demo mode dataset is a static sample for showcasing the UI without spending tokens.
 
+## Roadmap
+
+Planned next: a **CV Studio** (build/refine a CV, import experience from LinkedIn/GitHub, customizable
+PDF output) and an **Improvement** area (AI career plan backed by deep web research). See [`ROADMAP.md`](ROADMAP.md).
+
 ## License
 
 MIT.
