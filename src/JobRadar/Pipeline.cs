@@ -1,0 +1,183 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
+
+namespace JobRadar;
+
+public record PipelineResult(List<JobEntity> Jobs, int NewCount, bool Demo);
+
+/// <summary>
+/// Orchestrates the flow as a reusable service: derive search queries from the
+/// profile → fetch (Go) → store/dedupe (SQLite) → filter by profile → optionally
+/// score with Claude CLI → return ranked jobs. Demo mode loads pre-scored sample
+/// data and never calls an LLM. Field-agnostic (works for any profession).
+/// </summary>
+public static class Pipeline
+{
+    private static readonly JsonSerializerOptions J = new() { PropertyNameCaseInsensitive = true };
+
+    /// <summary>Bump when JobEntity columns change so the cache DB is recreated.</summary>
+    private const string SchemaVersion = "2";
+
+    public static async Task<PipelineResult> RunAsync(
+        UserProfile profile, AppConfig cfg, string root, bool useAi,
+        IProgress<string>? log = null, bool demo = false,
+        IProgress<JobEntity>? onJob = null, CancellationToken ct = default)
+    {
+        string R(string p) => Path.IsPathRooted(p) ? p : Path.Combine(root, p);
+        void L(string m) => log?.Report(m);
+
+        if (demo)
+        {
+            L("A carregar dados de demonstração (sem chamadas a IA)…");
+            string sample = R(Path.Combine("samples", "jobs-scored.json"));
+            var demoJobs = File.Exists(sample)
+                ? JsonSerializer.Deserialize<List<JobEntity>>(File.ReadAllText(sample), J) ?? new()
+                : new();
+            demoJobs = demoJobs.OrderByDescending(j => j.AiScore ?? j.PreScore).ToList();
+            L($"Demo: {demoJobs.Count} vagas carregadas.");
+            foreach (var j in demoJobs) onJob?.Report(j); // stream so the list fills live
+            return new PipelineResult(demoJobs, demoJobs.Count, true);
+        }
+
+        // 1) Derive the fetcher config from the profile (queries + location), then fetch.
+        string cfgPath = R("fetcher-config.json");
+        WriteFetcherConfig(cfgPath, profile, log);
+        L("A procurar vagas nas fontes…");
+        string rawPath = R(cfg.RawJobsPath);
+        await FetcherRunner.EnsureJobsAsync(root, cfgPath, rawPath, log, ct);
+        var raw = File.Exists(rawPath)
+            ? JsonSerializer.Deserialize<List<RawJob>>(File.ReadAllText(rawPath), J) ?? new()
+            : new();
+        L($"{raw.Count} vagas recolhidas.");
+
+        // Optional manual LinkedIn pass.
+        string liPath = R(cfg.LinkedInJobsPath);
+        if (File.Exists(liPath))
+        {
+            var li = JsonSerializer.Deserialize<List<LinkedInJob>>(File.ReadAllText(liPath), J) ?? new();
+            foreach (var l in li)
+            {
+                string loc = l.Location ?? "";
+                string remote = loc.Contains("Remot", StringComparison.OrdinalIgnoreCase) ? "remote"
+                              : loc.Contains("Híbrid", StringComparison.OrdinalIgnoreCase) || loc.Contains("Hybrid", StringComparison.OrdinalIgnoreCase) ? "hybrid" : "";
+                raw.Add(new RawJob(l.Title ?? "", l.Company ?? "", loc, remote, l.Url ?? "", l.Description ?? "", "linkedin", ""));
+            }
+            L($"{li.Count} vagas do LinkedIn fundidas.");
+        }
+
+        // The SQLite cache has no migrations; if the entity schema changed, recreate it.
+        string dbPath = R(cfg.DbPath);
+        string marker = dbPath + ".schema";
+        if (File.Exists(dbPath) && (!File.Exists(marker) || File.ReadAllText(marker) != SchemaVersion))
+        {
+            try { File.Delete(dbPath); } catch { /* in use — EnsureCreated will surface it */ }
+        }
+        using var db = new RadarDb(dbPath);
+        await db.Database.EnsureCreatedAsync(ct);
+        try { File.WriteAllText(marker, SchemaVersion); } catch { }
+
+        int added = 0;
+        foreach (var r in raw)
+        {
+            ct.ThrowIfCancellationRequested();
+            string key = (string.IsNullOrWhiteSpace(r.Url) ? $"{r.Title}|{r.Company}" : r.Url).Trim().ToLowerInvariant();
+            if (await db.Jobs.AnyAsync(x => x.Key == key, ct)) continue;
+
+            var e = new JobEntity
+            {
+                Key = key, Title = r.Title, Company = r.Company, Location = r.Location,
+                Remote = r.Remote, Url = r.Url, Description = r.Description,
+                Source = r.Source, PostedAt = r.PostedAt, FirstSeen = DateTime.UtcNow,
+                SalaryMin = r.SalaryMin, SalaryMax = r.SalaryMax, SalaryCurrency = r.SalaryCurrency,
+            };
+            SalaryParser.Apply(e, cfg.Salary);
+            var (relevant, preScore, explanation) = ProfileFilter.Evaluate(e, profile, cfg);
+            e.Relevant = relevant;
+            e.PreScore = preScore;
+            e.PreScoreExplanation = explanation;
+            db.Jobs.Add(e);
+            added++;
+        }
+        await db.SaveChangesAsync(ct);
+        L($"{added} novas · {await db.Jobs.CountAsync(j => j.Relevant, ct)} relevantes.");
+
+        // 2) Decide what to score. In AI mode, only the top unscored candidates go to Claude;
+        //    everything already classified is remembered from the DB (no re-scoring, no cost).
+        var allRelevant = await db.Jobs.Where(j => j.Relevant)
+            .OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt)
+            .ToListAsync(ct);
+
+        List<JobEntity> toScore = new();
+        if (useAi && cfg.Claude.Enabled)
+            toScore = allRelevant.Where(j => j.AiScore == null)
+                .OrderByDescending(j => j.PreScore).Take(cfg.ScoreTopN).ToList();
+        else
+            L("Modo keywords — sem IA. Ranking pelo pré-score.");
+
+        int cached = allRelevant.Count(j => j.AiScore != null);
+        if (cached > 0) L($"{cached} vagas já classificadas reaproveitadas (sem novo custo).");
+
+        // Stream everything we already know right away, so the user has something to interact with
+        // while the new candidates are still being scored.
+        var pending = toScore.ToHashSet();
+        foreach (var j in allRelevant.Where(j => !pending.Contains(j)))
+            onJob?.Report(j);
+
+        // 3) Score the remaining candidates with Claude and stream each result as it lands.
+        if (toScore.Count > 0)
+        {
+            int floor = profile.SalaryFloorEur > 0 ? profile.SalaryFloorEur : cfg.Salary.FloorEur;
+            int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
+            var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
+            L($"A pontuar {toScore.Count} candidatas com o Claude CLI…");
+            int i = 0;
+            foreach (var j in toScore)
+            {
+                ct.ThrowIfCancellationRequested();
+                var res = await scorer.ScoreAsync(j);
+                if (res is not null)
+                {
+                    j.AiScore = res.Score; j.AiVerdict = res.Verdict;
+                    j.AiReasons = JsonSerializer.Serialize(res.Reasons);
+                    j.AiRedFlags = JsonSerializer.Serialize(res.RedFlags);
+                }
+                else j.AiScore = j.PreScore;
+                await db.SaveChangesAsync(ct);
+                L($"  [{j.AiScore,3}] {j.Title} @ {j.Company}  ({++i}/{toScore.Count})");
+                onJob?.Report(j); // stream the freshly-scored job
+            }
+        }
+
+        // allRelevant holds the same tracked entities, so Ai scores set above are reflected here.
+        var ranked = allRelevant
+            .OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt)
+            .ToList();
+        return new PipelineResult(ranked, added, false);
+    }
+
+    /// <summary>Overrides queries + location in the fetcher config from the profile, preserving keys/sources.</summary>
+    private static void WriteFetcherConfig(string cfgPath, UserProfile profile, IProgress<string>? log)
+    {
+        try
+        {
+            JsonObject root = File.Exists(cfgPath)
+                ? (JsonNode.Parse(File.ReadAllText(cfgPath)) as JsonObject ?? new JsonObject())
+                : new JsonObject();
+
+            root["queries"] = new JsonArray(profile.SearchQueries().Select(q => JsonValue.Create(q)).ToArray());
+            root["location"] = profile.Locations.FirstOrDefault() ?? "";
+
+            // Tech-only boards only make sense for tech profiles.
+            bool tech = profile.IsTechField();
+            root["remotive"] = tech;
+            root["remoteok"] = tech;
+            if (root["arbeitnow"] is null) root["arbeitnow"] = true;
+            if (root["adzuna"] is null) root["adzuna"] = new JsonObject { ["appId"] = "", ["appKey"] = "", ["country"] = "pt" };
+
+            File.WriteAllText(cfgPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            log?.Report($"Pesquisa: {string.Join(", ", profile.SearchQueries())}");
+        }
+        catch (Exception ex) { log?.Report($"(aviso) não consegui gerar a config do fetcher: {ex.Message}"); }
+    }
+}

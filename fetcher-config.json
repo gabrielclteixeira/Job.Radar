@@ -1,0 +1,23 @@
+{
+  "queries": [
+    "Backend Developer",
+    "Software Engineer",
+    "Software Engineering",
+    "C#",
+    ".NET",
+    "Go"
+  ],
+  "location": "Porto",
+  "adzuna": {
+    "appId": "",
+    "appKey": "",
+    "country": "pt"
+  },
+  "greenhouse": [
+    "feedzai"
+  ],
+  "lever": [],
+  "remotive": true,
+  "remoteok": true,
+  "arbeitnow": true
+}

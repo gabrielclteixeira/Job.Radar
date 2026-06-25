@@ -1,0 +1,30 @@
+# build
+bin/
+obj/
+fetcher.exe
+*.dll
+
+# data / generated
+*.db
+*.db-shm
+*.db-wal
+*.db.schema
+jobs.raw.json
+output/
+fetcher/stderr.log
+
+# secrets / local overrides
+appsettings.local.json
+.env
+
+# saved CV-derived profile (personal data, machine-local)
+profile.json
+
+# app / dev scratch
+app-err.log
+app-out.log
+linkedin-jobs.json
+score-schema.json
+fetcher/stderr.log
+schema-*.log
+schema-test.json
