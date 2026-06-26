@@ -1,0 +1,205 @@
+name: release
+
+# Builds self-contained installers for Windows, Linux and macOS and attaches them
+# to a GitHub Release. Triggered by pushing a version tag (e.g. v0.1.0), or manually.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for a manual run (e.g. 0.1.0)'
+        required: false
+        default: '0.0.0'
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_VERSION: '10.0.x'
+  GO_VERSION: '1.23'
+  PROJECT: src/JobRadar.Desktop/JobRadar.Desktop.csproj
+  EXE: JobRadar.Desktop
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Build fetcher
+        working-directory: fetcher
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: |
+          New-Item -ItemType Directory -Force "$env:GITHUB_WORKSPACE\publish\win" | Out-Null
+          go build -trimpath -ldflags "-s -w" -o "$env:GITHUB_WORKSPACE\publish\win\fetcher.exe" .
+      - name: Publish app
+        run: >
+          dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none -p:DebugSymbols=false -o publish/win
+      - name: Stage bundled assets
+        shell: pwsh
+        run: |
+          Copy-Item appsettings.json, fetcher-config.json publish/win
+          New-Item -ItemType Directory -Force publish/win/samples | Out-Null
+          Copy-Item samples/jobs-scored.json publish/win/samples
+          Set-Content -Path publish/win/.packaged -Value '' -NoNewline
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DMyVersion=${{ needs.version.outputs.version }}" packaging/windows/JobRadar.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*.exe
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Build fetcher
+        working-directory: fetcher
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/publish/linux"
+          go build -trimpath -ldflags "-s -w" -o "$GITHUB_WORKSPACE/publish/linux/fetcher" .
+      - name: Publish app
+        run: >
+          dotnet publish ${{ env.PROJECT }} -c Release -r linux-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none -p:DebugSymbols=false -o publish/linux
+      - name: Stage bundled assets
+        run: |
+          cp appsettings.json fetcher-config.json publish/linux/
+          mkdir -p publish/linux/samples
+          cp samples/jobs-scored.json publish/linux/samples/
+          touch publish/linux/.packaged
+          chmod +x publish/linux/${{ env.EXE }} publish/linux/fetcher
+      - name: Build AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          mkdir -p AppDir/usr/bin
+          cp -r publish/linux/. AppDir/usr/bin/
+          cp packaging/linux/AppRun AppDir/AppRun
+          chmod +x AppDir/AppRun
+          cp packaging/linux/jobradar.desktop AppDir/jobradar.desktop
+          cp src/JobRadar.Desktop/Assets/radar.png AppDir/jobradar.png
+          wget -q https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage -O appimagetool
+          chmod +x appimagetool
+          mkdir -p dist
+          ./appimagetool AppDir "dist/JobRadar-${{ needs.version.outputs.version }}-x86_64.AppImage"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*.AppImage
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: osx-arm64
+            goarch: arm64
+          - rid: osx-x64
+            goarch: amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Build fetcher
+        working-directory: fetcher
+        env:
+          GOOS: darwin
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/publish/mac"
+          go build -trimpath -ldflags "-s -w" -o "$GITHUB_WORKSPACE/publish/mac/fetcher" .
+      - name: Publish app
+        run: >
+          dotnet publish ${{ env.PROJECT }} -c Release -r ${{ matrix.rid }} --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=none -p:DebugSymbols=false -o publish/mac
+      - name: Build .app bundle
+        run: |
+          APP="JobRadar.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp -r publish/mac/. "$APP/Contents/MacOS/"
+          cp appsettings.json fetcher-config.json "$APP/Contents/MacOS/"
+          mkdir -p "$APP/Contents/MacOS/samples"
+          cp samples/jobs-scored.json "$APP/Contents/MacOS/samples/"
+          touch "$APP/Contents/MacOS/.packaged"
+          chmod +x "$APP/Contents/MacOS/${{ env.EXE }}" "$APP/Contents/MacOS/fetcher"
+          sed "s/__VERSION__/${{ needs.version.outputs.version }}/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+          # icon: radar.png -> radar.icns
+          mkdir -p radar.iconset
+          for s in 16 32 64 128 256 512; do
+            sips -z $s $s src/JobRadar.Desktop/Assets/radar.png --out "radar.iconset/icon_${s}x${s}.png" >/dev/null
+            d=$((s*2)); sips -z $d $d src/JobRadar.Desktop/Assets/radar.png --out "radar.iconset/icon_${s}x${s}@2x.png" >/dev/null
+          done
+          iconutil -c icns radar.iconset -o "$APP/Contents/Resources/radar.icns"
+      - name: Create DMG
+        run: |
+          mkdir -p dist
+          hdiutil create -volname "Job Radar" -srcfolder JobRadar.app -ov -format UDZO \
+            "dist/JobRadar-${{ needs.version.outputs.version }}-${{ matrix.rid }}.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-${{ matrix.rid }}
+          path: dist/*.dmg
+
+  release:
+    needs: [version, windows, linux, macos]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

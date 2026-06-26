@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Job Radar
+Comment=Point your CV at the job market and lock onto the matches that fit
+Exec=JobRadar.Desktop
+Icon=jobradar
+Categories=Utility;Office;
+Terminal=false

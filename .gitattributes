@@ -1,0 +1,8 @@
+# Keep CI / shell / Linux-bundle files LF so the Linux & macOS runners don't
+# choke on CRLF (bash chokes on a trailing \r). Inno Setup is Windows-only.
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.sh          text eol=lf
+*.desktop     text eol=lf
+packaging/linux/AppRun text eol=lf
+*.iss         text eol=crlf

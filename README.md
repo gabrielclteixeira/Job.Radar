@@ -23,6 +23,22 @@ A native desktop app that reads your CV, builds your profile with AI, then scans
 
 ---
 
+## Install
+
+Grab the latest build from the [**Releases**](../../releases) page — no .NET or Go toolchain needed:
+
+| OS | Download | Notes |
+|----|----------|-------|
+| **Windows** | `JobRadar-Setup-*-win-x64.exe` | Per-user install (no admin). SmartScreen may warn ("More info → Run anyway") — the app is unsigned. |
+| **macOS** | `JobRadar-*-osx-arm64.dmg` (Apple Silicon) / `osx-x64.dmg` (Intel) | First launch: right-click → **Open** to get past Gatekeeper (unsigned). |
+| **Linux** | `JobRadar-*-x86_64.AppImage` | `chmod +x` then run. Needs FUSE (most distros have it). |
+
+Each build is self-contained. Your data (profile, settings, plan, cache) is kept in a per-user folder
+(`%APPDATA%\JobRadar`, `~/.config/JobRadar`), never inside the install. The AI backend is still BYOK — install
+the **Claude CLI** or point it at a local model in **Definições** (without one it falls back to keyword scoring).
+
+> Builds are produced by the [`release`](.github/workflows/release.yml) GitHub Actions workflow on every `v*` tag.
+
 ## What it does
 
 - 🛰️ **Profile from your CV** — PdfPig extracts the text; your LLM structures it into field, core skills,

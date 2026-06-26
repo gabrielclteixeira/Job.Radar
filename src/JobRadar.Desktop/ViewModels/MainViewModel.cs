@@ -757,6 +757,11 @@ public partial class MainViewModel : ObservableObject
 
     private static string FindRoot()
     {
+        // Installed build: the install dir is read-only, so seed + use a per-user data dir.
+        if (AppPaths.IsPackaged(AppContext.BaseDirectory))
+            return AppPaths.EnsureSeeded(AppContext.BaseDirectory);
+
+        // Dev build: walk up to the repo root (unchanged behaviour).
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
         {

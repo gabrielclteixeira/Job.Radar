@@ -70,5 +70,8 @@ and surface what changed as the profile and market move, so the plan becomes a l
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.
 - A non-tech sample dataset to showcase the field-agnostic scoring.
 - Saved searches and change alerts (new strong-fit jobs since last run).
-- **One-click installer for all platforms** — a single packaged installer per OS (Windows, Linux, macOS)
-  so non-technical users don't need the .NET SDK / Go toolchain. *(Later — closer to release.)*
+- **One-click installer for all platforms** — *(in place — needs a first tagged run to validate)*. A
+  `release` GitHub Actions workflow builds self-contained packages on each OS runner: Inno Setup `.exe`
+  (Windows), `.dmg` for Apple Silicon + Intel (macOS) and an `.AppImage` (Linux), and attaches them to the
+  GitHub Release on a `v*` tag. App state moved to a per-user data dir so installed (read-only) builds work.
+  Still unsigned (SmartScreen/Gatekeeper warnings); code signing + auto-update are the next polish.
