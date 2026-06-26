@@ -36,7 +36,17 @@ public static class Pipeline
                 : new();
             demoJobs = demoJobs.OrderByDescending(j => j.AiScore ?? j.PreScore).ToList();
             L($"Demo: {demoJobs.Count} vagas carregadas.");
-            foreach (var j in demoJobs) onJob?.Report(j); // stream so the list fills live
+            // Pace the demo like a live scan: a brief sweep, then results cascade in one by one.
+            // Demo only — no API calls, no cost — purely to showcase the radar/streaming UI.
+            await Task.Delay(900, ct);
+            int shown = 0;
+            foreach (var j in demoJobs)
+            {
+                onJob?.Report(j);
+                int delay = shown < 14 ? 85 : 25; // ease off after the first screenful
+                await Task.Delay(delay, ct);
+                shown++;
+            }
             return new PipelineResult(demoJobs, demoJobs.Count, true);
         }
 
