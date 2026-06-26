@@ -4,6 +4,7 @@ using System.Windows.Input;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using JobRadar;
 
 namespace JobRadar.Desktop.ViewModels;
 
@@ -11,34 +12,43 @@ namespace JobRadar.Desktop.ViewModels;
 public partial class JobVm : ObservableObject
 {
     private readonly JobEntity _j;
-    private readonly Func<JobEntity, Task<string?>>? _research;
+    private readonly Func<JobEntity, Task<CompanyBrief?>>? _research;
 
-    public JobVm(JobEntity j, Func<JobEntity, Task<string?>>? research = null)
+    public JobVm(JobEntity j, Func<JobEntity, Task<CompanyBrief?>>? research = null)
     {
         _j = j;
         _research = research;
         OpenCommand = new RelayCommand(Open);
     }
 
-    [ObservableProperty] private string _researchText = "";
+    [ObservableProperty] private CompanyBrief? _brief;
     [ObservableProperty] private bool _isResearching;
+    [ObservableProperty] private string _researchError = "";
+    public bool HasBrief => Brief is not null;
+    partial void OnBriefChanged(CompanyBrief? value) => OnPropertyChanged(nameof(HasBrief));
 
     /// <summary>Researches the employer (reviews + comparable salaries) via the web-search step.</summary>
     [RelayCommand]
     private async Task Research()
     {
         if (_research is null || IsResearching) return;
-        IsResearching = true;
-        ResearchText = "A pesquisar a empresa…";
+        IsResearching = true; ResearchError = ""; Brief = null;
         try
         {
-            var r = await _research(_j);
-            ResearchText = string.IsNullOrWhiteSpace(r)
-                ? "Não consegui obter informação (sem resultados ou modelo indisponível)."
-                : r!;
+            var b = await _research(_j);
+            if (b is null) ResearchError = "Não consegui obter informação (sem resultados ou modelo indisponível).";
+            else Brief = b;
         }
-        catch { ResearchText = "Falhou a pesquisa da empresa."; }
+        catch { ResearchError = "Falhou a pesquisa da empresa."; }
         finally { IsResearching = false; }
+    }
+
+    [RelayCommand]
+    private void OpenUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try { Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true }); }
+        catch { /* ignore */ }
     }
 
     public JobEntity Entity => _j;

@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:JobRadar.Desktop.ViewModels"
         xmlns:ctl="using:JobRadar.Desktop.Controls"
+        xmlns:core="using:JobRadar"
         xmlns:ui="using:FluentAvalonia.UI.Controls"
         xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
         x:Class="JobRadar.Desktop.Views.MainWindow"
@@ -330,10 +331,83 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="Pesquisar empresa"/></StackPanel>
                                             </Button>
                                         </StackPanel>
-                                        <Border Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="12"
-                                                IsVisible="{Binding ResearchText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                            <md:MarkdownScrollViewer Markdown="{Binding ResearchText}" MaxHeight="440"
-                                                                     MarkdownStyleName="FluentAvalonia"/>
+                                        <TextBlock Text="A pesquisar a empresa…" FontSize="12" FontFamily="{DynamicResource MonoFont}"
+                                                   Foreground="{DynamicResource AccentText}" IsVisible="{Binding IsResearching}"/>
+                                        <TextBlock Text="{Binding ResearchError}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"
+                                                   IsVisible="{Binding ResearchError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                                        <Border IsVisible="{Binding HasBrief}" Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}"
+                                                BorderThickness="1" CornerRadius="10" Padding="14">
+                                            <StackPanel Spacing="9">
+                                                <!-- Reputação -->
+                                                <StackPanel IsVisible="{Binding Brief.HasReputation}" Spacing="6">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}"/>
+                                                        <TextBlock Text="REPUTAÇÃO" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                    </StackPanel>
+                                                    <ItemsControl ItemsSource="{Binding Brief.Pros}" IsVisible="{Binding Brief.HasPros}">
+                                                        <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                                                            <Grid ColumnDefinitions="18,*" Margin="0,2,0,0">
+                                                                <TextBlock Grid.Column="0" Text="✓" FontWeight="Bold" Foreground="{DynamicResource Signal}"/>
+                                                                <TextBlock Grid.Column="1" Text="{Binding}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                            </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <ItemsControl ItemsSource="{Binding Brief.Cons}" IsVisible="{Binding Brief.HasCons}">
+                                                        <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                                                            <Grid ColumnDefinitions="18,*" Margin="0,2,0,0">
+                                                                <TextBlock Grid.Column="0" Text="✕" FontWeight="Bold" Foreground="{DynamicResource Danger}"/>
+                                                                <TextBlock Grid.Column="1" Text="{Binding}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                            </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <ItemsControl ItemsSource="{Binding Brief.Context}" IsVisible="{Binding Brief.HasContext}">
+                                                        <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                                                            <Grid ColumnDefinitions="18,*" Margin="0,2,0,0">
+                                                                <TextBlock Grid.Column="0" Text="○" Foreground="{DynamicResource Muted}"/>
+                                                                <TextBlock Grid.Column="1" Text="{Binding}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                                            </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                    <TextBlock Text="{Binding Brief.ReputationNote}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" IsVisible="{Binding Brief.HasReputationNote}"/>
+                                                </StackPanel>
+
+                                                <!-- divider with flair -->
+                                                <Border Height="2" Margin="0,8,0,8" CornerRadius="1" IsVisible="{Binding Brief.HasSalary}">
+                                                    <Border.Background>
+                                                        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,0%">
+                                                            <GradientStop Offset="0" Color="#7C5CFF"/><GradientStop Offset="1" Color="#007C5CFF"/>
+                                                        </LinearGradientBrush>
+                                                    </Border.Background>
+                                                </Border>
+
+                                                <!-- Salário -->
+                                                <StackPanel IsVisible="{Binding Brief.HasSalary}" Spacing="7">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Signal}"/>
+                                                        <TextBlock Text="SALÁRIO" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Brief.SalaryFound}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}" IsVisible="{Binding Brief.HasSalaryFound}"/>
+                                                    <Border IsVisible="{Binding Brief.HasSalaryExpectation}" Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="12">
+                                                        <StackPanel Spacing="3">
+                                                            <TextBlock Text="EXPECTATIVA SALARIAL PARA TI" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
+                                                            <TextBlock Text="{Binding Brief.SalaryExpectation}" FontSize="18" FontWeight="Bold" FontFamily="{DynamicResource MonoFont}" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                            <TextBlock Text="{Binding Brief.SalaryRationale}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" IsVisible="{Binding Brief.HasSalaryRationale}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+
+                                                <TextBlock Text="{Binding Brief.BottomLine}" FontSize="12" FontStyle="Italic" Opacity="0.9" TextWrapping="Wrap" Margin="0,4,0,0" Foreground="{DynamicResource Text}" IsVisible="{Binding Brief.HasBottomLine}"/>
+
+                                                <StackPanel IsVisible="{Binding Brief.HasSources}" Spacing="1" Margin="0,4,0,0">
+                                                    <TextBlock Text="FONTES" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
+                                                    <ItemsControl ItemsSource="{Binding Brief.Sources}">
+                                                        <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:SourceRef">
+                                                            <Button Classes="link" Content="{Binding Label}" FontSize="11"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:JobVm)DataContext).OpenUrlCommand}" CommandParameter="{Binding Url}"/>
+                                                        </DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
+                                                <md:MarkdownScrollViewer Markdown="{Binding Brief.RawFallback}" MaxHeight="440" MarkdownStyleName="FluentAvalonia" IsVisible="{Binding Brief.HasFallback}"/>
+                                            </StackPanel>
                                         </Border>
                                     </StackPanel>
                                 </Expander>

@@ -1,16 +1,21 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace JobRadar;
 
 /// <summary>
-/// Researches an employer by running a couple of web searches (reviews + comparable salaries) and
-/// handing the snippets to the configured LLM to summarise. Works with a local model too: the model
-/// stays offline and only summarises the fetched text. Returns null if nothing could be gathered.
+/// Researches an employer: a couple of key-free web searches (reviews + comparable salaries) → the snippets
+/// are handed to the configured LLM, which returns a STRUCTURED briefing (pros/cons/salary + a salary
+/// expectation tailored to the candidate). Works with a local model too (it only summarises the fetched
+/// text). Returns null if nothing could be gathered.
 /// </summary>
 public static class CompanyResearch
 {
-    public static async Task<string?> ResearchAsync(
-        ClaudeConfig llm, string company, string role, string? location, CancellationToken ct = default)
+    private static readonly JsonSerializerOptions J = new() { PropertyNameCaseInsensitive = true };
+
+    public static async Task<CompanyBrief?> ResearchAsync(
+        ClaudeConfig llm, UserProfile profile, string company, string role, string? location, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(company)) return null;
 
@@ -18,42 +23,85 @@ public static class CompanyResearch
         var results = new List<WebResult>();
         results.AddRange(await WebSearch.SearchAsync($"{company} employee reviews", 5, ct));
         results.AddRange(await WebSearch.SearchAsync($"{company} {role} salary", 5, ct));
-
-        // Dedupe by URL, keep order.
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         results = results.Where(r => !string.IsNullOrWhiteSpace(r.Url) && seen.Add(r.Url)).Take(8).ToList();
         if (results.Count == 0) return null;
 
-        var sb = new StringBuilder();
+        var snippets = new StringBuilder();
         for (int i = 0; i < results.Count; i++)
-            sb.AppendLine($"[{i + 1}] {results[i].Title}\n{results[i].Snippet}\n{results[i].Url}\n");
+            snippets.AppendLine($"[{i + 1}] {results[i].Title}\n{results[i].Snippet}\n{results[i].Url}\n");
 
-        // 2) Ask the model to synthesise from the snippets only — as Markdown for readability.
+        int floor = profile.SalaryFloorEur, target = profile.SalaryTargetEur;
+        string cand = $"{profile.YearsExperience} years experience, target level {profile.SeniorityTarget}" +
+                      (floor > 0 || target > 0 ? $", own salary floor €{floor:N0} / target €{target:N0}/yr" : "");
+
+        // 2) Ask the model for ONE JSON object — using only the snippets, with a tailored salary expectation.
         string prompt =
-$@"You are given web search snippets about an employer. Using ONLY this information (do not invent),
-write a SHORT, honest briefing for a candidate considering this company. Format it as **Markdown**:
-- Use bold sub-headings: **Reputation**, **Salary**, **Bottom line**.
-- Under Reputation, a bullet list of concrete pros and cons.
-- Under Salary, the comparable range for the role (numbers/currency when present; say if unknown).
-- Bottom line: one sentence.
-Cite sources inline as [n]. Keep it tight. If the snippets are thin or off-topic, say so plainly.
+$@"From the web search snippets below, build a SHORT, honest employer briefing for THIS candidate.
+Use ONLY the snippets (don't invent). Reply with ONLY one valid JSON object, double-quoted keys/values, shape:
+{{""pros"":[""short phrase""],""cons"":[""short phrase""],""context"":[""neutral fact""],""reputationNote"":""one sentence or empty"",""salaryFound"":""comparable figures with currency, or 'desconhecido'"",""salaryExpectation"":""a €/yr range to target at THIS company"",""salaryRationale"":""1 sentence: how you derived it"",""bottomLine"":""one sentence""}}
+- pros/cons: concrete, from reviews; cite sources inline like [2]. Keep each under ~12 words.
+- salaryExpectation: a realistic €/year range for THIS candidate's level, reasoning from the found figures
+  and their experience/seniority/target. If figures are thin, widen the range and say so in salaryRationale.
+- Be honest when data is thin (empty arrays are fine).
 
-Company: {company}
-Role: {role}
-Location: {location ?? "—"}
+== CANDIDATE ==
+Role: {role} · {cand} · location {location ?? "—"}
 
 == SEARCH RESULTS ==
-{sb}";
+{snippets}";
 
-        string? summary = await LlmClient.CompleteAsync(llm, prompt, ct);
-        if (string.IsNullOrWhiteSpace(summary)) return null;
+        string? text = await LlmClient.CompleteAsync(llm, prompt, ct);
+        if (string.IsNullOrWhiteSpace(text)) return null;
 
-        // Append clickable Markdown sources.
-        var outp = new StringBuilder(summary.Trim());
-        outp.AppendLine().AppendLine().AppendLine("**Fontes**").AppendLine();
+        var brief = Parse(text) ?? new CompanyBrief { RawFallback = text!.Trim() };
+
+        // Attach sources from the search results (not from the model).
         for (int i = 0; i < results.Count; i++)
-            outp.AppendLine($"{i + 1}. [{Host(results[i].Url)}]({results[i].Url})");
-        return outp.ToString();
+            brief.Sources.Add(new SourceRef { N = i + 1, Url = results[i].Url, Host = Host(results[i].Url) });
+        return brief;
+    }
+
+    private static CompanyBrief? Parse(string raw)
+    {
+        int a = raw.IndexOf('{'), b = raw.LastIndexOf('}');
+        if (a < 0 || b <= a) return null;
+        string block = raw.Substring(a, b - a + 1);
+        var dto = TryDto(block) ?? TryDto(LoosenJson(block));
+        if (dto is null) return null;
+        return new CompanyBrief
+        {
+            Pros = dto.Pros ?? new(),
+            Cons = dto.Cons ?? new(),
+            Context = dto.Context ?? new(),
+            ReputationNote = dto.ReputationNote ?? "",
+            SalaryFound = dto.SalaryFound ?? "",
+            SalaryExpectation = dto.SalaryExpectation ?? "",
+            SalaryRationale = dto.SalaryRationale ?? "",
+            BottomLine = dto.BottomLine ?? "",
+        };
+    }
+
+    private static BriefDto? TryDto(string json)
+    {
+        try { return JsonSerializer.Deserialize<BriefDto>(json, J); }
+        catch { return null; }
+    }
+
+    /// <summary>Quote bare object keys (e.g. {pros: …} -> {"pros": …}) for lenient parsing.</summary>
+    private static string LoosenJson(string s)
+        => Regex.Replace(s, @"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)", "$1\"$2\"$3");
+
+    private sealed class BriefDto
+    {
+        public List<string>? Pros { get; set; }
+        public List<string>? Cons { get; set; }
+        public List<string>? Context { get; set; }
+        public string? ReputationNote { get; set; }
+        public string? SalaryFound { get; set; }
+        public string? SalaryExpectation { get; set; }
+        public string? SalaryRationale { get; set; }
+        public string? BottomLine { get; set; }
     }
 
     private static string Host(string url)

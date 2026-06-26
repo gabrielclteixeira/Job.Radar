@@ -523,8 +523,8 @@ public partial class MainViewModel : ObservableObject
 
     // ---- helpers ----
     /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
-    private Task<string?> ResearchCompanyAsync(JobEntity j)
-        => CompanyResearch.ResearchAsync(_cfg.Claude, j.Company, j.Title, j.Location);
+    private Task<CompanyBrief?> ResearchCompanyAsync(JobEntity j)
+        => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location);
 
     private void AddStreamed(JobEntity j)
     {
