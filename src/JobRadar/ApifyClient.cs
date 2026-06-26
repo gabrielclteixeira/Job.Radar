@@ -72,6 +72,45 @@ public static class ApifyClient
         return jobs;
     }
 
+    /// <summary>Validates the token (free — no credits) and lists "LinkedIn jobs" actors from the store,
+    /// so setup is mostly automatic: paste token → pick an actor from the dropdown.</summary>
+    public static async Task<(bool ok, string message, List<string> actors)> ProbeAsync(string token, CancellationToken ct = default)
+    {
+        var actors = new List<string>();
+        if (string.IsNullOrWhiteSpace(token)) return (false, "Cola primeiro o teu API token.", actors);
+        token = token.Trim();
+        try
+        {
+            // 1) Validate the token (free).
+            using var me = await Http.GetAsync($"https://api.apify.com/v2/users/me?token={Uri.EscapeDataString(token)}", ct);
+            if (!me.IsSuccessStatusCode)
+                return (false, $"Token inválido ou sem acesso (HTTP {(int)me.StatusCode}).", actors);
+            string user = "", plan = "";
+            using (var d = JsonDocument.Parse(await me.Content.ReadAsStringAsync(ct)))
+                if (d.RootElement.TryGetProperty("data", out var dat))
+                {
+                    user = Str(dat, "username");
+                    if (dat.TryGetProperty("plan", out var pl) && pl.ValueKind == JsonValueKind.Object)
+                        plan = Str(pl, "id", "name");
+                }
+
+            // 2) Discover LinkedIn-jobs actors from the store (free listing).
+            using var st = await Http.GetAsync($"https://api.apify.com/v2/store?search={Uri.EscapeDataString("linkedin jobs")}&limit=25&token={Uri.EscapeDataString(token)}", ct);
+            if (st.IsSuccessStatusCode)
+                using (var d = JsonDocument.Parse(await st.Content.ReadAsStringAsync(ct)))
+                    if (d.RootElement.TryGetProperty("data", out var dat) && dat.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array)
+                        foreach (var it in items.EnumerateArray())
+                        {
+                            string un = Str(it, "username"), nm = Str(it, "name");
+                            if (!string.IsNullOrWhiteSpace(un) && !string.IsNullOrWhiteSpace(nm)) actors.Add($"{un}/{nm}");
+                        }
+
+            string msg = $"Ligação OK · @{user}" + (plan.Length > 0 ? $" · plano {plan}" : "") + $" · {actors.Count} actors de LinkedIn (escolhe um; confirma o preço no Apify)";
+            return (true, msg, actors);
+        }
+        catch (Exception ex) { return (false, "Erro: " + ex.Message, actors); }
+    }
+
     private static string Str(JsonElement e, params string[] keys)
     {
         foreach (var k in keys)

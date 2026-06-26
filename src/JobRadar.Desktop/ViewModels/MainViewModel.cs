@@ -126,6 +126,26 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _apifyToken = "";
     [ObservableProperty] private string _apifyActor = "";
     [ObservableProperty] private string _apifyMax = "50";
+    [ObservableProperty] private string _apifyStatus = "";
+    public ObservableCollection<string> ApifyActorOptions { get; } = new();
+
+    /// <summary>Validates the Apify token (free) and auto-fills the actor dropdown from the store.</summary>
+    [RelayCommand]
+    private async Task ProbeApify()
+    {
+        Busy = true; ApifyStatus = "A validar o token e a procurar actors…";
+        try
+        {
+            var (ok, msg, actors) = await ApifyClient.ProbeAsync(ApifyToken.Trim());
+            ApifyStatus = msg;
+            string current = ApifyActor;
+            ApifyActorOptions.Clear();
+            foreach (var a in actors) ApifyActorOptions.Add(a);
+            if (!string.IsNullOrWhiteSpace(current) && !ApifyActorOptions.Contains(current)) ApifyActorOptions.Add(current);
+            if (ok && string.IsNullOrWhiteSpace(ApifyActor) && ApifyActorOptions.Count > 0) ApifyActor = ApifyActorOptions[0];
+        }
+        finally { Busy = false; }
+    }
 
     public ObservableCollection<string> ModelOptions { get; } = new();
     private const string DefaultClaudeModel = "(predefinido)";   // maps to empty → CLI's own default
@@ -330,6 +350,9 @@ public partial class MainViewModel : ObservableObject
         ApifyToken = _cfg.Apify.Token;
         ApifyActor = _cfg.Apify.ActorId;
         ApifyMax = _cfg.Apify.MaxItems > 0 ? _cfg.Apify.MaxItems.ToString() : "50";
+        ApifyStatus = "";
+        ApifyActorOptions.Clear();
+        if (!string.IsNullOrWhiteSpace(_cfg.Apify.ActorId)) ApifyActorOptions.Add(_cfg.Apify.ActorId);
         Status = "";
         ShowOnly(settings: true);
     }

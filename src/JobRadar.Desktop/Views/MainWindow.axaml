@@ -387,13 +387,21 @@
                             </Border>
                             <StackPanel IsVisible="{Binding UseApify}" Spacing="4">
                                 <TextBlock Classes="fld" Text="APIFY API TOKEN"/>
-                                <TextBox Text="{Binding ApifyToken}" PasswordChar="•" Watermark="apify_api_…"/>
-                                <TextBlock Classes="fld" Text="ACTOR ID"/>
-                                <TextBox Text="{Binding ApifyActor}" Watermark="ex.: username/linkedin-jobs-scraper"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0" Text="{Binding ApifyToken}" PasswordChar="•" Watermark="apify_api_…"/>
+                                    <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding ProbeApifyCommand}" IsEnabled="{Binding !Busy}"
+                                            ToolTip.Tip="Valida o token (grátis, sem créditos) e procura actors de LinkedIn">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="Testar / procurar"/></StackPanel>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{Binding ApifyStatus}"
+                                           IsVisible="{Binding ApifyStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                <TextBlock Classes="fld" Text="ACTOR"/>
+                                <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding ApifyActorOptions}" SelectedItem="{Binding ApifyActor}"/>
                                 <TextBlock Classes="fld" Text="MÁX. RESULTADOS (limita o custo)"/>
                                 <TextBox Text="{Binding ApifyMax}" Watermark="50"/>
                                 <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap"
-                                           Text="Escolhe um actor de “LinkedIn Jobs” no Apify Store e cola o ID. O token está em apify.com → Settings → API. As vagas entram na pesquisa normal."/>
+                                           Text="Cola o token (apify.com → Settings → API) e carrega em “Testar / procurar”. Validar e listar é grátis; só a pesquisa em si consome créditos."/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
