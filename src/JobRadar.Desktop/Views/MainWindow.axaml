@@ -5,6 +5,7 @@
         xmlns:core="using:JobRadar"
         xmlns:ui="using:FluentAvalonia.UI.Controls"
         xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
+        xmlns:l="using:JobRadar.Desktop.Localization"
         x:Class="JobRadar.Desktop.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Width="1080" Height="700" MinWidth="840" MinHeight="560"
@@ -68,19 +69,19 @@
                 <!-- Nav -->
                 <StackPanel Grid.Row="1" Spacing="4">
                     <Button Classes="nav" Classes.active="{Binding IsNavHome}" Command="{Binding NavigateCommand}" CommandParameter="home">
-                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Home"/><TextBlock Text="Início" VerticalAlignment="Center"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Home"/><TextBlock Text="{l:T nav.home}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
                     <Button Classes="nav" Classes.active="{Binding IsNavProfile}" Command="{Binding NavigateCommand}" CommandParameter="profile">
-                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Contact"/><TextBlock Text="Perfil" VerticalAlignment="Center"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Contact"/><TextBlock Text="{l:T nav.profile}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
                     <Button Classes="nav" Classes.active="{Binding IsNavResults}" Command="{Binding NavigateCommand}" CommandParameter="results">
-                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="Vagas" VerticalAlignment="Center"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="{l:T nav.jobs}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
                     <Button Classes="nav" Classes.active="{Binding IsNavImprove}" Command="{Binding NavigateCommand}" CommandParameter="improve">
-                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Flag"/><TextBlock Text="Evoluir" VerticalAlignment="Center"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Flag"/><TextBlock Text="{l:T nav.improve}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
                     <Button Classes="nav" Classes.active="{Binding IsNavSettings}" Command="{Binding NavigateCommand}" CommandParameter="settings">
-                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Settings"/><TextBlock Text="Definições" VerticalAlignment="Center"/></StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Settings"/><TextBlock Text="{l:T nav.settings}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
                 </StackPanel>
 
@@ -88,7 +89,7 @@
                 <Button Grid.Row="2" Classes="nav" Command="{Binding ToggleThemeCommand}" HorizontalAlignment="Stretch">
                     <StackPanel Orientation="Horizontal" Spacing="11">
                         <ui:SymbolIcon Symbol="DarkTheme"/>
-                        <TextBlock VerticalAlignment="Center" Text="{Binding ThemePref, StringFormat='Tema: {0}'}"/>
+                        <TextBlock VerticalAlignment="Center" Text="{Binding ThemeToggleLabel}"/>
                     </StackPanel>
                 </Button>
             </Grid>
@@ -110,7 +111,7 @@
                     <TextBlock Text="Job Radar" FontSize="38" FontWeight="Bold" HorizontalAlignment="Center"
                                Margin="0,18,0,0" Foreground="{DynamicResource Text}"/>
                     <TextBlock Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="470" Margin="0,9,0,0" FontSize="14"
-                               Text="Dá o teu CV — a IA monta o teu perfil e encontramos as vagas que encaixam, pontuadas e explicadas. Tudo local, com o teu Claude CLI ou um modelo local (BYOK)."/>
+                               Text="{l:T home.tagline}"/>
 
                     <!-- Returning user -->
                     <Border Classes="card" Margin="0,28,0,0" IsVisible="{Binding HasSavedProfile}">
@@ -123,18 +124,18 @@
                                 </StackPanel>
                             </Border>
                             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-                                <Button Classes="accent" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="Recolhe das fontes e classifica de novo">
-                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="Procurar vagas"/></StackPanel>
+                                <Button Classes="accent" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T home.search.tip}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="{l:T home.search}"/></StackPanel>
                                 </Button>
-                                <Button Classes="ghost" Command="{Binding ViewJobsCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="Mostra as vagas já guardadas, sem nova pesquisa">
-                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="List"/><TextBlock Text="Ver vagas"/></StackPanel>
+                                <Button Classes="ghost" Command="{Binding ViewJobsCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T home.viewJobs.tip}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="List"/><TextBlock Text="{l:T home.viewJobs}"/></StackPanel>
                                 </Button>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
                                 <Button Classes="ghost" Command="{Binding EditProfileCommand}">
-                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Edit"/><TextBlock Text="Ver / editar perfil"/></StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Edit"/><TextBlock Text="{l:T home.editProfile}"/></StackPanel>
                                 </Button>
-                                <Button Classes="link" Click="OnPickCv" IsEnabled="{Binding !Busy}" Content="Carregar outro CV"/>
+                                <Button Classes="link" Click="OnPickCv" IsEnabled="{Binding !Busy}" Content="{l:T home.loadOtherCv}"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
@@ -142,11 +143,11 @@
                     <!-- First time -->
                     <Border Classes="card" Margin="0,28,0,0" IsVisible="{Binding !HasSavedProfile}">
                         <StackPanel Spacing="13" HorizontalAlignment="Center">
-                            <TextBlock Text="Começa pelo teu CV" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" Foreground="{DynamicResource Text}"/>
+                            <TextBlock Text="{l:T home.firstTitle}" FontWeight="Bold" FontSize="16" HorizontalAlignment="Center" Foreground="{DynamicResource Text}"/>
                             <TextBlock Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="380"
-                                       Text="PDF de texto. A IA extrai o perfil e tu confirmas antes de procurar."/>
+                                       Text="{l:T home.firstSub}"/>
                             <Button Classes="accent" HorizontalAlignment="Center" Click="OnPickCv" IsEnabled="{Binding !Busy}">
-                                <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="OpenFile"/><TextBlock Text="Escolher CV (PDF)…"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="OpenFile"/><TextBlock Text="{l:T home.pickCv}"/></StackPanel>
                             </Button>
                         </StackPanel>
                     </Border>
@@ -156,75 +157,75 @@
                                IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                     <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,20,0,0">
-                        <Button Classes="ghost" Command="{Binding LoadDemoCvCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="Carrega o perfil de exemplo (John Doe) — sem tokens, não mexe no teu perfil.">
-                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Document"/><TextBlock Text="Usar CV de exemplo"/></StackPanel>
+                        <Button Classes="ghost" Command="{Binding LoadDemoCvCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T home.demoCv.tip}">
+                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Document"/><TextBlock Text="{l:T home.demoCv}"/></StackPanel>
                         </Button>
                         <Button Classes="ghost" Command="{Binding RunDemoCommand}" IsEnabled="{Binding !Busy}">
-                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Play"/><TextBlock Text="Ver demonstração (sem IA)"/></StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Play"/><TextBlock Text="{l:T home.demoRun}"/></StackPanel>
                         </Button>
                     </StackPanel>
 
                     <Border Background="{DynamicResource AccentSoft}" CornerRadius="10" Padding="13" Margin="0,18,0,0">
                         <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Text}" TextAlignment="Center"
-                                   Text="Privado e local. A leitura do CV e a pontuação usam o teu Claude CLI ou um modelo local (BYOK) — nada é enviado para servidores. A demonstração e o CV de exemplo não gastam tokens."/>
+                                   Text="{l:T home.privacy}"/>
                     </Border>
                 </StackPanel>
 
                 <!-- ============ PROFILE ============ -->
                 <StackPanel IsVisible="{Binding IsProfile}" Spacing="6">
-                    <TextBlock Classes="h1" Text="O teu perfil"/>
-                    <TextBlock Classes="sub" Text="Confirma o que a IA extraiu e responde ao que um CV não diz."/>
+                    <TextBlock Classes="h1" Text="{l:T profile.title}"/>
+                    <TextBlock Classes="sub" Text="{l:T profile.sub}"/>
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel>
                             <Grid ColumnDefinitions="*,24,*">
                                 <StackPanel Grid.Column="0">
-                                    <TextBlock Classes="fld" Text="NOME"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.name}"/>
                                     <TextBox Text="{Binding Name}"/>
-                                    <TextBlock Classes="fld" Text="ÁREA / PROFISSÃO"/>
-                                    <TextBox Text="{Binding FieldText}" Watermark="Software Engineering, Enfermagem, Contabilidade…"/>
-                                    <TextBlock Classes="fld" Text="TÍTULOS DE CARGO (pesquisa, vírgulas)"/>
-                                    <TextBox Text="{Binding JobTitlesText}" Watermark="Backend Developer, Software Engineer"/>
-                                    <TextBlock Classes="fld" Text="COMPETÊNCIAS-CHAVE (vírgulas)"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.field}"/>
+                                    <TextBox Text="{Binding FieldText}" Watermark="{l:T profile.field.wm}"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.titles}"/>
+                                    <TextBox Text="{Binding JobTitlesText}" Watermark="{l:T profile.titles.wm}"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.coreSkills}"/>
                                     <TextBox Text="{Binding CoreSkillsText}" Watermark="C#, .NET, Go"/>
-                                    <TextBlock Classes="fld" Text="OUTRAS SKILLS"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.otherSkills}"/>
                                     <TextBox Text="{Binding SkillsText}"/>
-                                    <TextBlock Classes="fld" Text="LOCALIZAÇÕES"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.locations}"/>
                                     <TextBox Text="{Binding LocText}" Watermark="Porto, Portugal"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="2">
-                                    <TextBlock Classes="fld" Text="ANOS DE EXPERIÊNCIA"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.years}"/>
                                     <TextBox Text="{Binding YearsText}"/>
-                                    <TextBlock Classes="fld" Text="NÍVEL-ALVO"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.seniority}"/>
                                     <ComboBox ItemsSource="{Binding SeniorityOptions}" SelectedItem="{Binding Seniority}" HorizontalAlignment="Stretch"/>
-                                    <TextBlock Classes="fld" Text="SALÁRIO €/ANO (mín / alvo)"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.salary}"/>
                                     <Grid ColumnDefinitions="*,10,*">
-                                        <TextBox Grid.Column="0" Text="{Binding SalaryFloorText}" Watermark="mínimo"/>
-                                        <TextBox Grid.Column="2" Text="{Binding SalaryTargetText}" Watermark="alvo"/>
+                                        <TextBox Grid.Column="0" Text="{Binding SalaryFloorText}" Watermark="{l:T profile.salary.min}"/>
+                                        <TextBox Grid.Column="2" Text="{Binding SalaryTargetText}" Watermark="{l:T profile.salary.target}"/>
                                     </Grid>
-                                    <TextBlock Classes="fld" Text="MODO DE TRABALHO"/>
+                                    <TextBlock Classes="fld" Text="{l:T profile.workmode}"/>
                                     <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,4,0,0">
-                                        <CheckBox Content="Remoto" IsChecked="{Binding Remote}"/>
-                                        <CheckBox Content="Híbrido" IsChecked="{Binding Hybrid}"/>
-                                        <CheckBox Content="Presencial" IsChecked="{Binding Onsite}"/>
+                                        <CheckBox Content="{l:T profile.remote}" IsChecked="{Binding Remote}"/>
+                                        <CheckBox Content="{l:T profile.hybrid}" IsChecked="{Binding Hybrid}"/>
+                                        <CheckBox Content="{l:T profile.onsite}" IsChecked="{Binding Onsite}"/>
                                     </StackPanel>
                                 </StackPanel>
                             </Grid>
-                            <TextBlock Classes="fld" Text="RESUMO"/>
+                            <TextBlock Classes="fld" Text="{l:T profile.summary}"/>
                             <TextBox Text="{Binding Summary}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64"/>
                             <StackPanel Orientation="Horizontal" Spacing="10" Margin="0,16,0,0" VerticalAlignment="Center">
-                                <TextBlock Classes="fld" Text="CLASSIFICAÇÃO" Margin="0" VerticalAlignment="Center"/>
+                                <TextBlock Classes="fld" Text="{l:T profile.classification}" Margin="0" VerticalAlignment="Center"/>
                                 <ToggleSwitch IsChecked="{Binding UseAi}" OnContent="IA" OffContent="Keywords"/>
                                 <TextBlock Classes="sub" VerticalAlignment="Center" TextWrapping="Wrap"
-                                           Text="IA = 0–100 com justificação. Keywords = rápido, sem IA."/>
+                                           Text="{l:T profile.classHint}"/>
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,18,0,0">
                                 <Button Classes="accent" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}">
-                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="Procurar vagas"/></StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="{l:T home.search}"/></StackPanel>
                                 </Button>
-                                <Button Classes="ghost" Command="{Binding ExportCvCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="Gera um CV em PDF a partir deste perfil">
-                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="Gerar CV (PDF)"/></StackPanel>
+                                <Button Classes="ghost" Command="{Binding ExportCvCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T profile.genCv.tip}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T profile.genCv}"/></StackPanel>
                                 </Button>
-                                <Button Classes="ghost" Content="Recomeçar" Command="{Binding ResetCommand}"/>
+                                <Button Classes="ghost" Content="{l:T profile.reset}" Command="{Binding ResetCommand}"/>
                             </StackPanel>
                             <TextBlock Classes="sub" Text="{Binding Status}" TextWrapping="Wrap" Margin="0,12,0,0"
                                        IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -238,23 +239,23 @@
 
                     <WrapPanel Orientation="Horizontal" Margin="0,2,0,0">
                         <Border Classes="chip" Padding="9,5" Margin="0,0,10,8" VerticalAlignment="Center">
-                            <TextBlock FontSize="12" FontFamily="{DynamicResource MonoFont}"><Run Text="{Binding Jobs.Count}" FontWeight="Bold"/><Run Text=" de "/><Run Text="{Binding TotalCount}"/></TextBlock>
+                            <TextBlock FontSize="12" FontFamily="{DynamicResource MonoFont}"><Run Text="{Binding Jobs.Count}" FontWeight="Bold"/><Run Text="{l:T results.of}"/><Run Text="{Binding TotalCount}"/></TextBlock>
                         </Border>
-                        <TextBox Width="220" Margin="0,0,10,8" Watermark="Pesquisar nas vagas…" Text="{Binding SearchText}">
+                        <TextBox Width="220" Margin="0,0,10,8" Watermark="{l:T results.search.wm}" Text="{Binding SearchText}">
                             <TextBox.InnerLeftContent><ui:SymbolIcon Symbol="Find" Margin="8,0,0,0" Foreground="{DynamicResource Muted}"/></TextBox.InnerLeftContent>
                         </TextBox>
-                        <Button Classes="ghost" Command="{Binding AddFilterCommand}" Margin="0,0,10,8" ToolTip.Tip="Adicionar um filtro (ex.: descrição contém C#)">
-                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Add"/><TextBlock Text="Filtro"/></StackPanel>
+                        <Button Classes="ghost" Command="{Binding AddFilterCommand}" Margin="0,0,10,8" ToolTip.Tip="{l:T results.filter.tip}">
+                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Add"/><TextBlock Text="{l:T results.filter}"/></StackPanel>
                         </Button>
-                        <TextBlock Classes="sub" VerticalAlignment="Center" Text="Score mín." Margin="0,0,8,8"/>
+                        <TextBlock Classes="sub" VerticalAlignment="Center" Text="{l:T results.minScore}" Margin="0,0,8,8"/>
                         <ComboBox ItemsSource="{Binding MinScoreOptions}" SelectedItem="{Binding MinScore}" Width="84" Margin="0,0,10,8"/>
-                        <Button Classes="ghost" Command="{Binding RescoreCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,8,8" ToolTip.Tip="Volta a pontuar com o modelo das Definições">
-                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="Reclassificar"/></StackPanel>
+                        <Button Classes="ghost" Command="{Binding RescoreCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,8,8" ToolTip.Tip="{l:T results.rescore.tip}">
+                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T results.rescore}"/></StackPanel>
                         </Button>
                         <Button Classes="ghost" Command="{Binding ExportCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,8,8">
-                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="Exportar"/></StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T results.export}"/></StackPanel>
                         </Button>
-                        <Button Classes="ghost" Command="{Binding OpenLinkedInCommand}" Margin="0,0,8,8" ToolTip.Tip="Abre o LinkedIn Jobs com a tua pesquisa">
+                        <Button Classes="ghost" Command="{Binding OpenLinkedInCommand}" Margin="0,0,8,8" ToolTip.Tip="{l:T results.linkedin.tip}">
                             <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="LinkedIn"/></StackPanel>
                         </Button>
                     </WrapPanel>
@@ -264,12 +265,12 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:JobFilter">
                                 <Grid ColumnDefinitions="150,8,128,8,*,8,Auto" Margin="0,0,0,6">
-                                    <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding FieldOptions}" SelectedItem="{Binding Field}"/>
-                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ModeOptions}" SelectedItem="{Binding Mode}"/>
+                                    <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding FieldOptions}" SelectedIndex="{Binding FieldIndex}"/>
+                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ModeOptions}" SelectedIndex="{Binding ModeIndex}"/>
                                     <TextBox Grid.Column="4" Text="{Binding Value}" Watermark="C#"/>
                                     <Button Grid.Column="6" Classes="ghost" Content="✕" Padding="12,9"
                                             Command="{Binding ((vm:MainViewModel)DataContext).RemoveFilterCommand, ElementName=FiltersList}"
-                                            CommandParameter="{Binding}" ToolTip.Tip="Remover filtro"/>
+                                            CommandParameter="{Binding}" ToolTip.Tip="{l:T filter.remove.tip}"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -291,9 +292,9 @@
                         <TextBlock Classes="sub" TextWrapping="Wrap" TextAlignment="Center" Text="{Binding EmptyMessage}"/>
                     </Border>
 
-                    <Expander Margin="0,0,0,4" Header="Como é calculado o score?" IsVisible="{Binding HasJobs}">
+                    <Expander Margin="0,0,0,4" Header="{l:T results.howScore}" IsVisible="{Binding HasJobs}">
                         <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" Margin="4"
-                                   Text="1) Um filtro por palavras-chave do teu perfil dá um pré-score (competências-chave, modo de trabalho, localização, salário). 2) Em modo IA, as melhores são avaliadas 0–100 pelo modelo, com veredicto, razões e red-flags. Abre cada vaga para a lógica exata; clica no título para abrir o anúncio."/>
+                                   Text="{l:T results.howScore.body}"/>
                     </Expander>
 
                     <ItemsControl ItemsSource="{Binding Jobs}">
@@ -304,7 +305,7 @@
                                         <Grid ColumnDefinitions="Auto,16,*" HorizontalAlignment="Stretch">
                                             <ctl:ScoreDial Grid.Column="0" Score="{Binding Score}" Label="{Binding ScoreLabel}" VerticalAlignment="Top"/>
                                             <StackPanel Grid.Column="2" Spacing="3">
-                                                <Button Classes="link" Command="{Binding OpenCommand}" ToolTip.Tip="Abrir o anúncio">
+                                                <Button Classes="link" Command="{Binding OpenCommand}" ToolTip.Tip="{l:T job.openTip}">
                                                     <TextBlock Text="{Binding Title}" FontWeight="Bold" FontSize="14" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
                                                 </Button>
                                                 <WrapPanel>
@@ -324,7 +325,7 @@
                                     </Expander.Header>
 
                                     <StackPanel Spacing="8" Margin="6,2,6,8">
-                                        <TextBlock Text="Porquê este score" FontWeight="SemiBold" FontSize="11" Foreground="{DynamicResource AccentText}"/>
+                                        <TextBlock Text="{l:T job.why}" FontWeight="SemiBold" FontSize="11" Foreground="{DynamicResource AccentText}"/>
                                         <TextBlock Text="{Binding Reasons}" FontSize="12" Foreground="{DynamicResource Text}" Opacity="0.9" TextWrapping="Wrap" IsVisible="{Binding HasReasons}"/>
                                         <TextBlock Text="{Binding RedFlags}" FontSize="12" Foreground="{DynamicResource Amber}" TextWrapping="Wrap" IsVisible="{Binding HasRedFlags}"/>
                                         <Border Background="{DynamicResource Panel2}" CornerRadius="6" Padding="9" IsVisible="{Binding HasExplanation}">
@@ -332,13 +333,13 @@
                                         </Border>
                                         <StackPanel Orientation="Horizontal" Spacing="8">
                                             <Button Classes="ghost" Command="{Binding OpenCommand}">
-                                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Open"/><TextBlock Text="Abrir vaga"/></StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Open"/><TextBlock Text="{l:T job.openJob}"/></StackPanel>
                                             </Button>
-                                            <Button Classes="ghost" Command="{Binding ResearchCommand}" IsEnabled="{Binding !IsResearching}" ToolTip.Tip="Procura reviews e salários comparáveis na web e resume com o teu modelo">
-                                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="Pesquisar empresa"/></StackPanel>
+                                            <Button Classes="ghost" Command="{Binding ResearchCommand}" IsEnabled="{Binding !IsResearching}" ToolTip.Tip="{l:T job.research.tip}">
+                                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T job.research}"/></StackPanel>
                                             </Button>
                                         </StackPanel>
-                                        <TextBlock Text="A pesquisar a empresa…" FontSize="12" FontFamily="{DynamicResource MonoFont}"
+                                        <TextBlock Text="{l:T job.researching}" FontSize="12" FontFamily="{DynamicResource MonoFont}"
                                                    Foreground="{DynamicResource AccentText}" IsVisible="{Binding IsResearching}"/>
                                         <TextBlock Text="{Binding ResearchError}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"
                                                    IsVisible="{Binding ResearchError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -350,7 +351,7 @@
                                                 <StackPanel IsVisible="{Binding Brief.HasReputation}" Spacing="6">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}"/>
-                                                        <TextBlock Text="REPUTAÇÃO" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                        <TextBlock Text="{l:T brief.reputation}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
                                                     </StackPanel>
                                                     <ItemsControl ItemsSource="{Binding Brief.Pros}" IsVisible="{Binding Brief.HasPros}">
                                                         <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
@@ -389,12 +390,12 @@
                                                 <StackPanel IsVisible="{Binding Brief.HasSalary}" Spacing="7">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                                         <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Signal}"/>
-                                                        <TextBlock Text="SALÁRIO" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                        <TextBlock Text="{l:T brief.salary}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
                                                     </StackPanel>
                                                     <TextBlock Text="{Binding Brief.SalaryFound}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}" IsVisible="{Binding Brief.HasSalaryFound}"/>
                                                     <Border IsVisible="{Binding Brief.HasSalaryExpectation}" Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="12">
                                                         <StackPanel Spacing="3">
-                                                            <TextBlock Text="EXPECTATIVA SALARIAL PARA TI" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
+                                                            <TextBlock Text="{l:T brief.expectation}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
                                                             <TextBlock Text="{Binding Brief.SalaryExpectation}" FontSize="18" FontWeight="Bold" FontFamily="{DynamicResource MonoFont}" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
                                                             <TextBlock Text="{Binding Brief.SalaryRationale}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" IsVisible="{Binding Brief.HasSalaryRationale}"/>
                                                         </StackPanel>
@@ -404,7 +405,7 @@
                                                 <TextBlock Text="{Binding Brief.BottomLine}" FontSize="12" FontStyle="Italic" Opacity="0.9" TextWrapping="Wrap" Margin="0,4,0,0" Foreground="{DynamicResource Text}" IsVisible="{Binding Brief.HasBottomLine}"/>
 
                                                 <StackPanel IsVisible="{Binding Brief.HasSources}" Spacing="1" Margin="0,4,0,0">
-                                                    <TextBlock Text="FONTES" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
+                                                    <TextBlock Text="{l:T common.sources}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
                                                     <ItemsControl ItemsSource="{Binding Brief.Sources}">
                                                         <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:SourceRef">
                                                             <Button Classes="link" Content="{Binding Label}" FontSize="11"
@@ -425,18 +426,18 @@
 
                 <!-- ============ IMPROVE (career plan) ============ -->
                 <StackPanel IsVisible="{Binding IsImprove}" Spacing="6" MaxWidth="720">
-                    <TextBlock Classes="h1" Text="Evoluir"/>
-                    <TextBlock Classes="sub" Text="Um plano de carreira a partir do teu perfil e do mercado que o radar já viu — com pesquisa e fontes."/>
+                    <TextBlock Classes="h1" Text="{l:T nav.improve}"/>
+                    <TextBlock Classes="sub" Text="{l:T improve.sub}"/>
 
                     <!-- Generate (no plan yet) -->
                     <Border Classes="card" Margin="0,12,0,0" IsVisible="{Binding ShowGenerateIntro}">
                         <StackPanel Spacing="13">
                             <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TextSoft}" FontSize="13"
-                                       Text="O Radar pesquisa competências em procura, trajetória salarial e tendências de contratação para a tua área, cruza tudo com o teu perfil e as vagas já pontuadas, e devolve pontos fortes, lacunas a fechar, papéis-alvo e próximos passos — com fontes."/>
+                                       Text="{l:T improve.intro}"/>
                             <Button Classes="accent" HorizontalAlignment="Left" Command="{Binding GeneratePlanCommand}">
-                                <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Flag"/><TextBlock Text="Gerar plano de carreira"/></StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Flag"/><TextBlock Text="{l:T improve.generate}"/></StackPanel>
                             </Button>
-                            <TextBlock Classes="sub" Text="Usa o teu motor de IA (Claude CLI ou modelo local) + pesquisa web key-free. Não gasta créditos pagos."/>
+                            <TextBlock Classes="sub" Text="{l:T improve.byok}"/>
                             <TextBlock Text="{Binding PlanError}" Foreground="{DynamicResource Danger}" FontSize="12" TextWrapping="Wrap"
                                        IsVisible="{Binding PlanError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         </StackPanel>
@@ -457,12 +458,12 @@
                         <Grid ColumnDefinitions="*,Auto">
                             <Border Grid.Column="0" Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="10" Padding="14">
                                 <StackPanel Spacing="3">
-                                    <TextBlock Text="O TEU POSICIONAMENTO" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
+                                    <TextBlock Text="{l:T improve.positioning}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
                                     <TextBlock Text="{Binding Plan.Headline}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
                                 </StackPanel>
                             </Border>
-                            <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Top" Margin="10,0,0,0" Command="{Binding GeneratePlanCommand}" ToolTip.Tip="Voltar a pesquisar e regenerar o plano.">
-                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="Regenerar"/></StackPanel>
+                            <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Top" Margin="10,0,0,0" Command="{Binding GeneratePlanCommand}" ToolTip.Tip="{l:T improve.regenerate.tip}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T improve.regenerate}"/></StackPanel>
                             </Button>
                         </Grid>
 
@@ -472,7 +473,7 @@
                                 <StackPanel IsVisible="{Binding Plan.HasStrengths}" Spacing="6">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Signal}"/>
-                                        <TextBlock Text="PONTOS FORTES" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                        <TextBlock Text="{l:T improve.strengths}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
                                     </StackPanel>
                                     <ItemsControl ItemsSource="{Binding Plan.Strengths}">
                                         <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
@@ -487,7 +488,7 @@
                                 <StackPanel IsVisible="{Binding Plan.HasSkillGaps}" Spacing="6">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Amber}"/>
-                                        <TextBlock Text="LACUNAS A FECHAR" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                        <TextBlock Text="{l:T improve.gaps}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
                                     </StackPanel>
                                     <ItemsControl ItemsSource="{Binding Plan.SkillGaps}">
                                         <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:SkillGap">
@@ -508,7 +509,7 @@
                                 <StackPanel IsVisible="{Binding Plan.HasTargetRoles}" Spacing="6">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}"/>
-                                        <TextBlock Text="PAPÉIS-ALVO" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                        <TextBlock Text="{l:T improve.roles}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
                                     </StackPanel>
                                     <ItemsControl ItemsSource="{Binding Plan.TargetRoles}">
                                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -526,18 +527,18 @@
                             <StackPanel Spacing="8">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Signal}"/>
-                                    <TextBlock Text="TRAJETÓRIA SALARIAL" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                    <TextBlock Text="{l:T improve.salaryTraj}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
                                 </StackPanel>
                                 <Grid ColumnDefinitions="*,12,*">
                                     <Border Grid.Column="0" Background="{DynamicResource Panel2}" CornerRadius="8" Padding="12" IsVisible="{Binding Plan.HasSalaryNow}">
                                         <StackPanel Spacing="2">
-                                            <TextBlock Text="AGORA" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
+                                            <TextBlock Text="{l:T improve.now}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
                                             <TextBlock Text="{Binding Plan.SalaryNow}" FontSize="16" FontWeight="Bold" FontFamily="{DynamicResource MonoFont}" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
                                         </StackPanel>
                                     </Border>
                                     <Border Grid.Column="2" Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="8" Padding="12" IsVisible="{Binding Plan.HasSalaryPotential}">
                                         <StackPanel Spacing="2">
-                                            <TextBlock Text="POTENCIAL · 12–24 MESES" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
+                                            <TextBlock Text="{l:T improve.potential}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
                                             <TextBlock Text="{Binding Plan.SalaryPotential}" FontSize="16" FontWeight="Bold" FontFamily="{DynamicResource MonoFont}" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
                                         </StackPanel>
                                     </Border>
@@ -551,7 +552,7 @@
                             <StackPanel Spacing="8">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}"/>
-                                    <TextBlock Text="PRÓXIMOS PASSOS" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                    <TextBlock Text="{l:T improve.steps}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
                                 </StackPanel>
                                 <ItemsControl ItemsSource="{Binding Plan.Steps}">
                                     <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:PlanStep">
@@ -574,7 +575,7 @@
                                 <StackPanel IsVisible="{Binding Plan.HasMarketSignals}" Spacing="6">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Muted}"/>
-                                        <TextBlock Text="SINAIS DO MERCADO" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                        <TextBlock Text="{l:T improve.signals}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
                                     </StackPanel>
                                     <ItemsControl ItemsSource="{Binding Plan.MarketSignals}">
                                         <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
@@ -605,61 +606,66 @@
 
                 <!-- ============ SETTINGS ============ -->
                 <StackPanel IsVisible="{Binding IsSettings}" Spacing="6" MaxWidth="660">
-                    <TextBlock Classes="h1" Text="Definições"/>
-                    <TextBlock Classes="sub" Text="Aparência e motor de IA usado para ler o CV e pontuar as vagas."/>
+                    <TextBlock Classes="h1" Text="{l:T nav.settings}"/>
+                    <TextBlock Classes="sub" Text="{l:T settings.sub}"/>
 
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel Spacing="10">
-                            <TextBlock Classes="fld" Text="ASPETO" Margin="0,0,0,2"/>
+                            <TextBlock Classes="fld" Text="{l:T settings.language}" Margin="0,0,0,2"/>
                             <StackPanel Orientation="Horizontal" Spacing="10">
-                                <ComboBox ItemsSource="{Binding ThemeOptions}" SelectedItem="{Binding ThemePref}" Width="160"/>
-                                <TextBlock Classes="sub" VerticalAlignment="Center" Text="Claro, escuro ou a seguir o sistema."/>
+                                <ComboBox ItemsSource="{Binding LanguageOptions}" SelectedIndex="{Binding LanguageIndex}" Width="160"/>
+                                <TextBlock Classes="sub" VerticalAlignment="Center" Text="{l:T settings.language.hint}"/>
                             </StackPanel>
-                            <TextBlock Classes="fld" Text="TAMANHO DO TEXTO" Margin="0,8,0,2"/>
+                            <TextBlock Classes="fld" Text="{l:T settings.appearance}" Margin="0,8,0,2"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <ComboBox ItemsSource="{Binding ThemeOptions}" SelectedIndex="{Binding ThemeIndex}" Width="160"/>
+                                <TextBlock Classes="sub" VerticalAlignment="Center" Text="{l:T settings.appearance.hint}"/>
+                            </StackPanel>
+                            <TextBlock Classes="fld" Text="{l:T settings.textsize}" Margin="0,8,0,2"/>
                             <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <ComboBox ItemsSource="{Binding TextSizeOptions}" SelectedItem="{Binding TextSize}" Width="160"/>
+                                <ComboBox ItemsSource="{Binding TextSizeOptions}" SelectedIndex="{Binding TextSizeIndex}" Width="160"/>
                                 <TextBlock Text="{Binding ZoomLabel}" VerticalAlignment="Center"
                                            FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource Muted}"/>
                             </StackPanel>
-                            <TextBlock Classes="sub" Text="Aumenta a app inteira. Também com Ctrl +/− · Ctrl 0 · Ctrl+roda do rato."/>
+                            <TextBlock Classes="sub" Text="{l:T settings.textsize.hint}"/>
                         </StackPanel>
                     </Border>
 
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel Spacing="12">
-                            <TextBlock Classes="fld" Text="MOTOR DE IA" Margin="0,0,0,2"/>
-                            <ToggleSwitch IsChecked="{Binding UseLocalModel}" OnContent="Modelo local" OffContent="Claude CLI"/>
+                            <TextBlock Classes="fld" Text="{l:T settings.aiEngine}" Margin="0,0,0,2"/>
+                            <ToggleSwitch IsChecked="{Binding UseLocalModel}" OnContent="{l:T settings.localModel}" OffContent="Claude CLI"/>
                             <TextBlock Classes="sub" TextWrapping="Wrap"
-                                       Text="Claude CLI usa a tua subscrição (BYOK). Modelo local usa um runtime compatível com OpenAI (LM Studio, Ollama, llama.cpp) — corre offline, sem subscrição."/>
+                                       Text="{l:T settings.aiEngine.hint}"/>
 
                             <StackPanel IsVisible="{Binding UseLocalModel}" Spacing="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,2">
-                                    <TextBlock Classes="sub" VerticalAlignment="Center" Text="Presets:"/>
+                                    <TextBlock Classes="sub" VerticalAlignment="Center" Text="{l:T settings.presets}"/>
                                     <Button Classes="ghost" Content="LM Studio" Command="{Binding UseLmStudioPresetCommand}"/>
                                     <Button Classes="ghost" Content="Ollama" Command="{Binding UseOllamaPresetCommand}"/>
                                 </StackPanel>
                                 <TextBlock Classes="fld" Text="BASE URL"/>
                                 <TextBox Text="{Binding LlmBaseUrl}" Watermark="http://localhost:1234/v1"/>
-                                <TextBlock Classes="fld" Text="API KEY (opcional)"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.apiKey}"/>
                                 <TextBox Text="{Binding LlmApiKey}" PasswordChar="•"/>
                             </StackPanel>
 
                             <StackPanel IsVisible="{Binding !UseLocalModel}" Spacing="4">
-                                <TextBlock Classes="fld" Text="EXECUTÁVEL CLAUDE (PATH)"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.claudeExe}"/>
                                 <TextBox Text="{Binding ClaudeExe}" Watermark="claude"/>
                             </StackPanel>
 
                             <StackPanel Spacing="4">
-                                <TextBlock Classes="fld" Text="MODELO"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.model}"/>
                                 <Grid ColumnDefinitions="*,Auto">
                                     <ComboBox Grid.Column="0" HorizontalAlignment="Stretch"
                                               ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding LlmModel}"/>
                                     <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding LoadModelsCommand}" IsVisible="{Binding UseLocalModel}" IsEnabled="{Binding !Busy}">
-                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="Carregar"/></StackPanel>
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T settings.load}"/></StackPanel>
                                     </Button>
                                 </Grid>
                                 <TextBlock Classes="sub" FontSize="11" IsVisible="{Binding UseLocalModel}"
-                                           Text="Carrega a lista a partir do runtime local (tem de estar a correr no Base URL)."/>
+                                           Text="{l:T settings.model.hint}"/>
                             </StackPanel>
 
                         </StackPanel>
@@ -669,10 +675,10 @@
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel Spacing="10">
                             <TextBlock Classes="fld" Text="LINKEDIN (APIFY)" Margin="0,0,0,2"/>
-                            <ToggleSwitch IsChecked="{Binding UseApify}" OnContent="Ligado" OffContent="Desligado"/>
+                            <ToggleSwitch IsChecked="{Binding UseApify}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
                             <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" Background="{DynamicResource Panel2}" CornerRadius="8" Padding="11">
                                 <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Amber}">
-                                    <Run Text="Atenção — custos: " FontWeight="Bold"/><Run Text="o Apify é pago e cada pesquisa consome créditos da tua conta Apify. Com o Apify ligado, a app pede sempre confirmação antes de procurar."/>
+                                    <Run Text="{l:T settings.apify.warnBold}" FontWeight="Bold"/><Run Text="{l:T settings.apify.warn}"/>
                                 </TextBlock>
                             </Border>
                             <StackPanel IsVisible="{Binding UseApify}" Spacing="4">
@@ -680,24 +686,24 @@
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBox Grid.Column="0" Text="{Binding ApifyToken}" PasswordChar="•" Watermark="apify_api_…"/>
                                     <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding ProbeApifyCommand}" IsEnabled="{Binding !Busy}"
-                                            ToolTip.Tip="Valida o token (grátis, sem créditos) e procura actors de LinkedIn">
-                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="Testar / procurar"/></StackPanel>
+                                            ToolTip.Tip="{l:T settings.apify.test.tip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T settings.apify.test}"/></StackPanel>
                                     </Button>
                                 </Grid>
                                 <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{Binding ApifyStatus}"
                                            IsVisible="{Binding ApifyStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                 <TextBlock Classes="fld" Text="ACTOR"/>
                                 <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding ApifyActorOptions}" SelectedItem="{Binding ApifyActor}"/>
-                                <TextBlock Classes="fld" Text="MÁX. RESULTADOS (limita o custo)"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.apify.max}"/>
                                 <TextBox Text="{Binding ApifyMax}" Watermark="50"/>
                                 <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap"
-                                           Text="Cola o token (apify.com → Settings → API) e carrega em “Testar / procurar”. Validar e listar é grátis; só a pesquisa em si consome créditos."/>
+                                           Text="{l:T settings.apify.hint}"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>
 
                     <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,14,0,0">
-                        <Button Classes="accent" Content="Guardar" Command="{Binding SaveSettingsCommand}"/>
+                        <Button Classes="accent" Content="{l:T settings.save}" Command="{Binding SaveSettingsCommand}"/>
                     </StackPanel>
                     <TextBlock Classes="sub" Text="{Binding Status}" Margin="0,8,0,0"
                                IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>

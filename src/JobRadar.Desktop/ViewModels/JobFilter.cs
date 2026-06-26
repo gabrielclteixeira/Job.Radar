@@ -1,38 +1,44 @@
 using System;
 using CommunityToolkit.Mvvm.ComponentModel;
+using JobRadar;
 
 namespace JobRadar.Desktop.ViewModels;
 
 /// <summary>One row of the jobs filter bar: a field + contains/not-contains + value. AND-combined.</summary>
 public partial class JobFilter : ObservableObject
 {
-    public string[] FieldOptions { get; } = { "Descrição", "Título", "Empresa", "Localização", "Fonte" };
-    public string[] ModeOptions { get; } = { "contém", "não contém" };
+    public string[] FieldOptions => new[]
+    {
+        Loc.Instance.T("opt.field.desc"), Loc.Instance.T("opt.field.title"),
+        Loc.Instance.T("opt.field.company"), Loc.Instance.T("opt.field.location"),
+        Loc.Instance.T("opt.field.source"),
+    };
+    public string[] ModeOptions => new[] { Loc.Instance.T("opt.mode.contains"), Loc.Instance.T("opt.mode.notcontains") };
 
-    [ObservableProperty] private string _field = "Descrição";
-    [ObservableProperty] private string _mode = "contém";
+    [ObservableProperty] private int _fieldIndex; // 0 desc, 1 title, 2 company, 3 location, 4 source
+    [ObservableProperty] private int _modeIndex;   // 0 contains, 1 doesn't contain
     [ObservableProperty] private string _value = "";
 
     /// <summary>Invoked when any part of the filter changes (the VM re-applies the filter).</summary>
     public Action? Changed;
 
-    partial void OnFieldChanged(string value) => Changed?.Invoke();
-    partial void OnModeChanged(string value) => Changed?.Invoke();
+    partial void OnFieldIndexChanged(int value) => Changed?.Invoke();
+    partial void OnModeIndexChanged(int value) => Changed?.Invoke();
     partial void OnValueChanged(string value) => Changed?.Invoke();
 
     public bool Matches(JobVm v)
     {
         if (string.IsNullOrWhiteSpace(Value)) return true;
         var j = v.Entity;
-        string hay = Field switch
+        string hay = (FieldIndex switch
         {
-            "Título" => j.Title,
-            "Empresa" => j.Company,
-            "Localização" => j.Location,
-            "Fonte" => j.Source,
+            1 => j.Title,
+            2 => j.Company,
+            3 => j.Location,
+            4 => j.Source,
             _ => j.Description,
-        } ?? "";
+        }) ?? "";
         bool contains = hay.Contains(Value, StringComparison.OrdinalIgnoreCase);
-        return Mode == "não contém" ? !contains : contains;
+        return ModeIndex == 1 ? !contains : contains;
     }
 }

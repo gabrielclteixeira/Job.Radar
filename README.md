@@ -57,6 +57,8 @@ the **Claude CLI** or point it at a local model in **Definições** (without one
 - 🚩 **Evoluir (career plan)** — **multi-step deep research** (the model picks angles to dig into, then
   searches them) turns your profile + the jobs already scored into a growth plan: strengths, skill gaps with
   actions, target roles, a **salary trajectory** (now → 12–24 months) and time-boxed next steps, with sources.
+- 🌐 **Bilingual (PT/EN)** — the whole UI and the AI-generated text are localized; auto-detects the OS
+  language and switches live from **Definições / Settings**.
 - 📄 **CV PDF + export** — generate a styled one-page CV from your profile; export results to CSV / HTML / PDF.
 - 🔗 **LinkedIn** — open a pre-filled LinkedIn Jobs search, plus an optional (paid, opt-in) **Apify**
   connector with one-click token validation, actor discovery and clear cost warnings.

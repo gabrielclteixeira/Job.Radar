@@ -36,7 +36,7 @@ public static class FetcherRunner
 
         if (psi is null)
         {
-            L("Fetcher não encontrado — a usar o jobs.raw.json existente, se houver.");
+            L(Loc.Instance.T("pipe.fetcherMissing"));
             return;
         }
 

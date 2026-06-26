@@ -52,10 +52,10 @@ public partial class MainWindow : Window
     {
         var dlg = new ContentDialog
         {
-            Title = "Pesquisar com Apify (LinkedIn)?",
-            Content = "O Apify é pago — esta pesquisa vai consumir créditos da tua conta Apify. Continuar?",
-            PrimaryButtonText = "Continuar",
-            CloseButtonText = "Cancelar",
+            Title = JobRadar.Loc.Instance.T("dlg.apify.title"),
+            Content = JobRadar.Loc.Instance.T("dlg.apify.body"),
+            PrimaryButtonText = JobRadar.Loc.Instance.T("dlg.continue"),
+            CloseButtonText = JobRadar.Loc.Instance.T("dlg.cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
         return await dlg.ShowAsync() == ContentDialogResult.Primary;

@@ -68,7 +68,7 @@ double-quoted keys/values, shape:
 - 3–5 strengths, 2–4 skillGaps, 2–4 targetRoles, 3–5 steps ordered by horizon (0–3 / 3–6 / 6–12 meses).
 - Salary bands in EUR/year, reasoned from the found figures + the candidate's level; widen and say so if data is thin.
 - Keep every phrase concrete and under ~16 words. Be honest when evidence is thin (empty arrays are fine).
-- Write the text in European Portuguese.
+- Write the text in {Loc.Instance.T("ai.lang")}.
 
 == CANDIDATE ==
 {profile.ToScoringText()}

@@ -36,12 +36,11 @@ public partial class MainViewModel : ObservableObject
         ApplyLlmOverride();
         ApplyApifyOverride();
         LoadUiSettings();
-        _syncingTextSize = true;
-        _textSize = SizePresets.FirstOrDefault(p => Math.Abs(p.Zoom - _zoom) < 0.001).Label ?? CustomSize;
-        _syncingTextSize = false;
+        Loc.Instance.SetPreference(LangModes[Math.Clamp(_languageIndex, 0, 2)]);
         ApplyTheme();
         LoadSavedProfile();
         LoadPlan();
+        _langInitialised = true;
     }
 
     // ---- navigation (sidebar) ----
@@ -74,11 +73,51 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    private static string L(string key) => Loc.Instance[key];
+
+    // ---- language ----
+    private static readonly string[] LangModes = { "Auto", "Português", "English" };
+    public string[] LanguageOptions => new[] { L("opt.lang.auto"), "Português", "English" };
+    [ObservableProperty] private int _languageIndex; // 0 Auto, 1 PT, 2 EN
+    private bool _langInitialised;
+
+    /// <summary>Raised when the user changes the language — the App rebuilds the window (same VM,
+    /// state preserved) so the static {l:T} labels re-render in the new language.</summary>
+    public event Action? LanguageChanged;
+
+    partial void OnLanguageIndexChanged(int value)
+    {
+        Loc.Instance.SetPreference(LangModes[Math.Clamp(value, 0, 2)]);
+        SaveUiSettings();
+        RefreshLocalizedLists();
+        if (_langInitialised) LanguageChanged?.Invoke();
+    }
+
+    /// <summary>Re-raise localized list/label properties so they re-read after a language switch.</summary>
+    private void RefreshLocalizedLists()
+    {
+        OnPropertyChanged(nameof(LanguageOptions));
+        OnPropertyChanged(nameof(ThemeOptions));
+        OnPropertyChanged(nameof(TextSizeOptions));
+        OnPropertyChanged(nameof(ThemeToggleLabel));
+    }
+
     // ---- theme ----
-    public string[] ThemeOptions { get; } = { "System", "Light", "Dark" };
+    private static readonly string[] ThemeValues = { "System", "Light", "Dark" };
+    public string[] ThemeOptions => new[] { L("opt.theme.system"), L("opt.theme.light"), L("opt.theme.dark") };
     [ObservableProperty] private string _themePref = "Dark"; // System | Light | Dark
+    public int ThemeIndex
+    {
+        get { int i = Array.IndexOf(ThemeValues, ThemePref); return i >= 0 ? i : 2; }
+        set => ThemePref = ThemeValues[Math.Clamp(value, 0, 2)];
+    }
     public bool IsDark => ThemePref != "Light";
-    partial void OnThemePrefChanged(string value) { ApplyTheme(); SaveUiSettings(); OnPropertyChanged(nameof(IsDark)); }
+    public string ThemeToggleLabel => Loc.Instance.F("theme.toggle", L(ThemeIndex == 0 ? "opt.theme.system" : ThemeIndex == 1 ? "opt.theme.light" : "opt.theme.dark"));
+    partial void OnThemePrefChanged(string value)
+    {
+        ApplyTheme(); SaveUiSettings();
+        OnPropertyChanged(nameof(IsDark)); OnPropertyChanged(nameof(ThemeIndex)); OnPropertyChanged(nameof(ThemeToggleLabel));
+    }
 
     [RelayCommand] private void ToggleTheme() => ThemePref = ThemePref == "Light" ? "Dark" : "Light";
 
@@ -87,32 +126,22 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private double _zoom = 1.0;
     public string ZoomLabel => $"{Zoom * 100:0}%";
 
-    // Friendly presets shown in Definições; "Personalizado" is only ever shown (not chosen)
+    // Friendly presets shown in Definições; index 4 ("custom") is only shown (not chosen)
     // when Ctrl +/- lands on a value between presets.
-    private const string CustomSize = "Personalizado";
-    public string[] TextSizeOptions { get; } = { "Pequeno", "Normal", "Grande", "Maior", CustomSize };
-    private static readonly (string Label, double Zoom)[] SizePresets =
-        { ("Pequeno", 0.9), ("Normal", 1.0), ("Grande", 1.2), ("Maior", 1.4) };
-    private bool _syncingTextSize;
-    [ObservableProperty] private string _textSize = "Normal";
-
-    partial void OnTextSizeChanged(string value)
+    private static readonly double[] SizeZooms = { 0.9, 1.0, 1.2, 1.4 };
+    public string[] TextSizeOptions => new[]
+        { L("opt.size.small"), L("opt.size.normal"), L("opt.size.large"), L("opt.size.larger"), L("opt.size.custom") };
+    public int TextSizeIndex
     {
-        if (_syncingTextSize) return;
-        foreach (var p in SizePresets)
-            if (p.Label == value) { Zoom = p.Zoom; return; }
+        get { for (int i = 0; i < SizeZooms.Length; i++) if (Math.Abs(SizeZooms[i] - Zoom) < 0.001) return i; return 4; }
+        set { if (value >= 0 && value < SizeZooms.Length) Zoom = SizeZooms[value]; }
     }
 
     partial void OnZoomChanged(double value)
     {
         OnPropertyChanged(nameof(ZoomLabel));
+        OnPropertyChanged(nameof(TextSizeIndex));
         SaveUiSettings();
-        _syncingTextSize = true;                 // reflect the new zoom in the dropdown
-        string label = CustomSize;
-        foreach (var p in SizePresets)
-            if (Math.Abs(p.Zoom - value) < 0.001) { label = p.Label; break; }
-        TextSize = label;
-        _syncingTextSize = false;
     }
 
     [RelayCommand] private void ZoomIn() => Zoom = Math.Min(MaxZoom, Math.Round(Zoom + ZoomStep, 2));
@@ -140,13 +169,23 @@ public partial class MainViewModel : ObservableObject
                 _themePref = t.GetString() ?? "Dark";
             if (doc.RootElement.TryGetProperty("zoom", out var z) && z.TryGetDouble(out var zv))
                 _zoom = Math.Clamp(zv, MinZoom, MaxZoom);
+            if (doc.RootElement.TryGetProperty("lang", out var lg) && lg.ValueKind == JsonValueKind.String)
+            {
+                int i = Array.IndexOf(LangModes, lg.GetString());
+                _languageIndex = i >= 0 ? i : 0;
+            }
         }
         catch { /* ignore */ }
     }
 
     private void SaveUiSettings()
     {
-        try { File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(new { theme = ThemePref, zoom = Zoom }, new JsonSerializerOptions { WriteIndented = true })); }
+        try
+        {
+            File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(
+                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)] },
+                new JsonSerializerOptions { WriteIndented = true }));
+        }
         catch { /* best-effort */ }
     }
 
@@ -184,15 +223,15 @@ public partial class MainViewModel : ObservableObject
     {
         if (IsPlanning) return;
         IsPlanning = true; PlanError = ""; Plan = null;
-        PlanStatus = "A preparar a pesquisa…";
+        PlanStatus = L("plan.preparing");
         var progress = new Progress<string>(m => Dispatcher.UIThread.Post(() => PlanStatus = m));
         try
         {
             var result = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), progress);
-            if (result is null) PlanError = "Não consegui reunir informação suficiente. Tenta outra vez.";
+            if (result is null) PlanError = L("plan.error.insufficient");
             else { Plan = result; SavePlan(); }
         }
-        catch (Exception ex) { PlanError = "Erro: " + ex.Message; }
+        catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); }
         finally { IsPlanning = false; }
     }
 
@@ -274,7 +313,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task ProbeApify()
     {
-        Busy = true; ApifyStatus = "A validar o token e a procurar actors…";
+        Busy = true; ApifyStatus = L("apify.validating");
         try
         {
             var (ok, msg, actors) = await ApifyClient.ProbeAsync(ApifyToken.Trim());
@@ -328,7 +367,7 @@ public partial class MainViewModel : ObservableObject
     // ---- CV → profile (called by the view after the file picker) ----
     public async Task LoadCvAsync(string path)
     {
-        Busy = true; Status = "A ler o CV…";
+        Busy = true; Status = L("cv.reading");
         try
         {
             string text = "";
@@ -341,7 +380,7 @@ public partial class MainViewModel : ObservableObject
             }
             else
             {
-                Status = "A IA está a montar o teu perfil…";
+                Status = L("cv.building");
                 _profile = await CvProfiler.BuildProfileAsync(text, _cfg.Claude)
                            ?? new UserProfile { Summary = "(IA indisponível — preenche à mão)" };
             }
@@ -364,7 +403,7 @@ public partial class MainViewModel : ObservableObject
         _profile = DemoProfile();
         _isDemoProfile = true;
         LoadFormFromProfile();
-        Status = "Perfil de exemplo (John Doe) — experimenta a pesquisa. Não substitui o teu perfil guardado.";
+        Status = L("demo.profile.status");
         ShowOnly(profile: true);
     }
 
@@ -440,17 +479,17 @@ public partial class MainViewModel : ObservableObject
     private async Task ViewJobs()
     {
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
-        ResultsTitle = "Vagas guardadas";
-        ScoringStatus = "A carregar vagas guardadas…"; MinScore = 0; IsScoring = true;
+        ResultsTitle = L("title.saved");
+        ScoringStatus = L("scoring.loadingSaved"); MinScore = 0; IsScoring = true;
         ShowOnly(results: true); Busy = true;
         var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
         try
         {
             var result = await Pipeline.LoadCachedAsync(_cfg, _root, jobProg);
             FinalizeResults(result);
-            if (!HasJobs) ScoringStatus = "Ainda não há vagas guardadas — usa \"Procurar vagas\".";
+            if (!HasJobs) ScoringStatus = L("empty.noSaved");
         }
-        catch (Exception ex) { ScoringStatus = "Erro: " + ex.Message; }
+        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); }
         finally { IsScoring = false; Busy = false; }
     }
 
@@ -459,7 +498,7 @@ public partial class MainViewModel : ObservableObject
     private async Task Rescore()
     {
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
-        ResultsTitle = "Vagas para ti"; ScoringStatus = "A reclassificar com o modelo atual…";
+        ResultsTitle = L("title.jobs"); ScoringStatus = L("scoring.rescoring");
         MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
         var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
@@ -467,9 +506,9 @@ public partial class MainViewModel : ObservableObject
         {
             var result = await Pipeline.RescoreAsync(_profile, _cfg, _root, logProg, jobProg);
             FinalizeResults(result);
-            if (!HasJobs) ScoringStatus = "Sem vagas guardadas — usa \"Procurar vagas\" primeiro.";
+            if (!HasJobs) ScoringStatus = L("empty.noSavedRescore");
         }
-        catch (Exception ex) { ScoringStatus = "Erro: " + ex.Message; }
+        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); }
         finally { IsScoring = false; Busy = false; }
     }
 
@@ -531,7 +570,7 @@ public partial class MainViewModel : ObservableObject
     private async Task LoadModels()
     {
         if (!UseLocalModel) { RefreshModelOptions(); return; }
-        Busy = true; Status = "A obter modelos do runtime local…";
+        Busy = true; Status = L("models.loading");
         try
         {
             var models = await LlmClient.ListOpenAiModelsAsync(LlmBaseUrl, LlmApiKey);
@@ -539,7 +578,7 @@ public partial class MainViewModel : ObservableObject
             ModelOptions.Clear();
             foreach (var m in models) ModelOptions.Add(m);
             if (!string.IsNullOrWhiteSpace(current) && !ModelOptions.Contains(current)) ModelOptions.Add(current);
-            if (models.Count == 0) Status = "Sem modelos — o runtime local está a correr no Base URL indicado?";
+            if (models.Count == 0) Status = L("models.none");
             else { Status = $"{models.Count} modelo(s) encontrados."; if (string.IsNullOrWhiteSpace(LlmModel)) LlmModel = models[0]; }
         }
         finally { Busy = false; }
@@ -571,8 +610,8 @@ public partial class MainViewModel : ObservableObject
     private async Task RunPipeline(bool useAi, bool demo)
     {
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
-        ResultsTitle = demo ? "Vagas para ti (demo)" : "Vagas para ti";
-        ScoringStatus = demo ? "A carregar demonstração…" : "A procurar vagas…";
+        ResultsTitle = demo ? L("title.demo") : L("title.jobs");
+        ScoringStatus = demo ? L("scoring.loadingDemo") : L("scoring.searching");
         MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
 
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
@@ -583,7 +622,7 @@ public partial class MainViewModel : ObservableObject
                 demo ? new UserProfile() : _profile, _cfg, _root, useAi, logProg, demo, jobProg);
             FinalizeResults(result);
         }
-        catch (Exception ex) { Log.Add("Erro: " + ex.Message); ScoringStatus = "Erro: " + ex.Message; }
+        catch (Exception ex) { var m = Loc.Instance.F("error.generic", ex.Message); Log.Add(m); ScoringStatus = m; }
         finally { IsScoring = false; Busy = false; }
     }
 
@@ -664,7 +703,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Once the pipeline finishes, settle the final order (streaming already populated the list).</summary>
     private void FinalizeResults(PipelineResult result)
     {
-        ResultsTitle = result.Demo ? "Vagas para ti (demo)" : "Vagas para ti";
+        ResultsTitle = result.Demo ? L("title.demo") : L("title.jobs");
         _all = _all.Count == 0 && result.Jobs.Count > 0
             ? result.Jobs.Select(j => new JobVm(j, ResearchCompanyAsync)).ToList()
             : _all.OrderByDescending(v => v.Score).ToList();
@@ -689,9 +728,7 @@ public partial class MainViewModel : ObservableObject
         foreach (var v in _all.Where(Passes)) Jobs.Add(v);
         HasJobs = Jobs.Count > 0;
         TotalCount = _all.Count;
-        EmptyMessage = _all.Count > 0
-            ? "Nenhuma vaga corresponde à pesquisa/filtros."
-            : "Sem vagas para mostrar. Usa “Procurar vagas” para fazer um varrimento, ou “Ver vagas” para as guardadas.";
+        EmptyMessage = _all.Count > 0 ? L("empty.noMatch") : L("empty.noneToShow");
     }
 
     private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false, bool improve = false)

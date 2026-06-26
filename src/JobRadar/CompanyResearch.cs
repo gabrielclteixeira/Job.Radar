@@ -45,6 +45,7 @@ Use ONLY the snippets (don't invent). Reply with ONLY one valid JSON object, dou
 - salaryExpectation: a realistic €/year range for THIS candidate's level, reasoning from the found figures
   and their experience/seniority/target. If figures are thin, widen the range and say so in salaryRationale.
 - Be honest when data is thin (empty arrays are fine).
+- Write the text in {Loc.Instance.T("ai.lang")}.
 
 == CANDIDATE ==
 Role: {role} · {cand} · location {location ?? "—"}

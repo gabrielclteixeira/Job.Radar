@@ -29,13 +29,13 @@ public static class Pipeline
 
         if (demo)
         {
-            L("A carregar dados de demonstração (sem chamadas a IA)…");
+            L(Loc.Instance.T("pipe.demoLoading"));
             string sample = R(Path.Combine("samples", "jobs-scored.json"));
             var demoJobs = File.Exists(sample)
                 ? JsonSerializer.Deserialize<List<JobEntity>>(File.ReadAllText(sample), J) ?? new()
                 : new();
             demoJobs = demoJobs.OrderByDescending(j => j.AiScore ?? j.PreScore).ToList();
-            L($"Demo: {demoJobs.Count} vagas carregadas.");
+            L(Loc.Instance.F("pipe.demoLoaded", demoJobs.Count));
             // Pace the demo like a live scan: a brief sweep, then results cascade in one by one.
             // Demo only — no API calls, no cost — purely to showcase the radar/streaming UI.
             await Task.Delay(900, ct);
@@ -53,13 +53,13 @@ public static class Pipeline
         // 1) Derive the fetcher config from the profile (queries + location), then fetch.
         string cfgPath = R("fetcher-config.json");
         WriteFetcherConfig(cfgPath, profile, log);
-        L("A procurar vagas nas fontes…");
+        L(Loc.Instance.T("pipe.fetching"));
         string rawPath = R(cfg.RawJobsPath);
         await FetcherRunner.EnsureJobsAsync(root, cfgPath, rawPath, log, ct);
         var raw = File.Exists(rawPath)
             ? JsonSerializer.Deserialize<List<RawJob>>(File.ReadAllText(rawPath), J) ?? new()
             : new();
-        L($"{raw.Count} vagas recolhidas.");
+        L(Loc.Instance.F("pipe.collected", raw.Count));
 
         // Optional manual LinkedIn pass.
         string liPath = R(cfg.LinkedInJobsPath);
@@ -155,9 +155,9 @@ public static class Pipeline
             int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
             var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
             string engine = string.Equals(cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase)
-                ? $"o modelo local ({(string.IsNullOrWhiteSpace(cfg.Claude.Model) ? "OpenAI-compatible" : cfg.Claude.Model)})"
-                : "o Claude CLI";
-            L($"A pontuar {toScore.Count} candidatas com {engine}…");
+                ? Loc.Instance.F("engine.local", string.IsNullOrWhiteSpace(cfg.Claude.Model) ? "OpenAI-compatible" : cfg.Claude.Model)
+                : Loc.Instance.T("engine.claude");
+            L(Loc.Instance.F("scoring.with", toScore.Count, engine));
             int i = 0;
             foreach (var j in toScore)
             {
@@ -236,7 +236,7 @@ public static class Pipeline
         int floor = profile.SalaryFloorEur > 0 ? profile.SalaryFloorEur : cfg.Salary.FloorEur;
         int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
         var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
-        L($"A reclassificar {toScore.Count} vagas com o modelo atual…");
+        L(Loc.Instance.F("pipe.rescoring", toScore.Count));
         int i = 0;
         foreach (var j in toScore)
         {
