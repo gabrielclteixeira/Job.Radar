@@ -6,52 +6,87 @@ namespace JobRadar;
 public record WebResult(string Title, string Url, string Snippet);
 
 /// <summary>
-/// Minimal, key-free web search via DuckDuckGo's HTML endpoint. Best-effort: returns an empty list
-/// if the endpoint is unreachable or its markup changes. Used to give a local (offline) model some
-/// real context to summarise.
+/// Minimal, key-free web search. Primary engine is Mojeek (independent, scraping-tolerant); DuckDuckGo
+/// (HTML then Lite) is a fallback. Browser-like headers + a rotating user-agent + a backoff. DuckDuckGo
+/// frequently returns an HTTP 202 "anomaly" anti-bot page from data-centre/repeat IPs, hence Mojeek first.
+/// Best-effort: returns an empty list if every engine fails.
 /// </summary>
 public static class WebSearch
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(20) };
 
-    static WebSearch()
+    private sealed record Engine(bool Get, string Url);
+
+    private static readonly Engine[] Engines =
     {
-        Http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36");
-    }
+        new(true,  "https://www.mojeek.com/search?q="),       // primary — works where DDG blocks
+        new(false, "https://html.duckduckgo.com/html/"),       // fallback
+        new(false, "https://lite.duckduckgo.com/lite/"),       // fallback
+    };
+
+    // (link-with-href+title, snippet) regex pairs — tried in order against whatever HTML comes back.
+    private static readonly (Regex Link, Regex Snip)[] Parsers =
+    {
+        (new Regex("<a class=\"title\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOptions.Singleline), new Regex("<p class=\"s\">(.*?)</p>", RegexOptions.Singleline)),                 // Mojeek
+        (new Regex("<a[^>]*class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOptions.Singleline), new Regex("class=\"result__snippet\"[^>]*>(.*?)</a>", RegexOptions.Singleline)), // DDG html
+        (new Regex("<a[^>]*class=\"result-link\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOptions.Singleline), new Regex("class=\"result-snippet\"[^>]*>(.*?)</td>", RegexOptions.Singleline)), // DDG lite
+    };
+
+    private static readonly string[] UserAgents =
+    {
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    };
 
     public static async Task<List<WebResult>> SearchAsync(string query, int max = 6, CancellationToken ct = default)
     {
-        // DuckDuckGo's HTML endpoint throttles repeated scraping and then returns an empty page.
-        // One retry after a short pause rides out most transient throttling.
-        var list = await AttemptAsync(query, max, ct);
-        if (list.Count == 0)
+        for (int pass = 0; pass < 2; pass++)
         {
-            try { await Task.Delay(700, ct); } catch { }
-            list = await AttemptAsync(query, max, ct);
+            for (int e = 0; e < Engines.Length; e++)
+            {
+                var list = await AttemptAsync(Engines[e], query, max, UserAgents[(pass + e) % UserAgents.Length], ct);
+                if (list.Count > 0) return list;
+            }
+            try { await Task.Delay(500 * (pass + 1), ct); } catch { }
         }
-        return list;
+        return new List<WebResult>();
     }
 
-    private static async Task<List<WebResult>> AttemptAsync(string query, int max, CancellationToken ct)
+    private static async Task<List<WebResult>> AttemptAsync(Engine engine, string query, int max, string ua, CancellationToken ct)
     {
         var list = new List<WebResult>();
         try
         {
-            using var content = new FormUrlEncodedContent(new Dictionary<string, string> { ["q"] = query });
-            using var resp = await Http.PostAsync("https://html.duckduckgo.com/html/", content, ct);
-            if (!resp.IsSuccessStatusCode) return list;
+            using var req = engine.Get
+                ? new HttpRequestMessage(HttpMethod.Get, engine.Url + Uri.EscapeDataString(query))
+                : new HttpRequestMessage(HttpMethod.Post, engine.Url)
+                {
+                    Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["q"] = query }),
+                };
+            req.Headers.TryAddWithoutValidation("User-Agent", ua);
+            req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+            req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
+
+            using var resp = await Http.SendAsync(req, ct);
+            if (!resp.IsSuccessStatusCode) return list;            // e.g. DDG's 202 anti-bot page
             string html = await resp.Content.ReadAsStringAsync(ct);
 
-            var links = Regex.Matches(html, "<a[^>]*class=\"result__a\"[^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", RegexOptions.Singleline);
-            var snips = Regex.Matches(html, "class=\"result__snippet\"[^>]*>(.*?)</a>", RegexOptions.Singleline);
-            for (int i = 0; i < links.Count && list.Count < max; i++)
+            foreach (var (linkRx, snipRx) in Parsers)
             {
-                string title = Strip(links[i].Groups[2].Value);
-                if (string.IsNullOrWhiteSpace(title)) continue;
-                string url = DecodeUrl(links[i].Groups[1].Value);
-                string snippet = i < snips.Count ? Strip(snips[i].Groups[1].Value) : "";
-                if (snippet.Length > 240) snippet = snippet[..240] + "…";
-                list.Add(new WebResult(title, url, snippet));
+                var links = linkRx.Matches(html);
+                if (links.Count == 0) continue;
+                var snips = snipRx.Matches(html);
+                for (int i = 0; i < links.Count && list.Count < max; i++)
+                {
+                    string title = Strip(links[i].Groups[2].Value);
+                    if (string.IsNullOrWhiteSpace(title)) continue;
+                    string url = DecodeUrl(links[i].Groups[1].Value);
+                    string snippet = i < snips.Count ? Strip(snips[i].Groups[1].Value) : "";
+                    if (snippet.Length > 240) snippet = snippet[..240] + "…";
+                    list.Add(new WebResult(title, url, snippet));
+                }
+                break; // first parser that matched wins
             }
         }
         catch { /* best-effort */ }
