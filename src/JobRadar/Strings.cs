@@ -233,6 +233,8 @@ internal static class Strings
         ["plan.deepening"] = "A identificar áreas a aprofundar…",
         ["plan.searching"] = "A pesquisar: {0}",
         ["plan.synth"] = "A sintetizar o teu plano de carreira…",
+        ["plan.reuseResearch"] = "A reutilizar pesquisa recente…",
+        ["plan.noModel"] = "O modelo não respondeu",
         ["plan.error.insufficient"] = "Não consegui reunir informação suficiente. Tenta outra vez.",
 
         // apify dialog
@@ -485,6 +487,8 @@ internal static class Strings
         ["plan.deepening"] = "Identifying areas to dig into…",
         ["plan.searching"] = "Searching: {0}",
         ["plan.synth"] = "Synthesising your career plan…",
+        ["plan.reuseResearch"] = "Reusing recent research…",
+        ["plan.noModel"] = "The model didn't respond",
         ["plan.error.insufficient"] = "Couldn't gather enough information. Try again.",
 
         ["dlg.apify.title"] = "Search with Apify (LinkedIn)?",

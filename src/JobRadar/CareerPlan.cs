@@ -19,9 +19,9 @@ public static class CareerPlan
 {
     private static readonly JsonSerializerOptions J = new() { PropertyNameCaseInsensitive = true };
 
-    public static async Task<CareerPlanResult?> GenerateAsync(
+    public static async Task<(CareerPlanResult? plan, string? error)> GenerateAsync(
         ClaudeConfig llm, UserProfile profile, string marketContext,
-        IProgress<string>? log = null, CancellationToken ct = default)
+        string? cachePath = null, IProgress<string>? log = null, CancellationToken ct = default)
     {
         void L(string m) => log?.Report(m);
 
@@ -29,36 +29,51 @@ public static class CareerPlan
         string topRole = profile.JobTitles.FirstOrDefault() ?? field;
         string loc = profile.Locations.FirstOrDefault() ?? "";
         int year = DateTime.UtcNow.Year;
+        string sig = ProfileSig(profile, field, topRole);
 
-        var results = new List<WebResult>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        void Merge(IEnumerable<WebResult> rs)
+        // Reuse recently-gathered research (short TTL) so a crash + retry doesn't redo all the
+        // searches — and doesn't re-hit a throttled search engine.
+        var results = LoadResearch(cachePath, sig);
+        if (results.Count > 0)
         {
-            foreach (var r in rs)
-                if (!string.IsNullOrWhiteSpace(r.Url) && seen.Add(r.Url)) results.Add(r);
+            L(Loc.Instance.T("plan.reuseResearch"));
+        }
+        else
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            void Merge(IEnumerable<WebResult> rs)
+            {
+                foreach (var r in rs)
+                    if (!string.IsNullOrWhiteSpace(r.Url) && seen.Add(r.Url)) results.Add(r);
+            }
+
+            // 1) Seed searches — run concurrently (wall-clock = slowest one, not the sum).
+            L(Loc.Instance.T("plan.mapping"));
+            foreach (var s in await Task.WhenAll(
+                WebSearch.SearchAsync($"{field} most in-demand skills {year}", 5, ct),
+                WebSearch.SearchAsync($"{topRole} salary {loc} {year}", 5, ct),
+                WebSearch.SearchAsync($"{field} career path from {profile.SeniorityTarget} next level", 5, ct)))
+                Merge(s);
+
+            // 2) Let the model pick deeper angles (best-effort), then run those searches concurrently too.
+            L(Loc.Instance.T("plan.deepening"));
+            var followUps = await PickFollowUpsAsync(llm, profile, field, topRole, results, ct);
+            foreach (var q in followUps) L(Loc.Instance.F("plan.searching", q));
+            if (followUps.Count > 0)
+                foreach (var s in await Task.WhenAll(followUps.Select(q => WebSearch.SearchAsync(q, 4, ct))))
+                    Merge(s);
+
+            results = results.Take(14).ToList();
+            // Persist BEFORE synthesis so a model crash on the next step doesn't lose the research.
+            SaveResearch(cachePath, sig, results);
         }
 
-        // 1) Seed searches.
-        L(Loc.Instance.T("plan.mapping"));
-        Merge(await WebSearch.SearchAsync($"{field} most in-demand skills {year}", 5, ct));
-        Merge(await WebSearch.SearchAsync($"{topRole} salary {loc} {year}", 5, ct));
-        Merge(await WebSearch.SearchAsync($"{field} career path from {profile.SeniorityTarget} next level", 5, ct));
-
-        // 2) Let the model pick deeper angles (best-effort; skip on failure).
-        L(Loc.Instance.T("plan.deepening"));
-        foreach (var q in await PickFollowUpsAsync(llm, profile, field, topRole, results, ct))
-        {
-            ct.ThrowIfCancellationRequested();
-            L(Loc.Instance.F("plan.searching", q));
-            Merge(await WebSearch.SearchAsync(q, 4, ct));
-        }
-
-        results = results.Take(14).ToList();
-        if (results.Count == 0) return null;
-
-        // 3) Synthesise the plan.
+        // 3) Synthesise the plan. If search was fully throttled (no snippets), still build a plan from
+        // the profile + the already-scored jobs rather than failing outright.
         L(Loc.Instance.T("plan.synth"));
-        string snippets = Snippets(results);
+        string snippets = results.Count > 0
+            ? Snippets(results.Take(10).ToList())
+            : "(no web results this time — use your general knowledge, lean on the candidate profile and the scored jobs below, and be explicitly cautious about any figures)";
         string prompt =
 $@"You are a candid career coach. From the candidate, the jobs the app already found, and the web
 research snippets below, build a SHORT, honest growth plan. Use ONLY the snippets for market claims
@@ -78,12 +93,55 @@ double-quoted keys/values, shape:
 {snippets}";
 
         string? text = await LlmClient.CompleteAsync(llm, prompt, ct);
-        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            string msg = Loc.Instance.T("plan.noModel");
+            if (!string.IsNullOrWhiteSpace(LlmClient.LastError)) msg += ": " + LlmClient.LastError;
+            return (null, msg);
+        }
 
         var plan = Parse(text) ?? new CareerPlanResult { RawFallback = text!.Trim() };
         for (int i = 0; i < results.Count; i++)
             plan.Sources.Add(new SourceRef { N = i + 1, Url = results[i].Url, Host = Host(results[i].Url) });
-        return plan;
+        return (plan, null);
+    }
+
+    private static string ProfileSig(UserProfile p, string field, string topRole)
+        => string.Join("|", field, topRole, p.SeniorityTarget, string.Join(",", p.CoreSkills.Take(5))).ToLowerInvariant();
+
+    private const int ResearchTtlMinutes = 60;
+
+    private static List<WebResult> LoadResearch(string? path, string sig)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return new();
+            var c = JsonSerializer.Deserialize<CareerResearch>(File.ReadAllText(path), J);
+            if (c is null || c.ProfileSig != sig || c.Snippets.Count == 0) return new();
+            if (!DateTime.TryParse(c.SavedUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var saved)) return new();
+            if (DateTime.UtcNow - saved.ToUniversalTime() > TimeSpan.FromMinutes(ResearchTtlMinutes)) return new();
+            return c.Snippets;
+        }
+        catch { return new(); }
+    }
+
+    private static void SaveResearch(string? path, string sig, List<WebResult> snippets)
+    {
+        if (string.IsNullOrWhiteSpace(path) || snippets.Count == 0) return;
+        try
+        {
+            File.WriteAllText(path, JsonSerializer.Serialize(
+                new CareerResearch { SavedUtc = DateTime.UtcNow.ToString("o"), ProfileSig = sig, Snippets = snippets },
+                new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { /* best-effort */ }
+    }
+
+    private sealed class CareerResearch
+    {
+        public string SavedUtc { get; set; } = "";
+        public string ProfileSig { get; set; } = "";
+        public List<WebResult> Snippets { get; set; } = new();
     }
 
     /// <summary>Ask the model for 2–3 targeted follow-up queries based on the seed snippets.</summary>

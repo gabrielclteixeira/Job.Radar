@@ -18,6 +18,7 @@ public partial class MainViewModel : ObservableObject
     private readonly string _apifySettingsPath;
     private readonly string _jsearchSettingsPath;
     private readonly string _planPath;
+    private readonly string _careerResearchPath;
     private AppConfig _cfg;
 
     /// <summary>Set by the view: shows a cost-confirmation dialog before a paid (Apify) search.</summary>
@@ -35,6 +36,7 @@ public partial class MainViewModel : ObservableObject
         _apifySettingsPath = Path.Combine(_root, "apify-settings.json");
         _jsearchSettingsPath = Path.Combine(_root, "jsearch-settings.json");
         _planPath = Path.Combine(_root, "career-plan.json");
+        _careerResearchPath = Path.Combine(_root, "career-research.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
         ApplyApifyOverride();
@@ -231,8 +233,8 @@ public partial class MainViewModel : ObservableObject
         var progress = new Progress<string>(m => Dispatcher.UIThread.Post(() => PlanStatus = m));
         try
         {
-            var result = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), progress);
-            if (result is null) PlanError = L("plan.error.insufficient");
+            var (result, error) = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), _careerResearchPath, progress);
+            if (result is null) PlanError = string.IsNullOrWhiteSpace(error) ? L("plan.error.insufficient") : error;
             else { Plan = result; SavePlan(); }
         }
         catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); }
