@@ -111,6 +111,27 @@ public static class ApifyClient
         catch (Exception ex) { return (false, "Erro: " + ex.Message, actors); }
     }
 
+    /// <summary>Monthly usage vs limit, e.g. "$1.20 / $5.00" (free call). Null if unknown/unreachable.</summary>
+    public static async Task<string?> GetUsageAsync(string token, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+        try
+        {
+            using var r = await Http.GetAsync($"https://api.apify.com/v2/users/me/limits?token={Uri.EscapeDataString(token.Trim())}", ct);
+            if (!r.IsSuccessStatusCode) return $"HTTP {(int)r.StatusCode}";
+            using var d = JsonDocument.Parse(await r.Content.ReadAsStringAsync(ct));
+            if (!d.RootElement.TryGetProperty("data", out var data)) return null;
+            double used = Dbl(data, "current", "monthlyUsageUsd");
+            double max = Dbl(data, "limits", "maxMonthlyUsageUsd");
+            if (max > 0) return $"${used:0.00} / ${max:0.00}";
+            return used > 0 ? $"${used:0.00}" : null;
+        }
+        catch { return null; }
+    }
+
+    private static double Dbl(JsonElement e, string obj, string key)
+        => e.TryGetProperty(obj, out var o) && o.ValueKind == JsonValueKind.Object && o.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : 0;
+
     private static string Str(JsonElement e, params string[] keys)
     {
         foreach (var k in keys)

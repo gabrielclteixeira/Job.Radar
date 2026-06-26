@@ -15,10 +15,10 @@ public static class CompanyResearch
 {
     private static readonly JsonSerializerOptions J = new() { PropertyNameCaseInsensitive = true };
 
-    public static async Task<CompanyBrief?> ResearchAsync(
+    public static async Task<(CompanyBrief? brief, string? error)> ResearchAsync(
         ClaudeConfig llm, UserProfile profile, string company, string role, string? location, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(company)) return null;
+        if (string.IsNullOrWhiteSpace(company)) return (null, null);
 
         // 1) Gather context from the web (key-free, best-effort).
         var results = new List<WebResult>();
@@ -26,7 +26,7 @@ public static class CompanyResearch
         results.AddRange(await WebSearch.SearchAsync($"{company} {role} salary", 5, ct));
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         results = results.Where(r => !string.IsNullOrWhiteSpace(r.Url) && seen.Add(r.Url)).Take(8).ToList();
-        if (results.Count == 0) return null;
+        if (results.Count == 0) return (null, Loc.Instance.T("research.noWeb"));
 
         var snippets = new StringBuilder();
         for (int i = 0; i < results.Count; i++)
@@ -54,14 +54,19 @@ Role: {role} · {cand} · location {location ?? "—"}
 {snippets}";
 
         string? text = await LlmClient.CompleteAsync(llm, prompt, ct);
-        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            string msg = Loc.Instance.T("research.noModel");
+            if (!string.IsNullOrWhiteSpace(LlmClient.LastError)) msg += ": " + LlmClient.LastError;
+            return (null, msg);
+        }
 
         var brief = Parse(text) ?? new CompanyBrief { RawFallback = text!.Trim() };
 
         // Attach sources from the search results (not from the model).
         for (int i = 0; i < results.Count; i++)
             brief.Sources.Add(new SourceRef { N = i + 1, Url = results[i].Url, Host = Host(results[i].Url) });
-        return brief;
+        return (brief, null);
     }
 
     private static CompanyBrief? Parse(string raw)

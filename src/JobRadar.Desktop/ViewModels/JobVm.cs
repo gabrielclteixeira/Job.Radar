@@ -12,9 +12,9 @@ namespace JobRadar.Desktop.ViewModels;
 public partial class JobVm : ObservableObject
 {
     private readonly JobEntity _j;
-    private readonly Func<JobEntity, Task<CompanyBrief?>>? _research;
+    private readonly Func<JobEntity, Task<(CompanyBrief? brief, string? error)>>? _research;
 
-    public JobVm(JobEntity j, Func<JobEntity, Task<CompanyBrief?>>? research = null)
+    public JobVm(JobEntity j, Func<JobEntity, Task<(CompanyBrief? brief, string? error)>>? research = null)
     {
         _j = j;
         _research = research;
@@ -35,11 +35,11 @@ public partial class JobVm : ObservableObject
         IsResearching = true; ResearchError = ""; Brief = null;
         try
         {
-            var b = await _research(_j);
-            if (b is null) ResearchError = "Não consegui obter informação (sem resultados ou modelo indisponível).";
+            var (b, err) = await _research(_j);
+            if (b is null) ResearchError = string.IsNullOrWhiteSpace(err) ? Loc.Instance.T("research.failed") : err;
             else Brief = b;
         }
-        catch { ResearchError = "Falhou a pesquisa da empresa."; }
+        catch { ResearchError = Loc.Instance.T("research.failed"); }
         finally { IsResearching = false; }
     }
 

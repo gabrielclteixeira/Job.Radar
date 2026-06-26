@@ -16,6 +16,17 @@ public static class LlmClient
 {
     private static readonly HttpClient Http = new();
 
+    /// <summary>Reason for the last failed completion (CLI stderr, HTTP status, timeout…). Null on success.
+    /// Surfaced in the UI so the user can tell e.g. a Claude usage-limit from a local-model-down.</summary>
+    public static string? LastError { get; private set; }
+
+    private static string? Trim(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        s = s.Trim();
+        return s.Length > 200 ? s[..200] + "…" : s;
+    }
+
     public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, CancellationToken ct = default)
         => (cfg.Provider?.Trim().ToLowerInvariant()) switch
         {
@@ -52,7 +63,7 @@ public static class LlmClient
             }
 
             using var p = Process.Start(psi);
-            if (p is null) return null;
+            if (p is null) { LastError = "could not start the Claude CLI"; return null; }
             p.StandardInput.Close(); // signal EOF so the CLI doesn't wait for piped stdin
 
             var stdout = p.StandardOutput.ReadToEndAsync();
@@ -60,21 +71,23 @@ public static class LlmClient
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(cfg.TimeoutSeconds * 1000);
             try { await p.WaitForExitAsync(cts.Token); }
-            catch (OperationCanceledException) { try { p.Kill(true); } catch { } return null; }
+            catch (OperationCanceledException) { try { p.Kill(true); } catch { } LastError = $"timeout ({cfg.TimeoutSeconds}s)"; return null; }
 
             string raw = await stdout;
-            _ = await stderr;
+            string err = await stderr;
             try
             {
                 using var env = JsonDocument.Parse(raw);
                 if (env.RootElement.ValueKind == JsonValueKind.Object &&
                     env.RootElement.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.String)
-                    return r.GetString();
+                { LastError = null; return r.GetString(); }
             }
             catch { /* not an envelope — return raw text */ }
+            if (string.IsNullOrWhiteSpace(raw)) { LastError = Trim(err) ?? $"exit {p.ExitCode}"; return null; }
+            LastError = null;
             return raw;
         }
-        catch { return null; }
+        catch (Exception ex) { LastError = Trim(ex.Message); return null; }
     }
 
     /// <summary>Lists model ids from an OpenAI-compatible endpoint (`GET {baseUrl}/models`).
@@ -221,7 +234,8 @@ public static class LlmClient
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(cfg.BaseUrl) || string.IsNullOrWhiteSpace(cfg.Model)) return null;
+            if (string.IsNullOrWhiteSpace(cfg.BaseUrl) || string.IsNullOrWhiteSpace(cfg.Model))
+            { LastError = "no base URL / model set"; return null; }
             string url = cfg.BaseUrl.TrimEnd('/') + "/chat/completions";
 
             var body = new
@@ -241,7 +255,7 @@ public static class LlmClient
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(cfg.TimeoutSeconds * 1000);
             using var resp = await Http.SendAsync(req, cts.Token);
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode) { LastError = $"HTTP {(int)resp.StatusCode}"; return null; }
 
             string json = await resp.Content.ReadAsStringAsync(cts.Token);
             using var doc = JsonDocument.Parse(json);
@@ -249,9 +263,10 @@ public static class LlmClient
                 choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0 &&
                 choices[0].TryGetProperty("message", out var msg) &&
                 msg.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
-                return content.GetString();
+            { LastError = null; return content.GetString(); }
+            LastError = "empty response from the model";
             return null;
         }
-        catch { return null; }
+        catch (Exception ex) { LastError = Trim(ex.Message); return null; }
     }
 }

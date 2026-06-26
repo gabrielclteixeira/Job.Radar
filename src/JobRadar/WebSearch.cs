@@ -21,6 +21,19 @@ public static class WebSearch
 
     public static async Task<List<WebResult>> SearchAsync(string query, int max = 6, CancellationToken ct = default)
     {
+        // DuckDuckGo's HTML endpoint throttles repeated scraping and then returns an empty page.
+        // One retry after a short pause rides out most transient throttling.
+        var list = await AttemptAsync(query, max, ct);
+        if (list.Count == 0)
+        {
+            try { await Task.Delay(700, ct); } catch { }
+            list = await AttemptAsync(query, max, ct);
+        }
+        return list;
+    }
+
+    private static async Task<List<WebResult>> AttemptAsync(string query, int max, CancellationToken ct)
+    {
         var list = new List<WebResult>();
         try
         {

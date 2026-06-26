@@ -11,6 +11,12 @@ public static class JSearchClient
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(40) };
 
+    /// <summary>RapidAPI rate-limit from the most recent /search response (-1 = unknown). For the Usage view.</summary>
+    public static (int Remaining, int Limit) LastQuota { get; private set; } = (-1, -1);
+
+    private static int Header(HttpResponseMessage r, string name)
+        => r.Headers.TryGetValues(name, out var vals) && int.TryParse(System.Linq.Enumerable.FirstOrDefault(vals), out var n) ? n : -1;
+
     public static async Task<List<RawJob>> FetchJobsAsync(
         JSearchConfig cfg, IEnumerable<string> queries, string location,
         IProgress<string>? log = null, CancellationToken ct = default)
@@ -34,6 +40,9 @@ public static class JSearchClient
 
             log?.Report(Loc.Instance.T("jsearch.fetching"));
             using var resp = await Http.SendAsync(req, ct);
+            // Capture the monthly request quota from RapidAPI's rate-limit headers.
+            int remaining = Header(resp, "x-ratelimit-requests-remaining"), limit = Header(resp, "x-ratelimit-requests-limit");
+            if (remaining >= 0 || limit >= 0) LastQuota = (remaining, limit);
             if (!resp.IsSuccessStatusCode)
             {
                 log?.Report(Loc.Instance.F("jsearch.failed", (int)resp.StatusCode));

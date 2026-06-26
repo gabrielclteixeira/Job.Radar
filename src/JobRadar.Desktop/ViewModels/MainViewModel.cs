@@ -338,6 +338,46 @@ public partial class MainViewModel : ObservableObject
     public bool HasUpdatePage => !string.IsNullOrWhiteSpace(UpdatePageUrl);
     partial void OnUpdatePageUrlChanged(string value) => OnPropertyChanged(nameof(HasUpdatePage));
 
+    // usage & limits
+    [ObservableProperty] private string _apifyUsage = "";
+    [ObservableProperty] private string _jSearchUsage = "";
+    [ObservableProperty] private string _llmUsage = "";
+    [ObservableProperty] private bool _checkingUsage;
+
+    private string ComposeJSearchUsage()
+    {
+        int rem = _cfg.JSearch.LastRemaining, lim = _cfg.JSearch.LastLimit;
+        if (rem < 0 && lim < 0) return L("usage.jsearch.none");
+        return Loc.Instance.F("usage.jsearch", rem >= 0 ? rem.ToString() : "?", lim >= 0 ? lim.ToString() : "?");
+    }
+
+    private void PopulateUsage()
+    {
+        JSearchUsage = ComposeJSearchUsage();
+        LlmUsage = UseLocalModel ? L("usage.local") : L("usage.claude");
+        ApifyUsage = "";
+    }
+
+    /// <summary>Refreshes the usage lines: a free Apify usage call + the last-known JSearch quota.</summary>
+    [RelayCommand]
+    private async Task CheckUsage()
+    {
+        if (CheckingUsage) return;
+        CheckingUsage = true;
+        try
+        {
+            JSearchUsage = ComposeJSearchUsage();
+            LlmUsage = UseLocalModel ? L("usage.local") : L("usage.claude");
+            if (_cfg.Apify.Enabled && !string.IsNullOrWhiteSpace(_cfg.Apify.Token))
+            {
+                var u = await ApifyClient.GetUsageAsync(_cfg.Apify.Token);
+                ApifyUsage = string.IsNullOrWhiteSpace(u) ? L("usage.unknown") : u;
+            }
+            else ApifyUsage = L("usage.unknown");
+        }
+        finally { CheckingUsage = false; }
+    }
+
     /// <summary>Validates the Apify token (free) and auto-fills the actor dropdown from the store.</summary>
     [RelayCommand]
     private async Task ProbeApify()
@@ -691,6 +731,7 @@ public partial class MainViewModel : ObservableObject
         UpdateStatus = ""; UpdatePageUrl = "";
         InstalledModels.Clear(); OnPropertyChanged(nameof(HasInstalledModels));
         if (UseLocalModel) _ = RefreshInstalledModels();
+        PopulateUsage();
         Status = "";
         ShowOnly(settings: true);
     }
@@ -843,7 +884,7 @@ public partial class MainViewModel : ObservableObject
 
     // ---- helpers ----
     /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
-    private Task<CompanyBrief?> ResearchCompanyAsync(JobEntity j)
+    private Task<(CompanyBrief? brief, string? error)> ResearchCompanyAsync(JobEntity j)
         => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location);
 
     private void AddStreamed(JobEntity j)
@@ -865,6 +906,14 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Once the pipeline finishes, settle the final order (streaming already populated the list).</summary>
     private void FinalizeResults(PipelineResult result)
     {
+        // Capture the JSearch quota seen during this search (for the Usage & limits view).
+        var q = JSearchClient.LastQuota;
+        if (_cfg.JSearch.Enabled && (q.Remaining >= 0 || q.Limit >= 0))
+        {
+            _cfg.JSearch.LastRemaining = q.Remaining; _cfg.JSearch.LastLimit = q.Limit;
+            _cfg.JSearch.LastChecked = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+            SaveJSearchSettings();
+        }
         ResultsTitle = result.Demo ? L("title.demo") : L("title.jobs");
         _all = _all.Count == 0 && result.Jobs.Count > 0
             ? result.Jobs.Select(j => new JobVm(j, ResearchCompanyAsync)).ToList()

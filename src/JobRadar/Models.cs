@@ -85,6 +85,10 @@ public class JSearchConfig
     public string ApiKey { get; set; } = "";                    // RapidAPI key (secret)
     public string ApiHost { get; set; } = "jsearch.p.rapidapi.com";
     public int MaxItems { get; set; } = 20;                     // cap results → cap quota use
+    // Last RapidAPI rate-limit headers seen (for the Usage & limits view); -1 = unknown.
+    public int LastRemaining { get; set; } = -1;
+    public int LastLimit { get; set; } = -1;
+    public string LastChecked { get; set; } = "";
 }
 
 /// <summary>A locally installed Ollama model with display metadata (from /api/tags).</summary>

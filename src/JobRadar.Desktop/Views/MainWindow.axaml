@@ -809,6 +809,31 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Usage & limits -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Classes="fld" Text="{l:T usage.section}" Margin="0" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Classes="link" Command="{Binding CheckUsageCommand}" IsEnabled="{Binding !CheckingUsage}">
+                                    <StackPanel Orientation="Horizontal" Spacing="5"><ui:SymbolIcon Symbol="Refresh" FontSize="13"/><TextBlock Text="{l:T usage.refresh}"/></StackPanel>
+                                </Button>
+                            </Grid>
+                            <Grid ColumnDefinitions="96,*" Margin="0,2,0,0">
+                                <TextBlock Grid.Column="0" Text="Apify" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextSoft}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding ApifyUsage}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" FontFamily="{DynamicResource MonoFont}"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="96,*">
+                                <TextBlock Grid.Column="0" Text="JSearch" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextSoft}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding JSearchUsage}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="96,*">
+                                <TextBlock Grid.Column="0" Text="{l:T settings.aiEngine}" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextSoft}" TextWrapping="Wrap"/>
+                                <TextBlock Grid.Column="1" Text="{Binding LlmUsage}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                            </Grid>
+                            <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T usage.hint}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- About / update -->
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel Spacing="8">
