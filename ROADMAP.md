@@ -17,6 +17,12 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
 - **Company research** — per-job button that web-searches employer reviews + comparable salaries (key-free,
   DuckDuckGo) and summarises them with your model. Works with local models too — they summarise the fetched
   snippets (the search step provides the web data the offline model can't).
+- **Improvement (Evoluir)** — a personalised career-growth plan from your profile + the jobs the radar has
+  already scored, powered by **multi-step deep research** (seed searches → the model picks angles to dig into →
+  targeted searches → synthesis). Returns strengths, skill gaps with actions, target roles, a **salary
+  trajectory** (now → 12–24 months) and time-boxed next steps — with sources. Key-free search, BYOK.
+- **Rebranding** — settled product identity: the **Job Radar** name, the concentric-ring radar mark used as
+  logo + app icon, and the "mission control" palette.
 
 ---
 
@@ -39,22 +45,15 @@ A dedicated area to **create and improve a CV**, not just consume one.
   - **AI-assisted refinement**: rewrite a bullet, tighten the summary, tailor the CV to a specific job —
     with the user always in control of the final text.
 
-### 2. Improvement — career growth & planning
+### 2. Improvement — deepen it
 
-A space focused on *getting better positioned*, not just finding listings.
-
-- **Generate a career plan** from the profile + the job market the app already sees
-  (skill gaps, target roles, salary trajectory, suggested next steps).
-- **Deep research** powering the plan: multi-step web research across companies, salaries, in-demand
-  skills and hiring trends — synthesized into the plan, with sources. *(This area requires deep search.)*
-- Track progress over time (revisit and update the plan as the profile and market change).
+The career-plan area shipped (see above). Next for it: **track progress over time** — save successive plans
+and surface what changed as the profile and market move, so the plan becomes a living document.
 
 ---
 
 ## 💡 Backlog / ideas
 
-- **Rebranding** — pick a real product name and identity (logo, colours, icon) to replace the working
-  title "Job Radar".
 - **Premium UI polish** — elevate the front-end to feel like a premium, polished product: refined visual
   design, smooth transitions/motion, consistent spacing & iconography, and proper empty/loading/error states.
 - **Local-model manager** — a UI section to pick and manage the local model, runtime-agnostic. The app

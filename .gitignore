@@ -25,6 +25,8 @@ llm-settings.json
 ui-settings.json
 # Apify connector settings — contains a secret API token (machine-local)
 apify-settings.json
+# saved career plan (built from the personal profile, machine-local)
+career-plan.json
 
 # app / dev scratch
 app-err.log

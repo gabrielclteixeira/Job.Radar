@@ -38,6 +38,9 @@ A native desktop app that reads your CV, builds your profile with AI, then scans
 - 🏢 **Company research** — a key-free web search gathers reviews + comparable salaries; your model
   summarises them into a briefing with **colour-coded pros/cons** and a **personalized salary expectation**
   for your level — with sources.
+- 🚩 **Evoluir (career plan)** — **multi-step deep research** (the model picks angles to dig into, then
+  searches them) turns your profile + the jobs already scored into a growth plan: strengths, skill gaps with
+  actions, target roles, a **salary trajectory** (now → 12–24 months) and time-boxed next steps, with sources.
 - 📄 **CV PDF + export** — generate a styled one-page CV from your profile; export results to CSV / HTML / PDF.
 - 🔗 **LinkedIn** — open a pre-filled LinkedIn Jobs search, plus an optional (paid, opt-in) **Apify**
   connector with one-click token validation, actor discovery and clear cost warnings.
@@ -70,7 +73,7 @@ A deliberate **"mission control"** identity built around the product's name.
 │  (Go)      │  jobs     │   (.NET library)     │   results   │  (Avalonia / MVVM)    │
 │ concurrent │           │  EF Core / SQLite    │ ──────────► │  sidebar shell · CV   │
 │ ingestion  │           │  filter + score      │             │  profile · Vagas ·    │
-└────────────┘           │  LLM (CLI or local)  │             │  Definições · export  │
+└────────────┘           │  LLM (CLI or local)  │             │  Evoluir · export     │
                          │  PdfPig · WebSearch  │             └──────────────────────┘
                          └──────────────────────┘
 ```
@@ -120,9 +123,8 @@ Point `provider` at `openai` and a local runtime — e.g. **LM Studio** (`http:/
 
 ## Roadmap
 
-Next up: a **CV Studio** (refine the CV, import from LinkedIn/GitHub), an **Improvement** area (AI career
-plan with deep research), a local-model manager, premium UI polish and one-click installers.
-See [`ROADMAP.md`](ROADMAP.md).
+Next up: a **CV Studio** (refine the CV, import from LinkedIn/GitHub), a local-model manager, saved searches
+with alerts, and one-click installers. See [`ROADMAP.md`](ROADMAP.md).
 
 ## License
 

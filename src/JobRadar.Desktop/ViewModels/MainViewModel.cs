@@ -15,6 +15,7 @@ public partial class MainViewModel : ObservableObject
     private readonly string _llmSettingsPath;
     private readonly string _uiSettingsPath;
     private readonly string _apifySettingsPath;
+    private readonly string _planPath;
     private AppConfig _cfg;
 
     /// <summary>Set by the view: shows a cost-confirmation dialog before a paid (Apify) search.</summary>
@@ -30,12 +31,14 @@ public partial class MainViewModel : ObservableObject
         _llmSettingsPath = Path.Combine(_root, "llm-settings.json");
         _uiSettingsPath = Path.Combine(_root, "ui-settings.json");
         _apifySettingsPath = Path.Combine(_root, "apify-settings.json");
+        _planPath = Path.Combine(_root, "career-plan.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
         ApplyApifyOverride();
         LoadUiSettings();
         ApplyTheme();
         LoadSavedProfile();
+        LoadPlan();
     }
 
     // ---- navigation (sidebar) ----
@@ -43,11 +46,13 @@ public partial class MainViewModel : ObservableObject
     public bool IsNavHome => Nav == "home";
     public bool IsNavProfile => Nav == "profile";
     public bool IsNavResults => Nav == "results";
+    public bool IsNavImprove => Nav == "improve";
     public bool IsNavSettings => Nav == "settings";
     partial void OnNavChanged(string value)
     {
         OnPropertyChanged(nameof(IsNavHome)); OnPropertyChanged(nameof(IsNavProfile));
-        OnPropertyChanged(nameof(IsNavResults)); OnPropertyChanged(nameof(IsNavSettings));
+        OnPropertyChanged(nameof(IsNavResults)); OnPropertyChanged(nameof(IsNavImprove));
+        OnPropertyChanged(nameof(IsNavSettings));
     }
 
     [RelayCommand]
@@ -60,6 +65,7 @@ public partial class MainViewModel : ObservableObject
                 if (_all.Count == 0 && !IsScoring) _ = ViewJobs();
                 else ShowOnly(results: true);
                 break;
+            case "improve": ShowOnly(improve: true); break;  // career-growth area
             case "settings": OpenSettings(); break;          // loads settings fields + shows
             default: ShowOnly(welcome: true); break;          // home
         }
@@ -116,6 +122,74 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _scoringStatus = "";
     [ObservableProperty] private bool _hasJobs;
     [ObservableProperty] private bool _isSettings;
+    [ObservableProperty] private bool _isImprove;
+
+    // ---- improve (career plan) ----
+    [ObservableProperty] private CareerPlanResult? _plan;
+    [ObservableProperty] private bool _isPlanning;
+    [ObservableProperty] private string _planStatus = "";
+    [ObservableProperty] private string _planError = "";
+    public bool HasPlan => Plan is not null;
+    public bool ShowGenerateIntro => !HasPlan && !IsPlanning;
+    partial void OnPlanChanged(CareerPlanResult? value)
+    {
+        OnPropertyChanged(nameof(HasPlan)); OnPropertyChanged(nameof(ShowGenerateIntro));
+    }
+    partial void OnIsPlanningChanged(bool value) => OnPropertyChanged(nameof(ShowGenerateIntro));
+
+    [RelayCommand]
+    private async Task GeneratePlan()
+    {
+        if (IsPlanning) return;
+        IsPlanning = true; PlanError = ""; Plan = null;
+        PlanStatus = "A preparar a pesquisa…";
+        var progress = new Progress<string>(m => Dispatcher.UIThread.Post(() => PlanStatus = m));
+        try
+        {
+            var result = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), progress);
+            if (result is null) PlanError = "Não consegui reunir informação suficiente. Tenta outra vez.";
+            else { Plan = result; SavePlan(); }
+        }
+        catch (Exception ex) { PlanError = "Erro: " + ex.Message; }
+        finally { IsPlanning = false; }
+    }
+
+    [RelayCommand]
+    private void OpenUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = url, UseShellExecute = true }); }
+        catch { /* opening is best-effort */ }
+    }
+
+    /// <summary>A compact summary of the jobs already scored, fed to the plan as market context.</summary>
+    private string MarketContext()
+    {
+        if (_all.Count == 0) return "";
+        var top = _all.OrderByDescending(v => v.Score).Take(12).ToList();
+        var titles = top.Select(v => $"{v.Title} @ {v.Company} (score {v.Score})");
+        int strong = _all.Count(v => v.Score >= 70);
+        return $"{_all.Count} vagas vistas, {strong} com forte fit (≥70). Topo:\n- " + string.Join("\n- ", titles);
+    }
+
+    private void LoadPlan()
+    {
+        try
+        {
+            if (!File.Exists(_planPath)) return;
+            var p = JsonSerializer.Deserialize<CareerPlanResult>(File.ReadAllText(_planPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (p is not null) Plan = p;
+        }
+        catch { /* ignore a bad plan file */ }
+    }
+
+    private void SavePlan()
+    {
+        if (Plan is null || _isDemoProfile) return; // don't persist a plan built from the sample profile
+        try { File.WriteAllText(_planPath, JsonSerializer.Serialize(Plan, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+    }
 
     // ---- search & filters (Vagas) ----
     [ObservableProperty] private string _searchText = "";
@@ -578,10 +652,10 @@ public partial class MainViewModel : ObservableObject
             : "Sem vagas para mostrar. Usa “Procurar vagas” para fazer um varrimento, ou “Ver vagas” para as guardadas.";
     }
 
-    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false)
+    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false, bool improve = false)
     {
-        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings;
-        Nav = settings ? "settings" : results ? "results" : profile ? "profile" : "home";
+        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings; IsImprove = improve;
+        Nav = settings ? "settings" : improve ? "improve" : results ? "results" : profile ? "profile" : "home";
     }
 
     /// <summary>Loads the LLM backend override saved from the Settings screen (machine-local, gitignored).</summary>
