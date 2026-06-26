@@ -41,6 +41,11 @@ public static class LlmClient
             psi.ArgumentList.Add(prompt);
             psi.ArgumentList.Add("--output-format");
             psi.ArgumentList.Add("json");
+            if (!string.IsNullOrWhiteSpace(cfg.Model)) // empty → CLI's configured default
+            {
+                psi.ArgumentList.Add("--model");
+                psi.ArgumentList.Add(cfg.Model);
+            }
 
             using var p = Process.Start(psi);
             if (p is null) return null;
@@ -66,6 +71,33 @@ public static class LlmClient
             return raw;
         }
         catch { return null; }
+    }
+
+    /// <summary>Lists model ids from an OpenAI-compatible endpoint (`GET {baseUrl}/models`).
+    /// Works for Ollama and LM Studio. Returns an empty list if the runtime isn't reachable.</summary>
+    public static async Task<List<string>> ListOpenAiModelsAsync(string baseUrl, string? apiKey, CancellationToken ct = default)
+    {
+        var models = new List<string>();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl)) return models;
+            string url = baseUrl.TrimEnd('/') + "/models";
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!string.IsNullOrWhiteSpace(apiKey))
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + apiKey);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(10_000);
+            using var resp = await Http.SendAsync(req, cts.Token);
+            if (!resp.IsSuccessStatusCode) return models;
+            string json = await resp.Content.ReadAsStringAsync(cts.Token);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+                foreach (var m in data.EnumerateArray())
+                    if (m.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+                        models.Add(id.GetString()!);
+        }
+        catch { /* runtime down / unreachable — return what we have */ }
+        return models;
     }
 
     /// <summary>POSTs to an OpenAI-compatible chat-completions endpoint and returns the message content.</summary>

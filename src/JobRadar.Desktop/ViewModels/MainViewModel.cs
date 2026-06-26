@@ -48,6 +48,16 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _llmApiKey = "";
     [ObservableProperty] private string _claudeExe = "claude";
 
+    public ObservableCollection<string> ModelOptions { get; } = new();
+    private const string DefaultClaudeModel = "(predefinido)";   // maps to empty → CLI's own default
+    private static readonly string[] ClaudeModels = { DefaultClaudeModel, "sonnet", "opus", "haiku" };
+
+    partial void OnUseLocalModelChanged(bool value)
+    {
+        LlmModel = value ? "" : DefaultClaudeModel; // local needs an explicit model; Claude defaults
+        RefreshModelOptions();
+    }
+
     // ---- profile form ----
     [ObservableProperty] private string _name = "";
     [ObservableProperty] private string _summary = "";
@@ -207,9 +217,11 @@ public partial class MainViewModel : ObservableObject
     {
         UseLocalModel = string.Equals(_cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase);
         LlmBaseUrl = _cfg.Claude.BaseUrl;
-        LlmModel = _cfg.Claude.Model;
         LlmApiKey = _cfg.Claude.ApiKey;
         ClaudeExe = string.IsNullOrWhiteSpace(_cfg.Claude.Exe) ? "claude" : _cfg.Claude.Exe;
+        // Set model AFTER UseLocalModel so the change-handler doesn't clobber it; map empty Claude → label.
+        LlmModel = (!UseLocalModel && string.IsNullOrWhiteSpace(_cfg.Claude.Model)) ? DefaultClaudeModel : _cfg.Claude.Model;
+        RefreshModelOptions();
         Status = "";
         ShowOnly(settings: true);
     }
@@ -219,12 +231,41 @@ public partial class MainViewModel : ObservableObject
     {
         _cfg.Claude.Provider = UseLocalModel ? "openai" : "claude-cli";
         _cfg.Claude.BaseUrl = string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
-        _cfg.Claude.Model = LlmModel.Trim();
+        _cfg.Claude.Model = LlmModel == DefaultClaudeModel ? "" : (LlmModel ?? "").Trim();
         _cfg.Claude.ApiKey = LlmApiKey.Trim();
         _cfg.Claude.Exe = string.IsNullOrWhiteSpace(ClaudeExe) ? "claude" : ClaudeExe.Trim();
         SaveLlmSettings();
         Status = "Definições guardadas.";
         ShowOnly(welcome: true);
+    }
+
+    /// <summary>Populates the model dropdown: curated aliases for Claude CLI, fetched list for local.</summary>
+    private void RefreshModelOptions()
+    {
+        ModelOptions.Clear();
+        if (!UseLocalModel)
+            foreach (var m in ClaudeModels) ModelOptions.Add(m);
+        if (!string.IsNullOrWhiteSpace(LlmModel) && !ModelOptions.Contains(LlmModel)) ModelOptions.Add(LlmModel);
+        if (string.IsNullOrWhiteSpace(LlmModel) && !UseLocalModel) LlmModel = DefaultClaudeModel;
+    }
+
+    /// <summary>For local providers, fetch installed models from the runtime (LM Studio / Ollama).</summary>
+    [RelayCommand]
+    private async Task LoadModels()
+    {
+        if (!UseLocalModel) { RefreshModelOptions(); return; }
+        Busy = true; Status = "A obter modelos do runtime local…";
+        try
+        {
+            var models = await LlmClient.ListOpenAiModelsAsync(LlmBaseUrl, LlmApiKey);
+            string current = LlmModel;
+            ModelOptions.Clear();
+            foreach (var m in models) ModelOptions.Add(m);
+            if (!string.IsNullOrWhiteSpace(current) && !ModelOptions.Contains(current)) ModelOptions.Add(current);
+            if (models.Count == 0) Status = "Sem modelos — o runtime local está a correr no Base URL indicado?";
+            else { Status = $"{models.Count} modelo(s) encontrados."; if (string.IsNullOrWhiteSpace(LlmModel)) LlmModel = models[0]; }
+        }
+        finally { Busy = false; }
     }
 
     /// <summary>Opens LinkedIn Jobs in the default browser, pre-filled from the profile (ToS-safe: no scraping).</summary>

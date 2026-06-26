@@ -272,7 +272,7 @@
                             <TextBlock Classes="sub" TextWrapping="Wrap"
                                        Text="Claude CLI usa a tua subscrição (BYOK). Modelo local usa um runtime compatível com OpenAI (LM Studio, Ollama, llama.cpp) — corre offline, sem subscrição."/>
 
-                            <!-- Local model fields -->
+                            <!-- Local-only connection -->
                             <StackPanel IsVisible="{Binding UseLocalModel}" Spacing="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,2">
                                     <TextBlock Classes="sub" VerticalAlignment="Center" Text="Presets:"/>
@@ -281,8 +281,6 @@
                                 </StackPanel>
                                 <TextBlock Classes="fld" Text="BASE URL"/>
                                 <TextBox Text="{Binding LlmBaseUrl}" Watermark="http://localhost:1234/v1"/>
-                                <TextBlock Classes="fld" Text="MODELO"/>
-                                <TextBox Text="{Binding LlmModel}" Watermark="qwen2.5-7b-instruct  /  llama3.1"/>
                                 <TextBlock Classes="fld" Text="API KEY (opcional)"/>
                                 <TextBox Text="{Binding LlmApiKey}" PasswordChar="•"/>
                             </StackPanel>
@@ -291,6 +289,19 @@
                             <StackPanel IsVisible="{Binding !UseLocalModel}" Spacing="4">
                                 <TextBlock Classes="fld" Text="EXECUTÁVEL CLAUDE (PATH)"/>
                                 <TextBox Text="{Binding ClaudeExe}" Watermark="claude"/>
+                            </StackPanel>
+
+                            <!-- Model picker (both engines) -->
+                            <StackPanel Spacing="4">
+                                <TextBlock Classes="fld" Text="MODELO"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <ComboBox Grid.Column="0" HorizontalAlignment="Stretch"
+                                              ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding LlmModel}"/>
+                                    <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Content="🔄 Carregar"
+                                            Command="{Binding LoadModelsCommand}" IsVisible="{Binding UseLocalModel}" IsEnabled="{Binding !Busy}"/>
+                                </Grid>
+                                <TextBlock Classes="sub" FontSize="11" IsVisible="{Binding UseLocalModel}"
+                                           Text="Carrega a lista a partir do runtime local (tem de estar a correr no Base URL)."/>
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
