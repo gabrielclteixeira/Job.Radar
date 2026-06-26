@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:JobRadar.Desktop.ViewModels"
+        xmlns:md="https://github.com/whistyun/Markdown.Avalonia"
         x:Class="JobRadar.Desktop.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Width="1240" Height="860" MinWidth="780" MinHeight="560"
@@ -263,7 +264,7 @@
                                         </StackPanel>
                                         <Border Background="#FFFDF5" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="10"
                                                 IsVisible="{Binding ResearchText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                            <TextBlock Text="{Binding ResearchText}" FontSize="12" Foreground="#33323B" TextWrapping="Wrap"/>
+                                            <md:MarkdownScrollViewer Markdown="{Binding ResearchText}" MaxHeight="440"/>
                                         </Border>
                                     </StackPanel>
                                 </Expander>

@@ -28,15 +28,15 @@ public static class CompanyResearch
         for (int i = 0; i < results.Count; i++)
             sb.AppendLine($"[{i + 1}] {results[i].Title}\n{results[i].Snippet}\n{results[i].Url}\n");
 
-        // 2) Ask the model to synthesise from the snippets only.
+        // 2) Ask the model to synthesise from the snippets only — as Markdown for readability.
         string prompt =
 $@"You are given web search snippets about an employer. Using ONLY this information (do not invent),
-write a SHORT, honest briefing for a candidate considering this company. Plain text, no markdown headers.
-Cover, if the snippets support it:
-- Reputation / employee reviews: a few concrete pros and cons.
-- Comparable salary range for the role (give numbers/currency when present; say if unknown).
-- A one-line bottom line.
-Cite sources inline as [n]. If the snippets are thin or off-topic, say so plainly rather than guessing.
+write a SHORT, honest briefing for a candidate considering this company. Format it as **Markdown**:
+- Use bold sub-headings: **Reputation**, **Salary**, **Bottom line**.
+- Under Reputation, a bullet list of concrete pros and cons.
+- Under Salary, the comparable range for the role (numbers/currency when present; say if unknown).
+- Bottom line: one sentence.
+Cite sources inline as [n]. Keep it tight. If the snippets are thin or off-topic, say so plainly.
 
 Company: {company}
 Role: {role}
@@ -48,9 +48,17 @@ Location: {location ?? "—"}
         string? summary = await LlmClient.CompleteAsync(llm, prompt, ct);
         if (string.IsNullOrWhiteSpace(summary)) return null;
 
+        // Append clickable Markdown sources.
         var outp = new StringBuilder(summary.Trim());
-        outp.AppendLine().AppendLine().Append("Fontes:");
-        for (int i = 0; i < results.Count; i++) outp.AppendLine().Append($"[{i + 1}] {results[i].Url}");
+        outp.AppendLine().AppendLine().AppendLine("**Fontes**").AppendLine();
+        for (int i = 0; i < results.Count; i++)
+            outp.AppendLine($"{i + 1}. [{Host(results[i].Url)}]({results[i].Url})");
         return outp.ToString();
+    }
+
+    private static string Host(string url)
+    {
+        try { return new Uri(url).Host.Replace("www.", ""); }
+        catch { return url; }
     }
 }
