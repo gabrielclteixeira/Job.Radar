@@ -59,6 +59,12 @@ A space focused on *getting better positioned*, not just finding listings.
   setting; this adds: detect the running runtime, list installed models, and select the active one. Include
   an **optional in-app installer for Ollama** (its `/api/pull` API streams download progress); LM Studio /
   llama.cpp users manage models in their own tools and just point the app at their endpoint.
+- **LinkedIn aggregation** — LinkedIn isn't scraped (ToS). Today: a "Procurar no LinkedIn" button opens
+  LinkedIn Jobs in the browser pre-filled from the profile, plus the optional `linkedin-jobs.json` merge.
+  Explore a ToS-respecting way to pull results into the app (e.g. a user-run browser snippet/export, or a
+  Playwright-assisted pass where the **user logs in** — best-effort, opt-in, given LinkedIn's bot defenses).
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.
 - A non-tech sample dataset to showcase the field-agnostic scoring.
 - Saved searches and change alerts (new strong-fit jobs since last run).
+- **One-click installer for all platforms** — a single packaged installer per OS (Windows, Linux, macOS)
+  so non-technical users don't need the .NET SDK / Go toolchain. *(Later — closer to release.)*

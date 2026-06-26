@@ -227,6 +227,20 @@ public partial class MainViewModel : ObservableObject
         ShowOnly(welcome: true);
     }
 
+    /// <summary>Opens LinkedIn Jobs in the default browser, pre-filled from the profile (ToS-safe: no scraping).</summary>
+    [RelayCommand]
+    private void OpenLinkedIn()
+    {
+        string kw = _profile.JobTitles.FirstOrDefault() ?? _profile.Field;
+        if (string.IsNullOrWhiteSpace(kw)) kw = "software developer";
+        string url = $"https://www.linkedin.com/jobs/search/?keywords={Uri.EscapeDataString(kw)}";
+        string loc = _profile.Locations.FirstOrDefault() ?? "";
+        if (!string.IsNullOrWhiteSpace(loc)) url += $"&location={Uri.EscapeDataString(loc)}";
+        if (_profile.Remote) url += "&f_WT=2"; // remote filter
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = url, UseShellExecute = true }); }
+        catch { /* best-effort */ }
+    }
+
     [RelayCommand] private void CloseSettings() => ShowOnly(welcome: true);
     [RelayCommand] private void UseLmStudioPreset() { UseLocalModel = true; LlmBaseUrl = "http://localhost:1234/v1"; }
     [RelayCommand] private void UseOllamaPreset() { UseLocalModel = true; LlmBaseUrl = "http://localhost:11434/v1"; }

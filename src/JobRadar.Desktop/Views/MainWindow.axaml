@@ -187,6 +187,8 @@
                         <TextBlock Classes="sub" VerticalAlignment="Center" Text="Score mín."/>
                         <ComboBox ItemsSource="{Binding MinScoreOptions}" SelectedItem="{Binding MinScore}" Width="90"/>
                         <Button Classes="ghost" Content="⬇ Exportar (CSV+PDF)" Command="{Binding ExportCommand}" IsEnabled="{Binding !Busy}"/>
+                        <Button Classes="ghost" Content="🔗 Procurar no LinkedIn" Command="{Binding OpenLinkedInCommand}"
+                                ToolTip.Tip="Abre o LinkedIn Jobs no browser com a tua pesquisa pré-preenchida"/>
                         <Button Classes="ghost" Content="Novo CV" Command="{Binding ResetCommand}"/>
                     </StackPanel>
                     <TextBlock Classes="sub" Text="{Binding ExportMsg}" IsVisible="{Binding ExportMsg, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
