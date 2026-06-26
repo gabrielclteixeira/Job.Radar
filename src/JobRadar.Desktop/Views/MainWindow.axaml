@@ -256,7 +256,15 @@
                                         <Border Background="#F4F2FC" CornerRadius="6" Padding="9" IsVisible="{Binding HasExplanation}">
                                             <TextBlock Text="{Binding Explanation}" FontFamily="Cascadia Code,Consolas,monospace" FontSize="11" Foreground="#5C6370" TextWrapping="Wrap"/>
                                         </Border>
-                                        <Button Classes="ghost" Content="Abrir vaga ↗" Command="{Binding OpenCommand}" HorizontalAlignment="Left"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <Button Classes="ghost" Content="Abrir vaga ↗" Command="{Binding OpenCommand}"/>
+                                            <Button Classes="ghost" Content="🔎 Pesquisar empresa" Command="{Binding ResearchCommand}" IsEnabled="{Binding !IsResearching}"
+                                                    ToolTip.Tip="Procura reviews e salários comparáveis na web e resume com o teu modelo"/>
+                                        </StackPanel>
+                                        <Border Background="#FFFDF5" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="6" Padding="10"
+                                                IsVisible="{Binding ResearchText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                            <TextBlock Text="{Binding ResearchText}" FontSize="12" Foreground="#33323B" TextWrapping="Wrap"/>
+                                        </Border>
                                     </StackPanel>
                                 </Expander>
                             </DataTemplate>

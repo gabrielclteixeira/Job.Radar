@@ -387,9 +387,12 @@ public partial class MainViewModel : ObservableObject
 
     // ---- helpers ----
     /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
+    private Task<string?> ResearchCompanyAsync(JobEntity j)
+        => CompanyResearch.ResearchAsync(_cfg.Claude, j.Company, j.Title, j.Location);
+
     private void AddStreamed(JobEntity j)
     {
-        var vm = new JobVm(j);
+        var vm = new JobVm(j, ResearchCompanyAsync);
         int idx = _all.FindIndex(x => x.Score < vm.Score);
         if (idx < 0) _all.Add(vm); else _all.Insert(idx, vm);
 
@@ -407,7 +410,7 @@ public partial class MainViewModel : ObservableObject
     {
         ResultsTitle = result.Demo ? "Vagas para ti (demo)" : "Vagas para ti";
         _all = _all.Count == 0 && result.Jobs.Count > 0
-            ? result.Jobs.Select(j => new JobVm(j)).ToList()
+            ? result.Jobs.Select(j => new JobVm(j, ResearchCompanyAsync)).ToList()
             : _all.OrderByDescending(v => v.Score).ToList();
         ApplyFilter();
     }

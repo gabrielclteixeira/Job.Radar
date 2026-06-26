@@ -14,6 +14,9 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
 - **Pluggable LLM backend** — Claude CLI or any OpenAI-compatible local model (Ollama, LM Studio,
   llama.cpp) via a `provider` setting; runs fully offline with no Claude subscription.
 - **Generate a CV PDF** from the profile (CV Studio, first step) — one-page styled PDF via the HTML→PDF path.
+- **Company research** — per-job button that web-searches employer reviews + comparable salaries (key-free,
+  DuckDuckGo) and summarises them with your model. Works with local models too — they summarise the fetched
+  snippets (the search step provides the web data the offline model can't).
 
 ---
 
@@ -63,10 +66,8 @@ A space focused on *getting better positioned*, not just finding listings.
   LinkedIn Jobs in the browser pre-filled from the profile, plus the optional `linkedin-jobs.json` merge.
   Explore a ToS-respecting way to pull results into the app (e.g. a user-run browser snippet/export, or a
   Playwright-assisted pass where the **user logs in** — best-effort, opt-in, given LinkedIn's bot defenses).
-- **Company research mode** — for a given job, research the employer: reviews/reputation and comparable
-  salaries, summarised next to the listing. Needs web access: the **Claude CLI can web-search**, but a
-  **local model is offline** and can't browse — so for local models this means adding a web-search step
-  that feeds results to the model (or showing it only when the Claude CLI engine is selected).
+- **Deeper company research** — build on the shipped company-research step: more/structured sources,
+  optional use of the Claude CLI's native web search, and caching results per company.
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.
 - A non-tech sample dataset to showcase the field-agnostic scoring.
 - Saved searches and change alerts (new strong-fit jobs since last run).

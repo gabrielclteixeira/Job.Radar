@@ -2,19 +2,43 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Windows.Input;
 using Avalonia.Media;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace JobRadar.Desktop.ViewModels;
 
 /// <summary>Presentation wrapper around a scored <see cref="JobEntity"/>.</summary>
-public class JobVm
+public partial class JobVm : ObservableObject
 {
     private readonly JobEntity _j;
+    private readonly Func<JobEntity, Task<string?>>? _research;
 
-    public JobVm(JobEntity j)
+    public JobVm(JobEntity j, Func<JobEntity, Task<string?>>? research = null)
     {
         _j = j;
+        _research = research;
         OpenCommand = new RelayCommand(Open);
+    }
+
+    [ObservableProperty] private string _researchText = "";
+    [ObservableProperty] private bool _isResearching;
+
+    /// <summary>Researches the employer (reviews + comparable salaries) via the web-search step.</summary>
+    [RelayCommand]
+    private async Task Research()
+    {
+        if (_research is null || IsResearching) return;
+        IsResearching = true;
+        ResearchText = "A pesquisar a empresa…";
+        try
+        {
+            var r = await _research(_j);
+            ResearchText = string.IsNullOrWhiteSpace(r)
+                ? "Não consegui obter informação (sem resultados ou modelo indisponível)."
+                : r!;
+        }
+        catch { ResearchText = "Falhou a pesquisa da empresa."; }
+        finally { IsResearching = false; }
     }
 
     public JobEntity Entity => _j;
