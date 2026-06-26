@@ -110,7 +110,7 @@
                     <TextBlock Text="Job Radar" FontSize="38" FontWeight="Bold" HorizontalAlignment="Center"
                                Margin="0,18,0,0" Foreground="{DynamicResource Text}"/>
                     <TextBlock Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="470" Margin="0,9,0,0" FontSize="14"
-                               Text="Dá o teu CV — a IA monta o teu perfil e encontramos as vagas que encaixam, pontuadas e explicadas. Tudo local, com o teu Claude CLI (BYOK)."/>
+                               Text="Dá o teu CV — a IA monta o teu perfil e encontramos as vagas que encaixam, pontuadas e explicadas. Tudo local, com o teu Claude CLI ou um modelo local (BYOK)."/>
 
                     <!-- Returning user -->
                     <Border Classes="card" Margin="0,28,0,0" IsVisible="{Binding HasSavedProfile}">

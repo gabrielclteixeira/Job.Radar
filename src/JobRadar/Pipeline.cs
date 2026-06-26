@@ -154,7 +154,10 @@ public static class Pipeline
             int floor = profile.SalaryFloorEur > 0 ? profile.SalaryFloorEur : cfg.Salary.FloorEur;
             int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
             var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
-            L($"A pontuar {toScore.Count} candidatas com o Claude CLI…");
+            string engine = string.Equals(cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase)
+                ? $"o modelo local ({(string.IsNullOrWhiteSpace(cfg.Claude.Model) ? "OpenAI-compatible" : cfg.Claude.Model)})"
+                : "o Claude CLI";
+            L($"A pontuar {toScore.Count} candidatas com {engine}…");
             int i = 0;
             foreach (var j in toScore)
             {
