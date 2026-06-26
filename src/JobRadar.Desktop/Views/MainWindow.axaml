@@ -230,8 +230,14 @@
 
                     <WrapPanel Orientation="Horizontal" Margin="0,2,0,0">
                         <Border Classes="chip" Padding="9,5" Margin="0,0,10,8" VerticalAlignment="Center">
-                            <TextBlock FontSize="12" FontFamily="{DynamicResource MonoFont}"><Run Text="{Binding Jobs.Count}" FontWeight="Bold"/><Run Text=" vagas"/></TextBlock>
+                            <TextBlock FontSize="12" FontFamily="{DynamicResource MonoFont}"><Run Text="{Binding Jobs.Count}" FontWeight="Bold"/><Run Text=" de "/><Run Text="{Binding TotalCount}"/></TextBlock>
                         </Border>
+                        <TextBox Width="220" Margin="0,0,10,8" Watermark="Pesquisar nas vagas…" Text="{Binding SearchText}">
+                            <TextBox.InnerLeftContent><ui:SymbolIcon Symbol="Find" Margin="8,0,0,0" Foreground="{DynamicResource Muted}"/></TextBox.InnerLeftContent>
+                        </TextBox>
+                        <Button Classes="ghost" Command="{Binding AddFilterCommand}" Margin="0,0,10,8" ToolTip.Tip="Adicionar um filtro (ex.: descrição contém C#)">
+                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Add"/><TextBlock Text="Filtro"/></StackPanel>
+                        </Button>
                         <TextBlock Classes="sub" VerticalAlignment="Center" Text="Score mín." Margin="0,0,8,8"/>
                         <ComboBox ItemsSource="{Binding MinScoreOptions}" SelectedItem="{Binding MinScore}" Width="84" Margin="0,0,10,8"/>
                         <Button Classes="ghost" Command="{Binding RescoreCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,8,8" ToolTip.Tip="Volta a pontuar com o modelo das Definições">
@@ -244,6 +250,23 @@
                             <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="LinkedIn"/></StackPanel>
                         </Button>
                     </WrapPanel>
+
+                    <!-- Filter rows (added via "+ Filtro") -->
+                    <ItemsControl x:Name="FiltersList" ItemsSource="{Binding Filters}" Margin="0,0,0,2">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:JobFilter">
+                                <Grid ColumnDefinitions="150,8,128,8,*,8,Auto" Margin="0,0,0,6">
+                                    <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding FieldOptions}" SelectedItem="{Binding Field}"/>
+                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ModeOptions}" SelectedItem="{Binding Mode}"/>
+                                    <TextBox Grid.Column="4" Text="{Binding Value}" Watermark="C#"/>
+                                    <Button Grid.Column="6" Classes="ghost" Content="✕" Padding="12,9"
+                                            Command="{Binding ((vm:MainViewModel)DataContext).RemoveFilterCommand, ElementName=FiltersList}"
+                                            CommandParameter="{Binding}" ToolTip.Tip="Remover filtro"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
                     <TextBlock Classes="sub" Text="{Binding ExportMsg}" IsVisible="{Binding ExportMsg, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                     <!-- Scanning state: the radar -->
@@ -257,8 +280,7 @@
 
                     <!-- Empty -->
                     <Border IsVisible="{Binding !HasJobs}" Classes="card" Margin="0,2,0,0">
-                        <TextBlock Classes="sub" TextWrapping="Wrap" TextAlignment="Center"
-                                   Text="Sem vagas para mostrar. Usa “Procurar vagas” para fazer um varrimento, ou “Ver vagas” para as guardadas."/>
+                        <TextBlock Classes="sub" TextWrapping="Wrap" TextAlignment="Center" Text="{Binding EmptyMessage}"/>
                     </Border>
 
                     <Expander Margin="0,0,0,4" Header="Como é calculado o score?" IsVisible="{Binding HasJobs}">

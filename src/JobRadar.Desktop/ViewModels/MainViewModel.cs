@@ -114,6 +114,28 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _hasJobs;
     [ObservableProperty] private bool _isSettings;
 
+    // ---- search & filters (Vagas) ----
+    [ObservableProperty] private string _searchText = "";
+    [ObservableProperty] private int _totalCount;
+    [ObservableProperty] private string _emptyMessage = "";
+    public ObservableCollection<JobFilter> Filters { get; } = new();
+    partial void OnSearchTextChanged(string value) => ApplyFilter();
+
+    [RelayCommand]
+    private void AddFilter()
+    {
+        Filters.Add(new JobFilter { Changed = ApplyFilter });
+        ApplyFilter();
+    }
+
+    [RelayCommand]
+    private void RemoveFilter(JobFilter f)
+    {
+        if (f is null) return;
+        Filters.Remove(f);
+        ApplyFilter();
+    }
+
     // ---- settings (LLM backend) ----
     [ObservableProperty] private bool _useLocalModel;      // false = Claude CLI, true = OpenAI-compatible local
     [ObservableProperty] private string _llmBaseUrl = "";
@@ -464,7 +486,7 @@ public partial class MainViewModel : ObservableObject
             string outDir = Path.Combine(_root, "output");
             Directory.CreateDirectory(outDir);
             string day = DateTime.Now.ToString("yyyy-MM-dd-HHmm");
-            var jobs = _all.Where(v => v.Score >= MinScore).Select(v => v.Entity).ToList();
+            var jobs = _all.Where(Passes).Select(v => v.Entity).ToList();
             string csv = Path.Combine(outDir, $"jobs-{day}.csv");
             string html = Path.Combine(outDir, $"jobs-{day}.html");
             string pdf = Path.Combine(outDir, $"jobs-{day}.pdf");
@@ -509,8 +531,9 @@ public partial class MainViewModel : ObservableObject
         var vm = new JobVm(j, ResearchCompanyAsync);
         int idx = _all.FindIndex(x => x.Score < vm.Score);
         if (idx < 0) _all.Add(vm); else _all.Insert(idx, vm);
+        TotalCount = _all.Count;
 
-        if (vm.Score >= MinScore)
+        if (Passes(vm))
         {
             int j2 = 0;
             while (j2 < Jobs.Count && Jobs[j2].Score >= vm.Score) j2++;
@@ -529,11 +552,27 @@ public partial class MainViewModel : ObservableObject
         ApplyFilter();
     }
 
+    /// <summary>Whether a job passes the current score threshold, search box and all active filters.</summary>
+    private bool Passes(JobVm v)
+        => v.Score >= MinScore && MatchesSearch(v) && Filters.All(f => f.Matches(v));
+
+    private bool MatchesSearch(JobVm v)
+    {
+        if (string.IsNullOrWhiteSpace(SearchText)) return true;
+        var j = v.Entity;
+        bool Has(string? s) => !string.IsNullOrEmpty(s) && s.Contains(SearchText, StringComparison.OrdinalIgnoreCase);
+        return Has(j.Title) || Has(j.Company) || Has(j.Location) || Has(j.Description) || Has(j.Source);
+    }
+
     private void ApplyFilter()
     {
         Jobs.Clear();
-        foreach (var v in _all.Where(v => v.Score >= MinScore)) Jobs.Add(v);
+        foreach (var v in _all.Where(Passes)) Jobs.Add(v);
         HasJobs = Jobs.Count > 0;
+        TotalCount = _all.Count;
+        EmptyMessage = _all.Count > 0
+            ? "Nenhuma vaga corresponde à pesquisa/filtros."
+            : "Sem vagas para mostrar. Usa “Procurar vagas” para fazer um varrimento, ou “Ver vagas” para as guardadas.";
     }
 
     private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false)
