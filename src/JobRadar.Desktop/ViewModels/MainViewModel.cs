@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
+using Avalonia;
+using Avalonia.Styling;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,6 +13,7 @@ public partial class MainViewModel : ObservableObject
     private readonly string _root;
     private readonly string _profilePath;
     private readonly string _llmSettingsPath;
+    private readonly string _uiSettingsPath;
     private AppConfig _cfg;
     private UserProfile _profile = new();
     private List<JobVm> _all = new();
@@ -21,9 +24,73 @@ public partial class MainViewModel : ObservableObject
         _root = FindRoot();
         _profilePath = Path.Combine(_root, "profile.json");
         _llmSettingsPath = Path.Combine(_root, "llm-settings.json");
+        _uiSettingsPath = Path.Combine(_root, "ui-settings.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
+        LoadUiSettings();
+        ApplyTheme();
         LoadSavedProfile();
+    }
+
+    // ---- navigation (sidebar) ----
+    [ObservableProperty] private string _nav = "home";
+    public bool IsNavHome => Nav == "home";
+    public bool IsNavProfile => Nav == "profile";
+    public bool IsNavResults => Nav == "results";
+    public bool IsNavSettings => Nav == "settings";
+    partial void OnNavChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsNavHome)); OnPropertyChanged(nameof(IsNavProfile));
+        OnPropertyChanged(nameof(IsNavResults)); OnPropertyChanged(nameof(IsNavSettings));
+    }
+
+    [RelayCommand]
+    private void Navigate(string page)
+    {
+        switch (page)
+        {
+            case "profile": EditProfile(); break;          // loads the form + shows profile
+            case "results": ShowOnly(results: true); break; // show loaded jobs (empty state if none)
+            case "settings": OpenSettings(); break;          // loads settings fields + shows
+            default: ShowOnly(welcome: true); break;          // home
+        }
+    }
+
+    // ---- theme ----
+    public string[] ThemeOptions { get; } = { "System", "Light", "Dark" };
+    [ObservableProperty] private string _themePref = "Dark"; // System | Light | Dark
+    public bool IsDark => ThemePref != "Light";
+    partial void OnThemePrefChanged(string value) { ApplyTheme(); SaveUiSettings(); OnPropertyChanged(nameof(IsDark)); }
+
+    [RelayCommand] private void ToggleTheme() => ThemePref = ThemePref == "Light" ? "Dark" : "Light";
+
+    private void ApplyTheme()
+    {
+        if (Application.Current is null) return;
+        Application.Current.RequestedThemeVariant = ThemePref switch
+        {
+            "Light" => ThemeVariant.Light,
+            "Dark" => ThemeVariant.Dark,
+            _ => ThemeVariant.Default,
+        };
+    }
+
+    private void LoadUiSettings()
+    {
+        try
+        {
+            if (!File.Exists(_uiSettingsPath)) return;
+            using var doc = JsonDocument.Parse(File.ReadAllText(_uiSettingsPath));
+            if (doc.RootElement.TryGetProperty("theme", out var t) && t.ValueKind == JsonValueKind.String)
+                _themePref = t.GetString() ?? "Dark";
+        }
+        catch { /* ignore */ }
+    }
+
+    private void SaveUiSettings()
+    {
+        try { File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(new { theme = ThemePref }, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
     }
 
     // ---- view state ----
@@ -425,6 +492,7 @@ public partial class MainViewModel : ObservableObject
     private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false)
     {
         IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings;
+        Nav = settings ? "settings" : results ? "results" : profile ? "profile" : "home";
     }
 
     /// <summary>Loads the LLM backend override saved from the Settings screen (machine-local, gitignored).</summary>

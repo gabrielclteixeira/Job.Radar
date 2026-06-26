@@ -1,0 +1,59 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ResourceDictionary.ThemeDictionaries>
+
+        <!-- ============ DARK (primary: mission-control) ============ -->
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="Bg"           Color="#0E0E14"/>
+            <SolidColorBrush x:Key="Panel"        Color="#16161F"/>
+            <SolidColorBrush x:Key="Panel2"       Color="#1E1E29"/>
+            <SolidColorBrush x:Key="Line"         Color="#2A2A38"/>
+            <SolidColorBrush x:Key="Text"         Color="#ECEAF5"/>
+            <SolidColorBrush x:Key="Muted"        Color="#8E8AA3"/>
+            <SolidColorBrush x:Key="Accent"       Color="#7C5CFF"/>
+            <SolidColorBrush x:Key="AccentHover"  Color="#8E72FF"/>
+            <SolidColorBrush x:Key="AccentSoft"   Color="#221C36"/>
+            <SolidColorBrush x:Key="OnAccent"     Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="Signal"       Color="#3DDC97"/>
+            <SolidColorBrush x:Key="SignalSoft"   Color="#15291F"/>
+            <SolidColorBrush x:Key="Amber"        Color="#F2B765"/>
+            <SolidColorBrush x:Key="Danger"       Color="#FF6B6B"/>
+            <SolidColorBrush x:Key="DialTrack"    Color="#2A2A38"/>
+            <Color x:Key="GlowColor">#5C7C5CFF</Color>
+        </ResourceDictionary>
+
+        <!-- ============ LIGHT ============ -->
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="Bg"           Color="#F7F7FB"/>
+            <SolidColorBrush x:Key="Panel"        Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="Panel2"       Color="#F2F1F8"/>
+            <SolidColorBrush x:Key="Line"         Color="#E6E4F0"/>
+            <SolidColorBrush x:Key="Text"         Color="#16151D"/>
+            <SolidColorBrush x:Key="Muted"        Color="#6A6680"/>
+            <SolidColorBrush x:Key="Accent"       Color="#5B3DF5"/>
+            <SolidColorBrush x:Key="AccentHover"  Color="#4A2FD6"/>
+            <SolidColorBrush x:Key="AccentSoft"   Color="#ECE9FB"/>
+            <SolidColorBrush x:Key="OnAccent"     Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="Signal"       Color="#18A971"/>
+            <SolidColorBrush x:Key="SignalSoft"   Color="#E4F7EE"/>
+            <SolidColorBrush x:Key="Amber"        Color="#B4690E"/>
+            <SolidColorBrush x:Key="Danger"       Color="#D64545"/>
+            <SolidColorBrush x:Key="DialTrack"    Color="#E6E4F0"/>
+            <Color x:Key="GlowColor">#1A5B3DF5</Color>
+        </ResourceDictionary>
+
+    </ResourceDictionary.ThemeDictionaries>
+
+    <!-- ============ shared (variant-independent) ============ -->
+    <CornerRadius x:Key="CardRadius">14</CornerRadius>
+    <CornerRadius x:Key="CtrlRadius">8</CornerRadius>
+    <CornerRadius x:Key="PillRadius">7</CornerRadius>
+    <x:Double x:Key="FontH1">28</x:Double>
+    <x:Double x:Key="FontH2">20</x:Double>
+    <x:Double x:Key="FontBody">14</x:Double>
+    <x:Double x:Key="FontSmall">12</x:Double>
+    <x:Double x:Key="FontMicro">10.5</x:Double>
+    <FontFamily x:Key="MonoFont">Cascadia Code,Consolas,JetBrains Mono,monospace</FontFamily>
+
+</ResourceDictionary>

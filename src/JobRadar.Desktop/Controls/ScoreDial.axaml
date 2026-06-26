@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="JobRadar.Desktop.Controls.ScoreDial"
+             Width="52" Height="52">
+    <Grid>
+        <Ellipse Width="52" Height="52" Stroke="{DynamicResource DialTrack}" StrokeThickness="5"/>
+        <Path x:Name="Arc" StrokeThickness="5" StrokeLineCap="Round"/>
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="-3">
+            <TextBlock x:Name="Num" FontFamily="{DynamicResource MonoFont}" FontWeight="Bold"
+                       FontSize="16" HorizontalAlignment="Center"/>
+            <TextBlock x:Name="Lbl" FontSize="8" Opacity="0.7" HorizontalAlignment="Center"
+                       Foreground="{DynamicResource Muted}"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

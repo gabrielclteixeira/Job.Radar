@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="JobRadar.Desktop.Controls.RadarScope"
+             Width="170" Height="170">
+    <UserControl.Styles>
+        <Style Selector="Ellipse#Sweep">
+            <Style.Animations>
+                <Animation Duration="0:0:2.4" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%"><Setter Property="RotateTransform.Angle" Value="0"/></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="RotateTransform.Angle" Value="360"/></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <Ellipse Width="170" Height="170" Stroke="{DynamicResource Line}" StrokeThickness="1"/>
+        <Ellipse Width="116" Height="116" Stroke="{DynamicResource Line}" StrokeThickness="1"/>
+        <Ellipse Width="62"  Height="62"  Stroke="{DynamicResource Line}" StrokeThickness="1"/>
+        <Rectangle Width="170" Height="1" Fill="{DynamicResource Line}"/>
+        <Rectangle Width="1" Height="170" Fill="{DynamicResource Line}"/>
+
+        <Ellipse x:Name="Sweep" Width="170" Height="170" RenderTransformOrigin="50%,50%">
+            <Ellipse.RenderTransform><RotateTransform Angle="0"/></Ellipse.RenderTransform>
+            <Ellipse.Fill>
+                <ConicGradientBrush>
+                    <GradientStop Offset="0"    Color="#B07C5CFF"/>
+                    <GradientStop Offset="0.22" Color="#007C5CFF"/>
+                    <GradientStop Offset="1"    Color="#007C5CFF"/>
+                </ConicGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <Ellipse Width="10" Height="10" Fill="{DynamicResource Accent}"/>
+    </Grid>
+</UserControl>

@@ -1,0 +1,93 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ============ Typography ============ -->
+    <Style Selector="TextBlock.h1">
+        <Setter Property="FontSize" Value="{DynamicResource FontH1}"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+        <Setter Property="LetterSpacing" Value="-0.5"/>
+    </Style>
+    <Style Selector="TextBlock.h2">
+        <Setter Property="FontSize" Value="{DynamicResource FontH2}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+    </Style>
+    <Style Selector="TextBlock.sub">
+        <Setter Property="FontSize" Value="{DynamicResource FontSmall}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+    </Style>
+    <Style Selector="TextBlock.fld">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+        <Setter Property="Margin" Value="0,12,0,4"/>
+        <Setter Property="LetterSpacing" Value="0.6"/>
+    </Style>
+    <Style Selector="TextBlock.mono">
+        <Setter Property="FontFamily" Value="{DynamicResource MonoFont}"/>
+    </Style>
+
+    <!-- ============ Cards / panels ============ -->
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource Panel}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource CardRadius}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="22"/>
+    </Style>
+
+    <!-- ============ Chips ============ -->
+    <Style Selector="Border.chip">
+        <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource PillRadius}"/>
+        <Setter Property="Padding" Value="7,2"/>
+    </Style>
+    <Style Selector="Border.chip > TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+        <Setter Property="FontSize" Value="10.5"/>
+    </Style>
+
+    <!-- ============ Buttons ============ -->
+    <Style Selector="Button.accent">
+        <Setter Property="Background" Value="{DynamicResource Accent}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource CtrlRadius}"/>
+        <Setter Property="Padding" Value="16,9"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Transitions">
+            <Transitions><BrushTransition Property="Background" Duration="0:0:0.15"/></Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentHover}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
+    </Style>
+
+    <Style Selector="Button.ghost">
+        <Setter Property="Background" Value="{DynamicResource Panel2}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="{DynamicResource CtrlRadius}"/>
+        <Setter Property="Padding" Value="14,9"/>
+    </Style>
+    <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+    </Style>
+
+    <Style Selector="Button.link">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="2"/>
+        <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentHover}"/>
+    </Style>
+
+</Styles>
