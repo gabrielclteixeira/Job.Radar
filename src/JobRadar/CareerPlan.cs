@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace JobRadar;
@@ -166,14 +167,14 @@ trajectory, hiring trends). Reply with ONLY a JSON object: {{""queries"":[""..."
     private sealed class PlanDto
     {
         public string? Headline { get; set; }
-        public List<string>? Strengths { get; set; }
+        [JsonConverter(typeof(StringListConverter))] public List<string>? Strengths { get; set; }
         public List<GapDto>? SkillGaps { get; set; }
-        public List<string>? TargetRoles { get; set; }
+        [JsonConverter(typeof(StringListConverter))] public List<string>? TargetRoles { get; set; }
         public string? SalaryNow { get; set; }
         public string? SalaryPotential { get; set; }
         public string? SalaryRationale { get; set; }
         public List<StepDto>? Steps { get; set; }
-        public List<string>? MarketSignals { get; set; }
+        [JsonConverter(typeof(StringListConverter))] public List<string>? MarketSignals { get; set; }
         public string? BottomLine { get; set; }
     }
     private sealed class GapDto { public string? Skill { get; set; } public string? Why { get; set; } public string? Action { get; set; } }

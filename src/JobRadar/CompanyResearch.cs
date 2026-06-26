@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 
 namespace JobRadar;
@@ -94,9 +95,9 @@ Role: {role} · {cand} · location {location ?? "—"}
 
     private sealed class BriefDto
     {
-        public List<string>? Pros { get; set; }
-        public List<string>? Cons { get; set; }
-        public List<string>? Context { get; set; }
+        [JsonConverter(typeof(StringListConverter))] public List<string>? Pros { get; set; }
+        [JsonConverter(typeof(StringListConverter))] public List<string>? Cons { get; set; }
+        [JsonConverter(typeof(StringListConverter))] public List<string>? Context { get; set; }
         public string? ReputationNote { get; set; }
         public string? SalaryFound { get; set; }
         public string? SalaryExpectation { get; set; }
