@@ -20,12 +20,11 @@ public static class CompanyResearch
     {
         if (string.IsNullOrWhiteSpace(company)) return (null, null);
 
-        // 1) Gather context from the web (key-free, best-effort).
-        var results = new List<WebResult>();
-        results.AddRange(await WebSearch.SearchAsync($"{company} employee reviews", 5, ct));
-        results.AddRange(await WebSearch.SearchAsync($"{company} {role} salary", 5, ct));
+        // 1) Gather context from the web (key-free, best-effort). One combined query — a second
+        // back-to-back query gets throttled by the search engine and just adds ~10s for nothing.
+        var raw = await WebSearch.SearchAsync($"{company} employee reviews salary", 8, ct);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        results = results.Where(r => !string.IsNullOrWhiteSpace(r.Url) && seen.Add(r.Url)).Take(8).ToList();
+        var results = raw.Where(r => !string.IsNullOrWhiteSpace(r.Url) && seen.Add(r.Url)).Take(8).ToList();
         if (results.Count == 0) return (null, Loc.Instance.T("research.noWeb"));
 
         var snippets = new StringBuilder();

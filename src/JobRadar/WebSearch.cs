@@ -39,16 +39,19 @@ public static class WebSearch
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
     };
 
+    // Per-request budget: a real result returns in well under a second, so a hung/tarpitted engine
+    // (Mojeek holds the connection when throttling) must be abandoned fast — otherwise the HttpClient's
+    // own timeout (kept high for other callers) would let each failing attempt run for ~20s.
+    private const int PerRequestMs = 5000;
+
     public static async Task<List<WebResult>> SearchAsync(string query, int max = 6, CancellationToken ct = default)
     {
-        for (int pass = 0; pass < 2; pass++)
+        // One quick pass over the engines (primary Mojeek first). No extra retry pass — a throttled
+        // engine just tarpits to the per-request timeout, so retrying only doubles the wait.
+        for (int e = 0; e < Engines.Length; e++)
         {
-            for (int e = 0; e < Engines.Length; e++)
-            {
-                var list = await AttemptAsync(Engines[e], query, max, UserAgents[(pass + e) % UserAgents.Length], ct);
-                if (list.Count > 0) return list;
-            }
-            try { await Task.Delay(500 * (pass + 1), ct); } catch { }
+            var list = await AttemptAsync(Engines[e], query, max, UserAgents[e % UserAgents.Length], ct);
+            if (list.Count > 0) return list;
         }
         return new List<WebResult>();
     }
@@ -68,7 +71,9 @@ public static class WebSearch
             req.Headers.TryAddWithoutValidation("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
             req.Headers.TryAddWithoutValidation("Accept-Language", "en-US,en;q=0.9");
 
-            using var resp = await Http.SendAsync(req, ct);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(PerRequestMs);
+            using var resp = await Http.SendAsync(req, cts.Token);
             if (!resp.IsSuccessStatusCode) return list;            // e.g. DDG's 202 anti-bot page
             string html = await resp.Content.ReadAsStringAsync(ct);
 
