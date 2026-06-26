@@ -143,8 +143,12 @@
                             </StackPanel>
                             <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,16,0,0">
                                 <Button Classes="accent" Content="🔍  Procurar vagas" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}"/>
+                                <Button Classes="ghost" Content="📄 Gerar CV (PDF)" Command="{Binding ExportCvCommand}" IsEnabled="{Binding !Busy}"
+                                        ToolTip.Tip="Gera um CV em PDF a partir deste perfil"/>
                                 <Button Classes="ghost" Content="← Recomeçar" Command="{Binding ResetCommand}"/>
                             </StackPanel>
+                            <TextBlock Classes="sub" Text="{Binding Status}" TextWrapping="Wrap" Margin="0,12,0,0"
+                                       IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>

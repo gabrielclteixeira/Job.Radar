@@ -227,6 +227,27 @@ public partial class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
+    [RelayCommand]
+    private async Task ExportCv()
+    {
+        CommitFormToProfile();
+        Busy = true;
+        try
+        {
+            string outDir = Path.Combine(_root, "output");
+            string stamp = DateTime.Now.ToString("yyyy-MM-dd-HHmm");
+            string? path = await Task.Run(() => CvPdf.Export(_profile, outDir, stamp));
+            if (path is not null)
+            {
+                Status = "CV gerado: " + path;
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+                catch { /* opening is best-effort */ }
+            }
+            else Status = "Não consegui gerar o CV.";
+        }
+        finally { Busy = false; }
+    }
+
     // ---- helpers ----
     /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
     private void AddStreamed(JobEntity j)

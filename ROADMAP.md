@@ -13,6 +13,7 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
 - Export to CSV / HTML / PDF.
 - **Pluggable LLM backend** — Claude CLI or any OpenAI-compatible local model (Ollama, LM Studio,
   llama.cpp) via a `provider` setting; runs fully offline with no Claude subscription.
+- **Generate a CV PDF** from the profile (CV Studio, first step) — one-page styled PDF via the HTML→PDF path.
 
 ---
 
@@ -26,8 +27,8 @@ A dedicated area to **create and improve a CV**, not just consume one.
   - Pull roles, dates and highlights from **LinkedIn** (ToS-safe: a profile export / manual paste, no scraping)
     and **GitHub** (repos, languages, notable contributions) to seed or enrich the CV.
   - Merge with the existing CV-derived profile so nothing is re-typed.
-- **Generate a fresh PDF**
-  - Produce a new, polished CV PDF from the structured profile (reuse the HTML→PDF pipeline).
+- **Generate a fresh PDF** ✅ *(basic version shipped)*
+  - Richer output once work history is imported (below).
 - **Front-end customization & refinement**
   - Pick a **template/theme** and tune the look (layout, accent colour, density, fonts).
   - **Rich content control** so the user shapes each section: **highlight/emphasize text**, insert a
