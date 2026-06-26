@@ -79,6 +79,16 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand] private void ToggleTheme() => ThemePref = ThemePref == "Light" ? "Dark" : "Light";
 
+    // ---- UI zoom (Ctrl +/- / 0, Ctrl+wheel, or the Definições stepper) ----
+    private const double MinZoom = 0.8, MaxZoom = 2.0, ZoomStep = 0.1;
+    [ObservableProperty] private double _zoom = 1.0;
+    public string ZoomLabel => $"{Zoom * 100:0}%";
+    partial void OnZoomChanged(double value) { OnPropertyChanged(nameof(ZoomLabel)); SaveUiSettings(); }
+
+    [RelayCommand] private void ZoomIn() => Zoom = Math.Min(MaxZoom, Math.Round(Zoom + ZoomStep, 2));
+    [RelayCommand] private void ZoomOut() => Zoom = Math.Max(MinZoom, Math.Round(Zoom - ZoomStep, 2));
+    [RelayCommand] private void ZoomReset() => Zoom = 1.0;
+
     private void ApplyTheme()
     {
         if (Application.Current is null) return;
@@ -98,13 +108,15 @@ public partial class MainViewModel : ObservableObject
             using var doc = JsonDocument.Parse(File.ReadAllText(_uiSettingsPath));
             if (doc.RootElement.TryGetProperty("theme", out var t) && t.ValueKind == JsonValueKind.String)
                 _themePref = t.GetString() ?? "Dark";
+            if (doc.RootElement.TryGetProperty("zoom", out var z) && z.TryGetDouble(out var zv))
+                _zoom = Math.Clamp(zv, MinZoom, MaxZoom);
         }
         catch { /* ignore */ }
     }
 
     private void SaveUiSettings()
     {
-        try { File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(new { theme = ThemePref }, new JsonSerializerOptions { WriteIndented = true })); }
+        try { File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(new { theme = ThemePref, zoom = Zoom }, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 

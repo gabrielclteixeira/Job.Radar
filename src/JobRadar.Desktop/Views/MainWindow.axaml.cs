@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using FluentAvalonia.UI.Controls;
@@ -16,6 +17,34 @@ public partial class MainWindow : Window
         {
             if (DataContext is MainViewModel vm) vm.ConfirmCostAsync = ConfirmApifyCostAsync;
         };
+    }
+
+    /// <summary>UI zoom shortcuts: Ctrl + / Ctrl - / Ctrl 0 (numpad or main row).</summary>
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && DataContext is MainViewModel vm)
+        {
+            switch (e.Key)
+            {
+                case Key.Add: case Key.OemPlus: vm.ZoomInCommand.Execute(null); e.Handled = true; return;
+                case Key.Subtract: case Key.OemMinus: vm.ZoomOutCommand.Execute(null); e.Handled = true; return;
+                case Key.D0: case Key.NumPad0: vm.ZoomResetCommand.Execute(null); e.Handled = true; return;
+            }
+        }
+        base.OnKeyDown(e);
+    }
+
+    /// <summary>Ctrl + mouse wheel zooms, like a browser.</summary>
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && DataContext is MainViewModel vm)
+        {
+            if (e.Delta.Y > 0) vm.ZoomInCommand.Execute(null);
+            else if (e.Delta.Y < 0) vm.ZoomOutCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+        base.OnPointerWheelChanged(e);
     }
 
     /// <summary>Cost confirmation shown before a paid (Apify) search.</summary>
