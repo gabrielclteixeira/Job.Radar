@@ -56,7 +56,10 @@ public partial class MainViewModel : ObservableObject
         switch (page)
         {
             case "profile": EditProfile(); break;          // loads the form + shows profile
-            case "results": ShowOnly(results: true); break; // show loaded jobs (empty state if none)
+            case "results":                                  // show loaded jobs, or load from cache if none yet
+                if (_all.Count == 0 && !IsScoring) _ = ViewJobs();
+                else ShowOnly(results: true);
+                break;
             case "settings": OpenSettings(); break;          // loads settings fields + shows
             default: ShowOnly(welcome: true); break;          // home
         }
