@@ -186,8 +186,16 @@ jobs:
       - name: Create DMG
         run: |
           mkdir -p dist
-          hdiutil create -volname "Job Radar" -srcfolder JobRadar.app -ov -format UDZO \
-            "dist/JobRadar-${{ needs.version.outputs.version }}-${{ matrix.rid }}.dmg"
+          OUT="dist/JobRadar-${{ needs.version.outputs.version }}-${{ matrix.rid }}.dmg"
+          # hdiutil can transiently fail with "Resource busy" (Spotlight indexing the
+          # source folder), so retry with a short backoff.
+          for i in 1 2 3 4 5; do
+            if hdiutil create -volname "Job Radar" -srcfolder JobRadar.app -ov -format UDZO "$OUT"; then
+              echo "DMG created on attempt $i"; break
+            fi
+            echo "hdiutil busy (attempt $i) — retrying in 5s…"; sleep 5
+          done
+          test -f "$OUT"
       - uses: actions/upload-artifact@v4
         with:
           name: macos-${{ matrix.rid }}
