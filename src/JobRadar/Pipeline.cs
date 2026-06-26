@@ -17,7 +17,7 @@ public static class Pipeline
     private static readonly JsonSerializerOptions J = new() { PropertyNameCaseInsensitive = true };
 
     /// <summary>Bump when JobEntity columns change (or cached data must be discarded) so the DB is recreated.</summary>
-    private const string SchemaVersion = "5"; // 5: re-evaluate relevance with title-based filter
+    private const string SchemaVersion = "6"; // 6: add deterministic keyword base verdict
 
     public static async Task<PipelineResult> RunAsync(
         UserProfile profile, AppConfig cfg, string root, bool useAi,
@@ -97,10 +97,11 @@ public static class Pipeline
                 SalaryMin = r.SalaryMin, SalaryMax = r.SalaryMax, SalaryCurrency = r.SalaryCurrency,
             };
             SalaryParser.Apply(e, cfg.Salary);
-            var (relevant, preScore, explanation) = ProfileFilter.Evaluate(e, profile, cfg);
+            var (relevant, preScore, explanation, baseVerdict) = ProfileFilter.Evaluate(e, profile, cfg);
             e.Relevant = relevant;
             e.PreScore = preScore;
             e.PreScoreExplanation = explanation;
+            e.BaseVerdict = baseVerdict;
             db.Jobs.Add(e);
             added++;
         }

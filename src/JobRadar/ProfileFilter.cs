@@ -7,7 +7,7 @@ namespace JobRadar;
 /// </summary>
 public static class ProfileFilter
 {
-    public static (bool relevant, int preScore, string explanation) Evaluate(JobEntity j, UserProfile profile, AppConfig cfg)
+    public static (bool relevant, int preScore, string explanation, string baseVerdict) Evaluate(JobEntity j, UserProfile profile, AppConfig cfg)
     {
         string hay = $"{j.Title} {j.Description} {j.Location}".ToLowerInvariant();
         string title = j.Title.ToLowerInvariant();
@@ -34,23 +34,23 @@ public static class ProfileFilter
 
         // Hard exclusions.
         foreach (var ex in excludes)
-            if (ex.Length > 1 && hay.Contains(ex)) return (false, 0, "");
+            if (ex.Length > 1 && hay.Contains(ex)) return (false, 0, "", "");
         foreach (var sx in seniority)
-            if (title.Contains(sx)) return (false, 0, "");
+            if (title.Contains(sx)) return (false, 0, "", "");
 
-        if (tokens.Count == 0) return (false, 0, ""); // no profile yet
+        if (tokens.Count == 0) return (false, 0, "", ""); // no profile yet
 
         // Relevance gate: a keyword must appear in the TITLE (word boundary), not buried in the
         // noisy description — otherwise short tokens like "go" match "good"/"category" everywhere.
         var matched = tokens.Where(t => WordIn(title, t)).ToList();
-        if (matched.Count == 0) return (false, 0, "");
+        if (matched.Count == 0) return (false, 0, "", "");
 
         // Location gate honouring the user's prefs.
         bool isRemote = j.Remote == "remote" || hay.Contains("remote") || hay.Contains("remoto");
         bool isHybrid = j.Remote == "hybrid" || hay.Contains("hybrid") || hay.Contains("híbrido");
         bool locMatch = locations.Any(l => l.Length > 1 && titleLoc.Contains(l));
         bool locOk = (profile.Remote && isRemote) || (profile.Hybrid && isHybrid) || locMatch || (profile.Onsite && locMatch);
-        if (!locOk) return (false, 0, "");
+        if (!locOk) return (false, 0, "", "");
 
         // Weighted pre-score with a breakdown.
         var parts = new List<string>();
@@ -67,16 +67,28 @@ public static class ProfileFilter
 
         int floor = profile.SalaryFloorEur > 0 ? profile.SalaryFloorEur : cfg.Salary.FloorEur;
         int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
+        string salaryNote;
         if (j.SalaryAnnualEur is int eur)
         {
-            if (eur >= target) { score += cfg.Salary.AboveTargetBoost; parts.Add($"salário ≥ alvo +{cfg.Salary.AboveTargetBoost}"); }
-            else if (eur < floor) { score -= cfg.Salary.BelowFloorPenalty; parts.Add($"salário < mínimo −{cfg.Salary.BelowFloorPenalty}"); }
+            if (eur >= target) { score += cfg.Salary.AboveTargetBoost; parts.Add($"salário ≥ alvo +{cfg.Salary.AboveTargetBoost}"); salaryNote = "paga ≥ o teu alvo"; }
+            else if (eur < floor) { score -= cfg.Salary.BelowFloorPenalty; parts.Add($"salário < mínimo −{cfg.Salary.BelowFloorPenalty}"); salaryNote = "abaixo do teu mínimo"; }
+            else { salaryNote = "salário no intervalo"; }
         }
-        else { score -= cfg.Salary.NoSalaryPenalty; parts.Add($"sem salário −{cfg.Salary.NoSalaryPenalty}"); }
+        else { score -= cfg.Salary.NoSalaryPenalty; parts.Add($"sem salário −{cfg.Salary.NoSalaryPenalty}"); salaryNote = "sem salário indicado"; }
 
         int final = Math.Clamp(score, 1, 100);
         string explanation = string.Join(" · ", parts) + $"  =  {final}";
-        return (true, final, explanation);
+
+        // Deterministic "base" classification for keyword mode (no LLM), salary included.
+        string tier = final >= 70 ? "Forte correspondência" : final >= 50 ? "Boa correspondência" : "Correspondência possível";
+        var bits = new List<string> { coreHits.Count > 0 ? "usa competências-chave" : "sem competência-chave" };
+        if (isRemote) bits.Add("remoto");
+        else if (isHybrid) bits.Add("híbrido");
+        if (locMatch) bits.Add("localização preferida");
+        bits.Add(salaryNote);
+        string baseVerdict = $"{tier} — {string.Join("; ", bits)}.";
+
+        return (true, final, explanation, baseVerdict);
     }
 
     /// <summary>Over-generic words that shouldn't gate relevance on their own.</summary>

@@ -30,8 +30,9 @@ public class JobVm
     public bool HasSalary => !string.IsNullOrEmpty(_j.SalaryText);
     public bool HasRemote => !string.IsNullOrEmpty(_j.Remote);
 
-    public string Verdict => _j.AiVerdict ?? "";
-    public bool HasVerdict => !string.IsNullOrWhiteSpace(_j.AiVerdict);
+    // AI verdict when scored by the LLM; otherwise the deterministic keyword base verdict.
+    public string Verdict => !string.IsNullOrWhiteSpace(_j.AiVerdict) ? _j.AiVerdict! : (_j.BaseVerdict ?? "");
+    public bool HasVerdict => !string.IsNullOrWhiteSpace(Verdict);
 
     public string Reasons => string.Join("\n", ParseArr(_j.AiReasons).Select(r => "•  " + r));
     public bool HasReasons => ParseArr(_j.AiReasons).Length > 0;

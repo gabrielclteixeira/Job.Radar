@@ -33,6 +33,7 @@ public class JobEntity
     public bool Relevant { get; set; }
     public int PreScore { get; set; }               // cheap keyword score (0-100)
     public string? PreScoreExplanation { get; set; } // human-readable breakdown of the keyword score
+    public string? BaseVerdict { get; set; }         // deterministic keyword-mode verdict (used when no AI)
     public int? AiScore { get; set; }               // Claude fit score (0-100)
     public string? AiVerdict { get; set; }
     public string? AiReasons { get; set; }          // JSON array string

@@ -59,6 +59,32 @@ Exports (CSV + HTML + PDF) are available from the dashboard toolbar.
 
 Secrets stay out of git (`appsettings.local.json`, `.gitignore`).
 
+## Local models (no Claude subscription)
+
+The AI features (CV parsing, scoring) can run against a **local model** via any OpenAI-compatible
+runtime. Set the `claude` block in `appsettings.json` to `"provider": "openai"` and point `baseUrl`/`model`
+at your runtime. A small instruction-following model (7–8B) is plenty.
+
+**LM Studio** (GUI, browse/install from Hugging Face)
+1. Install LM Studio, then download a model in its **Search** tab (e.g. `Qwen2.5 7B Instruct`).
+2. Open the **Developer / Local Server** tab and **Start Server** (default `http://localhost:1234`).
+3. In `appsettings.json`:
+   ```json
+   "claude": { "provider": "openai", "baseUrl": "http://localhost:1234/v1", "model": "qwen2.5-7b-instruct" }
+   ```
+
+**Ollama** (CLI / headless)
+1. Install Ollama, then pull a model: `ollama pull llama3.1` (it also serves on `http://localhost:11434`).
+2. In `appsettings.json`:
+   ```json
+   "claude": { "provider": "openai", "baseUrl": "http://localhost:11434/v1", "model": "llama3.1" }
+   ```
+
+Notes: keep `enabled: true`; `apiKey` is optional (only if your runtime requires one). Smaller/quantized
+models are faster but score a little less precisely — try a 7–8B instruct model first. Prefer **keyword mode**
+(toggle on the profile screen) for an instant, zero-LLM classification that already factors stack, work mode,
+location and **salary**.
+
 ## Limitations
 
 - Scanned/image-only PDFs have no extractable text → fill the profile manually.
