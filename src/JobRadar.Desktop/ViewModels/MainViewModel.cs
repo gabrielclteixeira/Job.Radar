@@ -10,6 +10,7 @@ public partial class MainViewModel : ObservableObject
 {
     private readonly string _root;
     private readonly string _profilePath;
+    private readonly string _llmSettingsPath;
     private AppConfig _cfg;
     private UserProfile _profile = new();
     private List<JobVm> _all = new();
@@ -19,7 +20,9 @@ public partial class MainViewModel : ObservableObject
     {
         _root = FindRoot();
         _profilePath = Path.Combine(_root, "profile.json");
+        _llmSettingsPath = Path.Combine(_root, "llm-settings.json");
         _cfg = LoadConfig();
+        ApplyLlmOverride();
         LoadSavedProfile();
     }
 
@@ -36,6 +39,14 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isScoring;          // pipeline still running (streaming jobs in)
     [ObservableProperty] private string _scoringStatus = "";
     [ObservableProperty] private bool _hasJobs;
+    [ObservableProperty] private bool _isSettings;
+
+    // ---- settings (LLM backend) ----
+    [ObservableProperty] private bool _useLocalModel;      // false = Claude CLI, true = OpenAI-compatible local
+    [ObservableProperty] private string _llmBaseUrl = "";
+    [ObservableProperty] private string _llmModel = "";
+    [ObservableProperty] private string _llmApiKey = "";
+    [ObservableProperty] private string _claudeExe = "claude";
 
     // ---- profile form ----
     [ObservableProperty] private string _name = "";
@@ -171,6 +182,55 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private Task RunDemo() => RunPipeline(useAi: false, demo: true);
 
+    /// <summary>Shows the jobs already saved in the local cache, without fetching or scoring again.</summary>
+    [RelayCommand]
+    private async Task ViewJobs()
+    {
+        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
+        ResultsTitle = "Vagas guardadas";
+        ScoringStatus = "A carregar vagas guardadas…"; MinScore = 0; IsScoring = true;
+        ShowOnly(results: true); Busy = true;
+        var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
+        try
+        {
+            var result = await Pipeline.LoadCachedAsync(_cfg, _root, jobProg);
+            FinalizeResults(result);
+            if (!HasJobs) ScoringStatus = "Ainda não há vagas guardadas — usa \"Procurar vagas\".";
+        }
+        catch (Exception ex) { ScoringStatus = "Erro: " + ex.Message; }
+        finally { IsScoring = false; Busy = false; }
+    }
+
+    // ---- settings ----
+    [RelayCommand]
+    private void OpenSettings()
+    {
+        UseLocalModel = string.Equals(_cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase);
+        LlmBaseUrl = _cfg.Claude.BaseUrl;
+        LlmModel = _cfg.Claude.Model;
+        LlmApiKey = _cfg.Claude.ApiKey;
+        ClaudeExe = string.IsNullOrWhiteSpace(_cfg.Claude.Exe) ? "claude" : _cfg.Claude.Exe;
+        Status = "";
+        ShowOnly(settings: true);
+    }
+
+    [RelayCommand]
+    private void SaveSettings()
+    {
+        _cfg.Claude.Provider = UseLocalModel ? "openai" : "claude-cli";
+        _cfg.Claude.BaseUrl = string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
+        _cfg.Claude.Model = LlmModel.Trim();
+        _cfg.Claude.ApiKey = LlmApiKey.Trim();
+        _cfg.Claude.Exe = string.IsNullOrWhiteSpace(ClaudeExe) ? "claude" : ClaudeExe.Trim();
+        SaveLlmSettings();
+        Status = "Definições guardadas.";
+        ShowOnly(welcome: true);
+    }
+
+    [RelayCommand] private void CloseSettings() => ShowOnly(welcome: true);
+    [RelayCommand] private void UseLmStudioPreset() { UseLocalModel = true; LlmBaseUrl = "http://localhost:1234/v1"; }
+    [RelayCommand] private void UseOllamaPreset() { UseLocalModel = true; LlmBaseUrl = "http://localhost:11434/v1"; }
+
     /// <summary>
     /// Goes straight to the results view and streams jobs in as the pipeline classifies them
     /// (cached/known jobs appear instantly; newly scored ones land one by one), so the user
@@ -282,9 +342,28 @@ public partial class MainViewModel : ObservableObject
         HasJobs = Jobs.Count > 0;
     }
 
-    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false)
+    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false)
     {
-        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results;
+        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings;
+    }
+
+    /// <summary>Loads the LLM backend override saved from the Settings screen (machine-local, gitignored).</summary>
+    private void ApplyLlmOverride()
+    {
+        try
+        {
+            if (!File.Exists(_llmSettingsPath)) return;
+            var c = JsonSerializer.Deserialize<ClaudeConfig>(File.ReadAllText(_llmSettingsPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (c is not null) _cfg.Claude = c;
+        }
+        catch { /* ignore a bad settings file */ }
+    }
+
+    private void SaveLlmSettings()
+    {
+        try { File.WriteAllText(_llmSettingsPath, JsonSerializer.Serialize(_cfg.Claude, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
     }
 
     private void LoadFormFromProfile()

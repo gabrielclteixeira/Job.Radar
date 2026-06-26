@@ -59,10 +59,15 @@
                                 </StackPanel>
                             </Border>
                             <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
-                                <Button Classes="accent" Content="🔍  Procurar vagas" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}"/>
-                                <Button Classes="ghost" Content="✎ Ver / editar perfil" Command="{Binding EditProfileCommand}"/>
+                                <Button Classes="accent" Content="🔍  Procurar vagas" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}"
+                                        ToolTip.Tip="Recolhe das fontes e classifica de novo"/>
+                                <Button Classes="ghost" Content="📋 Ver vagas" Command="{Binding ViewJobsCommand}" IsEnabled="{Binding !Busy}"
+                                        ToolTip.Tip="Mostra as vagas já guardadas, sem nova pesquisa"/>
                             </StackPanel>
-                            <Button Classes="link" Content="📄 Carregar outro CV" HorizontalAlignment="Center" Click="OnPickCv" IsEnabled="{Binding !Busy}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center">
+                                <Button Classes="ghost" Content="✎ Ver / editar perfil" Command="{Binding EditProfileCommand}"/>
+                                <Button Classes="link" Content="📄 Carregar outro CV" Click="OnPickCv" IsEnabled="{Binding !Busy}"/>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -86,6 +91,8 @@
                         <Button Classes="ghost" Content="🧪 Usar CV de exemplo" Command="{Binding LoadDemoCvCommand}" IsEnabled="{Binding !Busy}"
                                 ToolTip.Tip="Carrega o perfil de exemplo (John Doe) — sem tokens, não mexe no teu perfil."/>
                         <Button Classes="ghost" Content="▶ Ver demonstração (sem IA)" Command="{Binding RunDemoCommand}" IsEnabled="{Binding !Busy}"/>
+                        <Button Classes="ghost" Content="⚙ Definições" Command="{Binding OpenSettingsCommand}"
+                                ToolTip.Tip="Escolher o motor de IA (Claude CLI ou modelo local)"/>
                     </StackPanel>
 
                     <Border Background="{StaticResource Accent2}" CornerRadius="10" Padding="13" Margin="0,18,0,0">
@@ -250,6 +257,48 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                </StackPanel>
+
+                <!-- ============ SETTINGS ============ -->
+                <StackPanel IsVisible="{Binding IsSettings}" Spacing="6" MaxWidth="640">
+                    <TextBlock Classes="h1" Text="Definições"/>
+                    <TextBlock Classes="sub" Text="Motor de IA usado para ler o CV e pontuar as vagas."/>
+                    <Border Classes="card" Margin="0,10,0,0">
+                        <StackPanel Spacing="12">
+                            <TextBlock Classes="fld" Text="MOTOR DE IA"/>
+                            <ToggleSwitch IsChecked="{Binding UseLocalModel}" OnContent="Modelo local" OffContent="Claude CLI"/>
+                            <TextBlock Classes="sub" TextWrapping="Wrap"
+                                       Text="Claude CLI usa a tua subscrição (BYOK). Modelo local usa um runtime compatível com OpenAI (LM Studio, Ollama, llama.cpp) — corre offline, sem subscrição."/>
+
+                            <!-- Local model fields -->
+                            <StackPanel IsVisible="{Binding UseLocalModel}" Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,2">
+                                    <TextBlock Classes="sub" VerticalAlignment="Center" Text="Presets:"/>
+                                    <Button Classes="ghost" Content="LM Studio" Command="{Binding UseLmStudioPresetCommand}"/>
+                                    <Button Classes="ghost" Content="Ollama" Command="{Binding UseOllamaPresetCommand}"/>
+                                </StackPanel>
+                                <TextBlock Classes="fld" Text="BASE URL"/>
+                                <TextBox Text="{Binding LlmBaseUrl}" Watermark="http://localhost:1234/v1"/>
+                                <TextBlock Classes="fld" Text="MODELO"/>
+                                <TextBox Text="{Binding LlmModel}" Watermark="qwen2.5-7b-instruct  /  llama3.1"/>
+                                <TextBlock Classes="fld" Text="API KEY (opcional)"/>
+                                <TextBox Text="{Binding LlmApiKey}" PasswordChar="•"/>
+                            </StackPanel>
+
+                            <!-- Claude CLI field -->
+                            <StackPanel IsVisible="{Binding !UseLocalModel}" Spacing="4">
+                                <TextBlock Classes="fld" Text="EXECUTÁVEL CLAUDE (PATH)"/>
+                                <TextBox Text="{Binding ClaudeExe}" Watermark="claude"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
+                                <Button Classes="accent" Content="Guardar" Command="{Binding SaveSettingsCommand}"/>
+                                <Button Classes="ghost" Content="← Voltar" Command="{Binding CloseSettingsCommand}"/>
+                            </StackPanel>
+                            <TextBlock Classes="sub" Text="{Binding Status}"
+                                       IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
 
             </Grid>

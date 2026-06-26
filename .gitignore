@@ -19,6 +19,8 @@ appsettings.local.json
 
 # saved CV-derived profile (personal data, machine-local)
 profile.json
+# LLM backend settings saved from the in-app Settings screen (machine-local)
+llm-settings.json
 
 # app / dev scratch
 app-err.log

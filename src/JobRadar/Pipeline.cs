@@ -162,6 +162,25 @@ public static class Pipeline
         return new PipelineResult(ranked, added, false);
     }
 
+    /// <summary>Returns the jobs already in the local cache (relevant, ranked) without fetching or scoring.</summary>
+    public static async Task<PipelineResult> LoadCachedAsync(
+        AppConfig cfg, string root, IProgress<JobEntity>? onJob = null, CancellationToken ct = default)
+    {
+        string dbPath = Path.IsPathRooted(cfg.DbPath) ? cfg.DbPath : Path.Combine(root, cfg.DbPath);
+        string marker = dbPath + ".schema";
+        // No DB yet, or a stale-schema DB → nothing trustworthy to show.
+        if (!File.Exists(dbPath) || !File.Exists(marker) || File.ReadAllText(marker) != SchemaVersion)
+            return new PipelineResult(new(), 0, false);
+
+        using var db = new RadarDb(dbPath);
+        await db.Database.EnsureCreatedAsync(ct);
+        var ranked = await db.Jobs.Where(j => j.Relevant)
+            .OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt)
+            .ToListAsync(ct);
+        foreach (var j in ranked) onJob?.Report(j);
+        return new PipelineResult(ranked, ranked.Count, false);
+    }
+
     /// <summary>Overrides queries + location in the fetcher config from the profile, preserving keys/sources.</summary>
     private static void WriteFetcherConfig(string cfgPath, UserProfile profile, IProgress<string>? log)
     {
