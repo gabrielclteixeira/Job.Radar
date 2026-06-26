@@ -66,6 +66,7 @@ public class AppConfig
     public ClaudeConfig Claude { get; set; } = new();
     public SalaryConfig Salary { get; set; } = new();
     public ApifyConfig Apify { get; set; } = new();
+    public JSearchConfig JSearch { get; set; } = new();
 }
 
 /// <summary>Optional LinkedIn-via-Apify connector. PAID — uses the user's Apify credits.</summary>
@@ -75,6 +76,15 @@ public class ApifyConfig
     public string Token { get; set; } = "";     // Apify API token (secret)
     public string ActorId { get; set; } = "";    // e.g. "username/linkedin-jobs-scraper"
     public int MaxItems { get; set; } = 50;       // cap results → cap cost
+}
+
+/// <summary>Optional JSearch (RapidAPI) job source. Has a free tier with a monthly request quota.</summary>
+public class JSearchConfig
+{
+    public bool Enabled { get; set; }
+    public string ApiKey { get; set; } = "";                    // RapidAPI key (secret)
+    public string ApiHost { get; set; } = "jsearch.p.rapidapi.com";
+    public int MaxItems { get; set; } = 20;                     // cap results → cap quota use
 }
 
 public class SalaryConfig

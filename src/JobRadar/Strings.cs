@@ -124,6 +124,52 @@ internal static class Strings
         ["settings.apify.hint"] = "Cola o token (apify.com → Settings → API) e carrega em “Testar / procurar”. Validar e listar é grátis; só a pesquisa em si consome créditos.",
         ["settings.save"] = "Guardar",
 
+        // JSearch connector
+        ["settings.jsearch"] = "JSEARCH (RAPIDAPI)",
+        ["settings.jsearch.key"] = "RAPIDAPI KEY",
+        ["settings.jsearch.max"] = "MÁX. RESULTADOS",
+        ["settings.jsearch.warn"] = "o JSearch (RapidAPI) tem um tier gratuito com limite de pedidos por mês. Com o JSearch ligado, a app pede confirmação antes de procurar.",
+        ["settings.jsearch.hint"] = "Cria conta no RapidAPI, subscreve o JSearch e copia a tua X-RapidAPI-Key.",
+        ["jsearch.fetching"] = "A obter vagas do JSearch (RapidAPI)…",
+        ["jsearch.count"] = "JSearch: {0} vagas.",
+        ["jsearch.failed"] = "JSearch falhou (HTTP {0}) — verifica a chave RapidAPI.",
+        ["jsearch.error"] = "JSearch: erro — {0}",
+
+        // local model download (Ollama)
+        ["settings.downloadModel"] = "DESCARREGAR MODELO (OLLAMA)",
+        ["settings.downloadModel.wm"] = "ex.: llama3.2",
+        ["settings.download"] = "Descarregar",
+        ["settings.downloadModel.hint"] = "Descarrega um modelo via Ollama (tem de estar a correr no Base URL). LM Studio: usa a app do LM Studio.",
+        ["models.pulling"] = "A descarregar {0} — {1}",
+        ["models.pullDone"] = "{0} descarregado.",
+        ["models.pullFail"] = "Falha ao descarregar — o Ollama está a correr no Base URL?",
+
+        // sources & keys setup guide
+        ["settings.sources"] = "FONTES E CHAVES",
+        ["setup.jsearch"] = "JSearch (RapidAPI) — agregador de vagas. Subscreve e copia a X-RapidAPI-Key.",
+        ["setup.apify"] = "Apify — conector LinkedIn (pago). Cria um token de API.",
+        ["setup.ollama"] = "Ollama — modelos locais. Instala e descarrega modelos.",
+        ["setup.lmstudio"] = "LM Studio — modelos locais com interface gráfica.",
+        ["setup.open"] = "Abrir",
+        ["setup.library"] = "Modelos",
+
+        // about / update
+        ["settings.about"] = "SOBRE",
+        ["settings.version"] = "Versão {0}",
+        ["settings.checkUpdate"] = "Procurar atualizações",
+        ["update.checking"] = "A procurar atualizações…",
+        ["update.upToDate"] = "Estás na última versão ({0}).",
+        ["update.available"] = "Nova versão disponível: {0}",
+        ["update.downloading"] = "A descarregar atualização — {0}",
+        ["update.failed"] = "Não consegui verificar/descarregar. Tenta a página de download.",
+        ["update.openPage"] = "Abrir página de download",
+        ["update.installing"] = "A iniciar o instalador… a app vai fechar.",
+
+        // generic paid/quota connector confirmation
+        ["dlg.cost.title"] = "Pesquisar com conectores pagos?",
+        ["dlg.cost.body"] = "Tens conectores com custo/quota ligados (Apify e/ou JSearch). Esta pesquisa pode consumir créditos ou quota. Continuar?",
+        ["settings.saved"] = "Definições guardadas.",
+
         // results titles + status (set in code)
         ["title.jobs"] = "Vagas para ti",
         ["title.demo"] = "Vagas para ti (demo)",
@@ -303,6 +349,52 @@ internal static class Strings
         ["settings.apify.max"] = "MAX RESULTS (caps the cost)",
         ["settings.apify.hint"] = "Paste the token (apify.com → Settings → API) and click “Test / search”. Validating and listing is free; only the search itself spends credits.",
         ["settings.save"] = "Save",
+
+        // JSearch connector
+        ["settings.jsearch"] = "JSEARCH (RAPIDAPI)",
+        ["settings.jsearch.key"] = "RAPIDAPI KEY",
+        ["settings.jsearch.max"] = "MAX RESULTS",
+        ["settings.jsearch.warn"] = "JSearch (RapidAPI) has a free tier with a monthly request limit. With JSearch on, the app asks for confirmation before searching.",
+        ["settings.jsearch.hint"] = "Create a RapidAPI account, subscribe to JSearch and copy your X-RapidAPI-Key.",
+        ["jsearch.fetching"] = "Fetching jobs from JSearch (RapidAPI)…",
+        ["jsearch.count"] = "JSearch: {0} jobs.",
+        ["jsearch.failed"] = "JSearch failed (HTTP {0}) — check the RapidAPI key.",
+        ["jsearch.error"] = "JSearch: error — {0}",
+
+        // local model download (Ollama)
+        ["settings.downloadModel"] = "DOWNLOAD MODEL (OLLAMA)",
+        ["settings.downloadModel.wm"] = "e.g. llama3.2",
+        ["settings.download"] = "Download",
+        ["settings.downloadModel.hint"] = "Downloads a model via Ollama (it must be running at the Base URL). LM Studio: use the LM Studio app.",
+        ["models.pulling"] = "Downloading {0} — {1}",
+        ["models.pullDone"] = "{0} downloaded.",
+        ["models.pullFail"] = "Download failed — is Ollama running at the Base URL?",
+
+        // sources & keys setup guide
+        ["settings.sources"] = "SOURCES & KEYS",
+        ["setup.jsearch"] = "JSearch (RapidAPI) — job aggregator. Subscribe and copy the X-RapidAPI-Key.",
+        ["setup.apify"] = "Apify — LinkedIn connector (paid). Create an API token.",
+        ["setup.ollama"] = "Ollama — local models. Install and download models.",
+        ["setup.lmstudio"] = "LM Studio — local models with a GUI.",
+        ["setup.open"] = "Open",
+        ["setup.library"] = "Models",
+
+        // about / update
+        ["settings.about"] = "ABOUT",
+        ["settings.version"] = "Version {0}",
+        ["settings.checkUpdate"] = "Check for updates",
+        ["update.checking"] = "Checking for updates…",
+        ["update.upToDate"] = "You're on the latest version ({0}).",
+        ["update.available"] = "New version available: {0}",
+        ["update.downloading"] = "Downloading update — {0}",
+        ["update.failed"] = "Couldn't check/download. Try the download page.",
+        ["update.openPage"] = "Open download page",
+        ["update.installing"] = "Starting the installer… the app will close.",
+
+        // generic paid/quota connector confirmation
+        ["dlg.cost.title"] = "Search with paid connectors?",
+        ["dlg.cost.body"] = "You have cost/quota connectors enabled (Apify and/or JSearch). This search may consume credits or quota. Continue?",
+        ["settings.saved"] = "Settings saved.",
 
         ["title.jobs"] = "Jobs for you",
         ["title.demo"] = "Jobs for you (demo)",

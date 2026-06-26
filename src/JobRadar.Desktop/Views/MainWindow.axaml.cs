@@ -52,8 +52,8 @@ public partial class MainWindow : Window
     {
         var dlg = new ContentDialog
         {
-            Title = JobRadar.Loc.Instance.T("dlg.apify.title"),
-            Content = JobRadar.Loc.Instance.T("dlg.apify.body"),
+            Title = JobRadar.Loc.Instance.T("dlg.cost.title"),
+            Content = JobRadar.Loc.Instance.T("dlg.cost.body"),
             PrimaryButtonText = JobRadar.Loc.Instance.T("dlg.continue"),
             CloseButtonText = JobRadar.Loc.Instance.T("dlg.cancel"),
             DefaultButton = ContentDialogButton.Close,

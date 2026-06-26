@@ -39,17 +39,17 @@ public static class CareerPlan
         }
 
         // 1) Seed searches.
-        L("A mapear o mercado para o teu perfil…");
+        L(Loc.Instance.T("plan.mapping"));
         Merge(await WebSearch.SearchAsync($"{field} most in-demand skills {year}", 5, ct));
         Merge(await WebSearch.SearchAsync($"{topRole} salary {loc} {year}", 5, ct));
         Merge(await WebSearch.SearchAsync($"{field} career path from {profile.SeniorityTarget} next level", 5, ct));
 
         // 2) Let the model pick deeper angles (best-effort; skip on failure).
-        L("A identificar áreas a aprofundar…");
+        L(Loc.Instance.T("plan.deepening"));
         foreach (var q in await PickFollowUpsAsync(llm, profile, field, topRole, results, ct))
         {
             ct.ThrowIfCancellationRequested();
-            L($"A pesquisar: {q}");
+            L(Loc.Instance.F("plan.searching", q));
             Merge(await WebSearch.SearchAsync(q, 4, ct));
         }
 
@@ -57,7 +57,7 @@ public static class CareerPlan
         if (results.Count == 0) return null;
 
         // 3) Synthesise the plan.
-        L("A sintetizar o teu plano de carreira…");
+        L(Loc.Instance.T("plan.synth"));
         string snippets = Snippets(results);
         string prompt =
 $@"You are a candid career coach. From the candidate, the jobs the app already found, and the web

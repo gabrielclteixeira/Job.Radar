@@ -668,6 +668,19 @@
                                            Text="{l:T settings.model.hint}"/>
                             </StackPanel>
 
+                            <StackPanel IsVisible="{Binding UseLocalModel}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.downloadModel}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0" Text="{Binding ModelToPull}" Watermark="{l:T settings.downloadModel.wm}"/>
+                                    <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding DownloadModelCommand}" IsEnabled="{Binding !IsPullingModel}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T settings.download}"/></StackPanel>
+                                    </Button>
+                                </Grid>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{Binding ModelDownloadStatus}"
+                                           IsVisible="{Binding ModelDownloadStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.downloadModel.hint}"/>
+                            </StackPanel>
+
                         </StackPanel>
                     </Border>
 
@@ -699,6 +712,69 @@
                                 <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap"
                                            Text="{l:T settings.apify.hint}"/>
                             </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- JSearch (RapidAPI) connector -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="fld" Text="{l:T settings.jsearch}" Margin="0,0,0,2"/>
+                            <ToggleSwitch IsChecked="{Binding UseJSearch}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
+                            <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" Background="{DynamicResource Panel2}" CornerRadius="8" Padding="11">
+                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Amber}">
+                                    <Run Text="{l:T settings.apify.warnBold}" FontWeight="Bold"/><Run Text="{l:T settings.jsearch.warn}"/>
+                                </TextBlock>
+                            </Border>
+                            <StackPanel IsVisible="{Binding UseJSearch}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.key}"/>
+                                <TextBox Text="{Binding JSearchKey}" PasswordChar="•" Watermark="X-RapidAPI-Key…"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.max}"/>
+                                <TextBox Text="{Binding JSearchMax}" Watermark="20"/>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.jsearch.hint}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Sources & keys setup guide -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="9">
+                            <TextBlock Classes="fld" Text="{l:T settings.sources}" Margin="0,0,0,2"/>
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" Text="{l:T setup.jsearch}"/>
+                                <Button Classes="link" Content="{l:T setup.open}" Command="{Binding OpenUrlCommand}" CommandParameter="https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch"/>
+                            </StackPanel>
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" Text="{l:T setup.apify}"/>
+                                <Button Classes="link" Content="{l:T setup.open}" Command="{Binding OpenUrlCommand}" CommandParameter="https://console.apify.com/settings/integrations"/>
+                            </StackPanel>
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" Text="{l:T setup.ollama}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="14">
+                                    <Button Classes="link" Content="{l:T setup.open}" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/download"/>
+                                    <Button Classes="link" Content="{l:T setup.library}" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/library"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Spacing="2">
+                                <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" Text="{l:T setup.lmstudio}"/>
+                                <Button Classes="link" Content="{l:T setup.open}" Command="{Binding OpenUrlCommand}" CommandParameter="https://lmstudio.ai"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- About / update -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="fld" Text="{l:T settings.about}" Margin="0,0,0,2"/>
+                            <TextBlock Classes="sub" Text="{Binding AppVersion, StringFormat='Job Radar · v{0}'}" FontFamily="{DynamicResource MonoFont}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Button Classes="ghost" Command="{Binding CheckForUpdateCommand}" IsEnabled="{Binding !Busy}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T settings.checkUpdate}"/></StackPanel>
+                                </Button>
+                                <Button Classes="link" Content="{l:T update.openPage}" IsVisible="{Binding HasUpdatePage}"
+                                        Command="{Binding OpenUrlCommand}" CommandParameter="{Binding UpdatePageUrl}"/>
+                            </StackPanel>
+                            <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{Binding UpdateStatus}"
+                                       IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         </StackPanel>
                     </Border>
 

@@ -104,6 +104,58 @@ public static class LlmClient
         return models;
     }
 
+    /// <summary>
+    /// Downloads a model via Ollama's native API (`POST {root}/api/pull`, streamed progress).
+    /// `baseUrl` is the OpenAI-compatible URL (…/v1); we strip `/v1` to reach the Ollama root.
+    /// Ollama-only (LM Studio has no pull API). Reports (status, 0–1 fraction); returns true on success.
+    /// </summary>
+    public static async Task<bool> PullModelAsync(string baseUrl, string model,
+        IProgress<(string status, double frac)>? progress = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model)) return false;
+        try
+        {
+            string root = baseUrl.Trim().TrimEnd('/');
+            if (root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) root = root[..^3].TrimEnd('/');
+            string url = root + "/api/pull";
+
+            var payload = new { name = model.Trim(), stream = true };
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"),
+            };
+            // ResponseHeadersRead so HttpClient.Timeout doesn't bound the (long) streamed download.
+            using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!resp.IsSuccessStatusCode) { progress?.Report(($"HTTP {(int)resp.StatusCode}", 0)); return false; }
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var reader = new StreamReader(stream);
+            bool success = false;
+            string? line;
+            while ((line = await reader.ReadLineAsync(ct)) is not null)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var el = doc.RootElement;
+                    if (el.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.String)
+                    { progress?.Report((err.GetString() ?? "error", 0)); return false; }
+                    string status = el.TryGetProperty("status", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() ?? "" : "";
+                    double frac = 0;
+                    if (el.TryGetProperty("completed", out var c) && c.ValueKind == JsonValueKind.Number &&
+                        el.TryGetProperty("total", out var t) && t.ValueKind == JsonValueKind.Number && t.GetDouble() > 0)
+                        frac = c.GetDouble() / t.GetDouble();
+                    if (status.Equals("success", StringComparison.OrdinalIgnoreCase)) success = true;
+                    progress?.Report((status, frac));
+                }
+                catch { /* ignore a partial / non-JSON line */ }
+            }
+            return success;
+        }
+        catch { return false; }
+    }
+
     /// <summary>POSTs to an OpenAI-compatible chat-completions endpoint and returns the message content.</summary>
     private static async Task<string?> OpenAiAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
     {

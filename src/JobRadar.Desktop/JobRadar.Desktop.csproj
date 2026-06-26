@@ -10,6 +10,8 @@
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
     <RootNamespace>JobRadar.Desktop</RootNamespace>
     <ApplicationIcon>Assets\radar.ico</ApplicationIcon>
+    <!-- Bumped per release; the release workflow overrides this with -p:Version=&lt;tag&gt;. -->
+    <Version>0.4.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

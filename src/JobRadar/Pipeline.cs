@@ -84,6 +84,14 @@ public static class Pipeline
             raw.AddRange(apify);
         }
 
+        // Optional JSearch (RapidAPI) connector — keyed/quota-limited; also confirmed in the UI.
+        if (cfg.JSearch.Enabled)
+        {
+            var jsearch = await JSearchClient.FetchJobsAsync(
+                cfg.JSearch, profile.SearchQueries(), profile.Locations.FirstOrDefault() ?? "", log, ct);
+            raw.AddRange(jsearch);
+        }
+
         // The SQLite cache has no migrations; if the entity schema changed, recreate it.
         string dbPath = R(cfg.DbPath);
         string marker = dbPath + ".schema";

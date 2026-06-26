@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -15,6 +16,7 @@ public partial class MainViewModel : ObservableObject
     private readonly string _llmSettingsPath;
     private readonly string _uiSettingsPath;
     private readonly string _apifySettingsPath;
+    private readonly string _jsearchSettingsPath;
     private readonly string _planPath;
     private AppConfig _cfg;
 
@@ -31,10 +33,12 @@ public partial class MainViewModel : ObservableObject
         _llmSettingsPath = Path.Combine(_root, "llm-settings.json");
         _uiSettingsPath = Path.Combine(_root, "ui-settings.json");
         _apifySettingsPath = Path.Combine(_root, "apify-settings.json");
+        _jsearchSettingsPath = Path.Combine(_root, "jsearch-settings.json");
         _planPath = Path.Combine(_root, "career-plan.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
         ApplyApifyOverride();
+        ApplyJSearchOverride();
         LoadUiSettings();
         Loc.Instance.SetPreference(LangModes[Math.Clamp(_languageIndex, 0, 2)]);
         ApplyTheme();
@@ -309,6 +313,24 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _apifyStatus = "";
     public ObservableCollection<string> ApifyActorOptions { get; } = new();
 
+    // JSearch (RapidAPI) connector — keyed, quota-limited
+    [ObservableProperty] private bool _useJSearch;
+    [ObservableProperty] private string _jSearchKey = "";
+    [ObservableProperty] private string _jSearchMax = "20";
+
+    // local model download (Ollama)
+    [ObservableProperty] private string _modelToPull = "";
+    [ObservableProperty] private bool _isPullingModel;
+    [ObservableProperty] private string _modelDownloadStatus = "";
+
+    // about / update
+    public string AppVersion => System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version is { } v
+        ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
+    [ObservableProperty] private string _updateStatus = "";
+    [ObservableProperty] private string _updatePageUrl = "";
+    public bool HasUpdatePage => !string.IsNullOrWhiteSpace(UpdatePageUrl);
+    partial void OnUpdatePageUrlChanged(string value) => OnPropertyChanged(nameof(HasUpdatePage));
+
     /// <summary>Validates the Apify token (free) and auto-fills the actor dropdown from the store.</summary>
     [RelayCommand]
     private async Task ProbeApify()
@@ -325,6 +347,66 @@ public partial class MainViewModel : ObservableObject
             if (ok && string.IsNullOrWhiteSpace(ApifyActor) && ApifyActorOptions.Count > 0) ApifyActor = ApifyActorOptions[0];
         }
         finally { Busy = false; }
+    }
+
+    /// <summary>Downloads a model via Ollama (streamed progress), then refreshes the dropdown.</summary>
+    [RelayCommand]
+    private async Task DownloadModel()
+    {
+        if (IsPullingModel || string.IsNullOrWhiteSpace(ModelToPull)) return;
+        IsPullingModel = true;
+        string name = ModelToPull.Trim();
+        ModelDownloadStatus = Loc.Instance.F("models.pulling", name, "0%");
+        var progress = new Progress<(string status, double frac)>(p => Dispatcher.UIThread.Post(() =>
+            ModelDownloadStatus = Loc.Instance.F("models.pulling", name, p.frac > 0 ? $"{p.frac * 100:0}%" : p.status)));
+        try
+        {
+            string baseUrl = string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
+            bool ok = await LlmClient.PullModelAsync(baseUrl, name, progress);
+            if (ok) { ModelDownloadStatus = Loc.Instance.F("models.pullDone", name); await LoadModels(); LlmModel = name; }
+            else ModelDownloadStatus = L("models.pullFail");
+        }
+        catch (Exception ex) { ModelDownloadStatus = Loc.Instance.F("error.generic", ex.Message); }
+        finally { IsPullingModel = false; }
+    }
+
+    /// <summary>Checks GitHub for a newer release; on Windows downloads + launches the installer, else opens the page.</summary>
+    [RelayCommand]
+    private async Task CheckForUpdate()
+    {
+        UpdateStatus = L("update.checking"); UpdatePageUrl = "";
+        try
+        {
+            var info = await UpdateChecker.CheckAsync();
+            if (info is null) { UpdateStatus = L("update.failed"); return; }
+            if (!UpdateChecker.IsNewer(info.Latest, AppVersion))
+            {
+                UpdateStatus = Loc.Instance.F("update.upToDate", AppVersion);
+                return;
+            }
+            UpdateStatus = Loc.Instance.F("update.available", info.Latest);
+            UpdatePageUrl = info.HtmlUrl; // surfaces an "open download page" link as a fallback
+
+            if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(info.WinInstallerUrl))
+            {
+                var progress = new Progress<double>(f => Dispatcher.UIThread.Post(() =>
+                    UpdateStatus = Loc.Instance.F("update.downloading", $"{f * 100:0}%")));
+                string dest = Path.Combine(Path.GetTempPath(), $"JobRadar-Setup-{info.Latest}.exe");
+                if (await UpdateChecker.DownloadAsync(info.WinInstallerUrl!, dest, progress))
+                {
+                    UpdateStatus = L("update.installing");
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = dest, UseShellExecute = true });
+                        (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+                    }
+                    catch { OpenUrl(info.HtmlUrl); }
+                }
+                else { UpdateStatus = L("update.failed"); }
+            }
+            else OpenUrl(info.HtmlUrl); // macOS / Linux: manual download
+        }
+        catch (Exception ex) { UpdateStatus = Loc.Instance.F("error.generic", ex.Message); }
     }
 
     public ObservableCollection<string> ModelOptions { get; } = new();
@@ -465,8 +547,10 @@ public partial class MainViewModel : ObservableObject
     {
         CommitFormToProfile();
         SaveProfile(); // persist any edits to the saved profile
-        // Apify is paid — confirm before spending the user's credits.
-        if (_cfg.Apify.Enabled && !string.IsNullOrWhiteSpace(_cfg.Apify.Token) && ConfirmCostAsync is not null)
+        // Paid / quota-limited connectors — confirm before spending the user's credits or quota.
+        bool apifyOn = _cfg.Apify.Enabled && !string.IsNullOrWhiteSpace(_cfg.Apify.Token);
+        bool jsearchOn = _cfg.JSearch.Enabled && !string.IsNullOrWhiteSpace(_cfg.JSearch.ApiKey);
+        if ((apifyOn || jsearchOn) && ConfirmCostAsync is not null)
             if (!await ConfirmCostAsync()) return;
         await RunPipeline(useAi: UseAi, demo: false);
     }
@@ -533,6 +617,11 @@ public partial class MainViewModel : ObservableObject
         ApifyStatus = "";
         ApifyActorOptions.Clear();
         if (!string.IsNullOrWhiteSpace(_cfg.Apify.ActorId)) ApifyActorOptions.Add(_cfg.Apify.ActorId);
+        UseJSearch = _cfg.JSearch.Enabled;
+        JSearchKey = _cfg.JSearch.ApiKey;
+        JSearchMax = _cfg.JSearch.MaxItems > 0 ? _cfg.JSearch.MaxItems.ToString() : "20";
+        ModelDownloadStatus = "";
+        UpdateStatus = ""; UpdatePageUrl = "";
         Status = "";
         ShowOnly(settings: true);
     }
@@ -551,7 +640,11 @@ public partial class MainViewModel : ObservableObject
         _cfg.Apify.ActorId = ApifyActor.Trim();
         _cfg.Apify.MaxItems = int.TryParse(ApifyMax, out var am) && am > 0 ? am : 50;
         SaveApifySettings();
-        Status = "Definições guardadas.";
+        _cfg.JSearch.Enabled = UseJSearch;
+        _cfg.JSearch.ApiKey = JSearchKey.Trim();
+        _cfg.JSearch.MaxItems = int.TryParse(JSearchMax, out var jm) && jm > 0 ? jm : 20;
+        SaveJSearchSettings();
+        Status = L("settings.saved");
         ShowOnly(welcome: true);
     }
 
@@ -772,6 +865,24 @@ public partial class MainViewModel : ObservableObject
     private void SaveApifySettings()
     {
         try { File.WriteAllText(_apifySettingsPath, JsonSerializer.Serialize(_cfg.Apify, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+    }
+
+    private void ApplyJSearchOverride()
+    {
+        try
+        {
+            if (!File.Exists(_jsearchSettingsPath)) return;
+            var c = JsonSerializer.Deserialize<JSearchConfig>(File.ReadAllText(_jsearchSettingsPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (c is not null) _cfg.JSearch = c;
+        }
+        catch { /* ignore */ }
+    }
+
+    private void SaveJSearchSettings()
+    {
+        try { File.WriteAllText(_jsearchSettingsPath, JsonSerializer.Serialize(_cfg.JSearch, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 
