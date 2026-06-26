@@ -7,7 +7,7 @@
         <Path x:Name="Arc" StrokeThickness="5" StrokeLineCap="Round"/>
         <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="-3">
             <TextBlock x:Name="Num" FontFamily="{DynamicResource MonoFont}" FontWeight="Bold"
-                       FontSize="16" HorizontalAlignment="Center"/>
+                       FontSize="16" HorizontalAlignment="Center" Foreground="{DynamicResource Text}"/>
             <TextBlock x:Name="Lbl" FontSize="8" Opacity="0.7" HorizontalAlignment="Center"
                        Foreground="{DynamicResource Muted}"/>
         </StackPanel>

@@ -44,7 +44,7 @@
         <Setter Property="Padding" Value="7,2"/>
     </Style>
     <Style Selector="Border.chip > TextBlock">
-        <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentText}"/>
         <Setter Property="FontSize" Value="10.5"/>
     </Style>
 
@@ -82,7 +82,7 @@
         <Setter Property="Background" Value="Transparent"/>
         <Setter Property="BorderThickness" Value="0"/>
         <Setter Property="Padding" Value="2"/>
-        <Setter Property="Foreground" Value="{DynamicResource Accent}"/>
+        <Setter Property="Foreground" Value="{DynamicResource AccentText}"/>
         <Setter Property="Cursor" Value="Hand"/>
     </Style>
     <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">

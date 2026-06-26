@@ -109,8 +109,8 @@
                         <StackPanel Spacing="14" HorizontalAlignment="Center">
                             <Border Classes="chip" Padding="12,7" HorizontalAlignment="Center">
                                 <StackPanel Orientation="Horizontal" Spacing="9">
-                                    <ui:SymbolIcon Symbol="Contact" Foreground="{DynamicResource Accent}"/>
-                                    <TextBlock Text="{Binding SavedProfileLabel}" Foreground="{DynamicResource Accent}"
+                                    <ui:SymbolIcon Symbol="Contact" Foreground="{DynamicResource AccentText}"/>
+                                    <TextBlock Text="{Binding SavedProfileLabel}" Foreground="{DynamicResource AccentText}"
                                                FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
                                 </StackPanel>
                             </Border>
@@ -250,7 +250,7 @@
                     <Border IsVisible="{Binding IsScoring}" Classes="card" Padding="24" Margin="0,2,0,2">
                         <StackPanel HorizontalAlignment="Center" Spacing="14">
                             <ctl:RadarScope HorizontalAlignment="Center"/>
-                            <TextBlock Text="{Binding ScoringStatus}" Foreground="{DynamicResource Accent}" FontFamily="{DynamicResource MonoFont}"
+                            <TextBlock Text="{Binding ScoringStatus}" Foreground="{DynamicResource AccentText}" FontFamily="{DynamicResource MonoFont}"
                                        FontSize="12" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
@@ -278,7 +278,7 @@
                                                     <TextBlock Text="{Binding Title}" FontWeight="Bold" FontSize="14" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
                                                 </Button>
                                                 <WrapPanel>
-                                                    <TextBlock Text="{Binding Company}" Foreground="{DynamicResource Accent}" FontWeight="SemiBold" FontSize="11.5" Margin="0,0,10,0"/>
+                                                    <TextBlock Text="{Binding Company}" Foreground="{DynamicResource TextSoft}" FontWeight="SemiBold" FontSize="11.5" Margin="0,0,10,0"/>
                                                     <TextBlock Text="{Binding Location}" Foreground="{DynamicResource Muted}" FontSize="11.5" Margin="0,0,10,0"/>
                                                     <Border Classes="chip" Margin="0,0,8,0" IsVisible="{Binding HasRemote}">
                                                         <TextBlock Text="{Binding Remote}"/>
@@ -294,7 +294,7 @@
                                     </Expander.Header>
 
                                     <StackPanel Spacing="8" Margin="6,2,6,8">
-                                        <TextBlock Text="Porquê este score" FontWeight="SemiBold" FontSize="11" Foreground="{DynamicResource Accent}"/>
+                                        <TextBlock Text="Porquê este score" FontWeight="SemiBold" FontSize="11" Foreground="{DynamicResource AccentText}"/>
                                         <TextBlock Text="{Binding Reasons}" FontSize="12" Foreground="{DynamicResource Text}" Opacity="0.9" TextWrapping="Wrap" IsVisible="{Binding HasReasons}"/>
                                         <TextBlock Text="{Binding RedFlags}" FontSize="12" Foreground="{DynamicResource Amber}" TextWrapping="Wrap" IsVisible="{Binding HasRedFlags}"/>
                                         <Border Background="{DynamicResource Panel2}" CornerRadius="6" Padding="9" IsVisible="{Binding HasExplanation}">

@@ -10,8 +10,10 @@
             <SolidColorBrush x:Key="Panel2"       Color="#1E1E29"/>
             <SolidColorBrush x:Key="Line"         Color="#2A2A38"/>
             <SolidColorBrush x:Key="Text"         Color="#ECEAF5"/>
+            <SolidColorBrush x:Key="TextSoft"     Color="#C9C5D8"/>
             <SolidColorBrush x:Key="Muted"        Color="#8E8AA3"/>
             <SolidColorBrush x:Key="Accent"       Color="#7C5CFF"/>
+            <SolidColorBrush x:Key="AccentText"   Color="#B5A6FF"/>
             <SolidColorBrush x:Key="AccentHover"  Color="#8E72FF"/>
             <SolidColorBrush x:Key="AccentSoft"   Color="#221C36"/>
             <SolidColorBrush x:Key="OnAccent"     Color="#FFFFFF"/>
@@ -30,8 +32,10 @@
             <SolidColorBrush x:Key="Panel2"       Color="#F2F1F8"/>
             <SolidColorBrush x:Key="Line"         Color="#E6E4F0"/>
             <SolidColorBrush x:Key="Text"         Color="#16151D"/>
+            <SolidColorBrush x:Key="TextSoft"     Color="#3C3A4B"/>
             <SolidColorBrush x:Key="Muted"        Color="#6A6680"/>
             <SolidColorBrush x:Key="Accent"       Color="#5B3DF5"/>
+            <SolidColorBrush x:Key="AccentText"   Color="#5326E0"/>
             <SolidColorBrush x:Key="AccentHover"  Color="#4A2FD6"/>
             <SolidColorBrush x:Key="AccentSoft"   Color="#ECE9FB"/>
             <SolidColorBrush x:Key="OnAccent"     Color="#FFFFFF"/>

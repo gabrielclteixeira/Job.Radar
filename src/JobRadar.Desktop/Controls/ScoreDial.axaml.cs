@@ -39,11 +39,10 @@ public partial class ScoreDial : UserControl
         if (arc is null || num is null || lbl is null) return;
 
         int s = Math.Clamp(Score, 0, 100);
-        var color = s >= 80 ? Color.Parse("#3DDC97") : s >= 60 ? Color.Parse("#7C5CFF") : Color.Parse("#8E8AA3");
-        var brush = new SolidColorBrush(color);
-        arc.Stroke = brush;
+        // Ring colour carries the tier; the number stays neutral (theme-aware Text) for legibility/calm.
+        var ring = s >= 80 ? Color.Parse("#34D17F") : s >= 60 ? Color.Parse("#8E72FF") : Color.Parse("#8E8AA3");
+        arc.Stroke = new SolidColorBrush(ring);
         num.Text = s.ToString();
-        num.Foreground = brush;
         lbl.Text = Label ?? "";
 
         const double size = 52, thickness = 5;
