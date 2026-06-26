@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using UglyToad.PdfPig;
@@ -40,7 +39,7 @@ design, etc.). Reply with ONLY one valid JSON object (double-quoted keys/values,
 == CV TEXT ==
 {(cvText.Length > 8000 ? cvText[..8000] : cvText)}";
 
-        string? text = await RunClaudeAsync(cfg, prompt, ct);
+        string? text = await LlmClient.CompleteAsync(cfg, prompt, ct);
         if (text is null) return null;
 
         int a = text.IndexOf('{'), b = text.LastIndexOf('}');
@@ -79,47 +78,5 @@ design, etc.). Reply with ONLY one valid JSON object (double-quoted keys/values,
         public string? SeniorityTarget { get; set; }
         public List<string>? Locations { get; set; }
         public List<string>? Languages { get; set; }
-    }
-
-    /// <summary>Runs `claude -p &lt;prompt&gt; --output-format json` and returns the model's text.</summary>
-    internal static async Task<string?> RunClaudeAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = cfg.Exe,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            psi.ArgumentList.Add("-p");
-            psi.ArgumentList.Add(prompt);
-            psi.ArgumentList.Add("--output-format");
-            psi.ArgumentList.Add("json");
-
-            using var p = Process.Start(psi);
-            if (p is null) return null;
-            p.StandardInput.Close();
-
-            var stdout = p.StandardOutput.ReadToEndAsync();
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(cfg.TimeoutSeconds * 1000);
-            try { await p.WaitForExitAsync(cts.Token); }
-            catch (OperationCanceledException) { try { p.Kill(true); } catch { } return null; }
-
-            string raw = await stdout;
-            try
-            {
-                using var env = JsonDocument.Parse(raw);
-                if (env.RootElement.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.String)
-                    return r.GetString();
-            }
-            catch { /* not an envelope */ }
-            return raw;
-        }
-        catch { return null; }
     }
 }

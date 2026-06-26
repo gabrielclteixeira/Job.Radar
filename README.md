@@ -13,7 +13,7 @@ Job Radar reads your CV (PDF), uses a local LLM to turn it into a structured pro
 
 - 🧠 **Profile from your CV** — PdfPig extracts the text, the **Claude CLI** structures it into stack/skills/seniority/locations; you confirm and answer the few things a CV doesn't say (salary, remote prefs, deal-breakers).
 - 🎯 **Stack-first scoring** — a cheap keyword pre-filter, then an LLM scores the top candidates 0–100 with a one-line verdict and reasons. Off-stack roles sink; C#/.NET/Go roles rise.
-- 💸 **Zero cost to run / BYOK** — CV parsing and scoring use **your own local Claude CLI** (no API keys to manage, no server). A **Demo mode** loads sample data and never calls an LLM.
+- 💸 **Zero cost to run / BYOK** — CV parsing and scoring use **your own local Claude CLI** or **any OpenAI-compatible local model** (Ollama, LM Studio, llama.cpp) — no API keys to manage, no server. A **Demo mode** loads sample data and never calls an LLM.
 - 🖥️ **Native desktop app** — built with **Avalonia** (Skia-rendered, cross-platform: Windows/macOS/Linux). No webview, no hosting, no backend to maintain.
 - 🔌 **No ToS-breaking scraping** — pulls from official APIs / public ATS feeds (Remotive, RemoteOK, Arbeitnow, Adzuna, Greenhouse, Lever).
 
@@ -51,7 +51,10 @@ Exports (CSV + HTML + PDF) are available from the dashboard toolbar.
 
 ## Configure
 
-- `appsettings.json` — source weights, salary thresholds, Claude settings.
+- `appsettings.json` — source weights, salary thresholds, LLM backend.
+  - **LLM backend** (`claude` block): `provider` is `claude-cli` (default, uses the local Claude CLI) or
+    `openai` for any OpenAI-compatible local model. For `openai`, set `baseUrl` (e.g. Ollama's
+    `http://localhost:11434/v1`), `model` (e.g. `llama3.1`) and optionally `apiKey`. Runs fully offline.
 - `fetcher-config.json` — which sources/queries run, Adzuna keys (free at developer.adzuna.com), Greenhouse/Lever company tokens.
 
 Secrets stay out of git (`appsettings.local.json`, `.gitignore`).

@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text.Json;
 
 namespace JobRadar;
@@ -51,42 +50,8 @@ Source: {j.Source}
 Description:
 {Trunc(j.Description, 3500)}";
 
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = _cfg.Exe,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            psi.ArgumentList.Add("-p");
-            psi.ArgumentList.Add(prompt);
-            psi.ArgumentList.Add("--output-format");
-            psi.ArgumentList.Add("json");
-
-            using var p = Process.Start(psi);
-            if (p is null) return null;
-
-            p.StandardInput.Close(); // signal EOF so the CLI doesn't wait for piped stdin
-
-            var stdout = p.StandardOutput.ReadToEndAsync();
-            var stderr = p.StandardError.ReadToEndAsync();
-
-            using var cts = new CancellationTokenSource(_cfg.TimeoutSeconds * 1000);
-            try { await p.WaitForExitAsync(cts.Token); }
-            catch (OperationCanceledException) { try { p.Kill(true); } catch { } return null; }
-
-            string text = await stdout;
-            _ = await stderr;
-            return Parse(text);
-        }
-        catch
-        {
-            return null;
-        }
+        string? text = await LlmClient.CompleteAsync(_cfg, prompt);
+        return text is null ? null : Parse(text);
     }
 
     private static string Trunc(string s, int n) => s.Length > n ? s[..n] : s;

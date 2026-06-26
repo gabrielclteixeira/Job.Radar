@@ -78,10 +78,16 @@ public class SalaryConfig
     public int MonthsPerYear { get; set; } = 12;     // for monthly figures (conservative)
 }
 
+/// <summary>LLM backend config. Kept the name for compatibility; drives both the Claude CLI and
+/// any OpenAI-compatible local model (Ollama, LM Studio, llama.cpp, …).</summary>
 public class ClaudeConfig
 {
     public bool Enabled { get; set; } = true;
-    public string Exe { get; set; } = "claude";
+    public string Provider { get; set; } = "claude-cli"; // "claude-cli" | "openai"
+    public string Exe { get; set; } = "claude";          // claude-cli: executable on PATH
+    public string BaseUrl { get; set; } = "http://localhost:11434/v1"; // openai: Ollama default
+    public string Model { get; set; } = "";              // openai: model name (required for that provider)
+    public string ApiKey { get; set; } = "";             // openai: optional bearer token
     public int TimeoutSeconds { get; set; } = 90;
 }
 

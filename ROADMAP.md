@@ -11,6 +11,8 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
 - Live **streaming** of results as they're classified; already-scored jobs are remembered (no re-spend).
 - Saved profile reused across runs; "use a sample CV" (John Doe) to try it instantly with no tokens.
 - Export to CSV / HTML / PDF.
+- **Pluggable LLM backend** — Claude CLI or any OpenAI-compatible local model (Ollama, LM Studio,
+  llama.cpp) via a `provider` setting; runs fully offline with no Claude subscription.
 
 ---
 
@@ -42,16 +44,6 @@ A space focused on *getting better positioned*, not just finding listings.
 - **Deep research** powering the plan: multi-step web research across companies, salaries, in-demand
   skills and hiring trends — synthesized into the plan, with sources. *(This area requires deep search.)*
 - Track progress over time (revisit and update the plan as the profile and market change).
-
-### 3. Local models — bring your own LLM
-
-Today the AI features shell out to the **Claude CLI**. Next, make the LLM backend **pluggable** so users
-can run everything against a **local model** instead.
-
-- Support local runtimes (**Ollama**, **LM Studio**, **llama.cpp** / any OpenAI-compatible endpoint).
-- A **provider setting** to pick the backend (Claude CLI · local · OpenAI-compatible URL) and the model name.
-- Fully **offline & private**: CV parsing, scoring and (later) CV refinement run on the user's own hardware,
-  no CLI and no cloud. Keeps the local-first/BYOK promise even without a Claude subscription.
 
 ---
 
