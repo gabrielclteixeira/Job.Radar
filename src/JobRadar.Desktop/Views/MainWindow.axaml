@@ -186,9 +186,12 @@
                         </Border>
                         <TextBlock Classes="sub" VerticalAlignment="Center" Text="Score mín."/>
                         <ComboBox ItemsSource="{Binding MinScoreOptions}" SelectedItem="{Binding MinScore}" Width="90"/>
+                        <Button Classes="ghost" Content="🔁 Reclassificar (IA)" Command="{Binding RescoreCommand}" IsEnabled="{Binding !Busy}"
+                                ToolTip.Tip="Volta a pontuar as vagas com o modelo escolhido nas Definições"/>
                         <Button Classes="ghost" Content="⬇ Exportar (CSV+PDF)" Command="{Binding ExportCommand}" IsEnabled="{Binding !Busy}"/>
                         <Button Classes="ghost" Content="🔗 Procurar no LinkedIn" Command="{Binding OpenLinkedInCommand}"
                                 ToolTip.Tip="Abre o LinkedIn Jobs no browser com a tua pesquisa pré-preenchida"/>
+                        <Button Classes="ghost" Content="← Início" Command="{Binding GoHomeCommand}"/>
                         <Button Classes="ghost" Content="Novo CV" Command="{Binding ResetCommand}"/>
                     </StackPanel>
                     <TextBlock Classes="sub" Text="{Binding ExportMsg}" IsVisible="{Binding ExportMsg, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>

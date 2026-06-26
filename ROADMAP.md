@@ -63,6 +63,10 @@ A space focused on *getting better positioned*, not just finding listings.
   LinkedIn Jobs in the browser pre-filled from the profile, plus the optional `linkedin-jobs.json` merge.
   Explore a ToS-respecting way to pull results into the app (e.g. a user-run browser snippet/export, or a
   Playwright-assisted pass where the **user logs in** — best-effort, opt-in, given LinkedIn's bot defenses).
+- **Company research mode** — for a given job, research the employer: reviews/reputation and comparable
+  salaries, summarised next to the listing. Needs web access: the **Claude CLI can web-search**, but a
+  **local model is offline** and can't browse — so for local models this means adding a web-search step
+  that feeds results to the model (or showing it only when the Claude CLI engine is selected).
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.
 - A non-tech sample dataset to showcase the field-agnostic scoring.
 - Saved searches and change alerts (new strong-fit jobs since last run).

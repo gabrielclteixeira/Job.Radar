@@ -26,17 +26,30 @@ public class ClaudeScorer
     public async Task<AiResult?> ScoreAsync(JobEntity j)
     {
         string prompt =
-$@"Score how well the JOB below fits the CANDIDATE. Output ONLY one valid JSON object and nothing else
-(no markdown, no prose). All keys and string values MUST be double-quoted. Always return your best
-estimate even if uncertain. Exact shape:
+$@"You are a STRICT, skeptical recruiter. Score how well the JOB fits the CANDIDATE. Output ONLY one valid
+JSON object and nothing else (no markdown, no prose). All keys and string values MUST be double-quoted.
+Exact shape:
 {{""score"": 73, ""verdict"": ""one short sentence"", ""reasons"": [""...""], ""redFlags"": [""...""]}}
-PRIMARY CRITERION — FIELD & CORE SKILLS (most important by far): judge fit against the candidate's
-own field and core skills as stated in their profile below.
-- If the job is clearly in the candidate's field and uses their core skills, it can score high.
-- If the job is in a DIFFERENT field/profession, the score MUST be <= 40 no matter how good the rest is.
-- If the field/skills required are unclear, cap the score at <= 55.
-Then, secondarily, factor seniority, location (remote/hybrid/preferred locations) and pay.
-The candidate's salary floor is €{_floorEur:N0}/yr and target is €{_targetEur:N0}/yr — factor pay in and flag when below floor or unknown. Be critical and honest.
+
+PRIMARY CRITERION — FIELD & CORE SKILLS (by far the most important): judge fit against the candidate's
+own field and CORE skills as stated below. The job's REQUIRED skills must explicitly overlap the
+candidate's CORE skills — adjacent or merely-mentioned tech does NOT count.
+
+Be conservative: WHEN IN DOUBT, SCORE LOWER. Do not inflate for buzzwords or a nice-sounding title.
+Score bands (follow strictly):
+- 80-100: the job's required stack clearly centres on the candidate's CORE skills, seniority fits, and
+  conditions are good (remote/preferred location, pay at/above target). Reserve 90+ for near-perfect fits.
+- 60-79: same field and MOST core skills present, conditions acceptable.
+- 40-59: same field but several core skills missing, or the main stack differs, or poor conditions
+  (pay below floor, location/seniority mismatch).
+- 0-39: different field/profession, or core skills largely absent.
+Hard rules: a DIFFERENT field/profession ⇒ score <= 40. If the required field/skills are unclear ⇒ <= 55.
+If the job centres on a stack the candidate does NOT list as core (e.g. a different primary language) ⇒
+keep it in 40-59 even if the title looks relevant. Do not assume unknown facts (pay, location, seniority)
+are favourable — treat unknowns as neutral-to-negative and note them in redFlags.
+
+Secondarily, factor seniority, location (remote/hybrid/preferred locations) and pay.
+The candidate's salary floor is €{_floorEur:N0}/yr and target is €{_targetEur:N0}/yr — factor pay in and flag when below floor or unknown.
 
 == CANDIDATE PROFILE ==
 {_profile}

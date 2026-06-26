@@ -181,6 +181,62 @@ public static class Pipeline
         return new PipelineResult(ranked, ranked.Count, false);
     }
 
+    /// <summary>Re-scores the cached relevant jobs with the current LLM settings (overwriting prior AI scores),
+    /// without fetching again. Use after switching the model/engine in Settings.</summary>
+    public static async Task<PipelineResult> RescoreAsync(
+        UserProfile profile, AppConfig cfg, string root,
+        IProgress<string>? log = null, IProgress<JobEntity>? onJob = null, CancellationToken ct = default)
+    {
+        void L(string m) => log?.Report(m);
+        string dbPath = Path.IsPathRooted(cfg.DbPath) ? cfg.DbPath : Path.Combine(root, cfg.DbPath);
+        string marker = dbPath + ".schema";
+        if (!File.Exists(dbPath) || !File.Exists(marker) || File.ReadAllText(marker) != SchemaVersion)
+        {
+            L("Sem vagas guardadas para reclassificar — usa \"Procurar vagas\" primeiro.");
+            return new PipelineResult(new(), 0, false);
+        }
+
+        using var db = new RadarDb(dbPath);
+        await db.Database.EnsureCreatedAsync(ct);
+        var allRelevant = await db.Jobs.Where(j => j.Relevant)
+            .OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt).ToListAsync(ct);
+
+        if (!cfg.Claude.Enabled)
+        {
+            L("IA desativada — nada a reclassificar.");
+            foreach (var j in allRelevant) onJob?.Report(j);
+            return new PipelineResult(allRelevant, allRelevant.Count, false);
+        }
+
+        var toScore = allRelevant.OrderByDescending(j => j.PreScore).Take(cfg.ScoreTopN).ToList();
+        var pending = toScore.ToHashSet();
+        foreach (var j in allRelevant.Where(j => !pending.Contains(j))) onJob?.Report(j);
+
+        int floor = profile.SalaryFloorEur > 0 ? profile.SalaryFloorEur : cfg.Salary.FloorEur;
+        int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
+        var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
+        L($"A reclassificar {toScore.Count} vagas com o modelo atual…");
+        int i = 0;
+        foreach (var j in toScore)
+        {
+            ct.ThrowIfCancellationRequested();
+            var res = await scorer.ScoreAsync(j);
+            if (res is not null)
+            {
+                j.AiScore = res.Score; j.AiVerdict = res.Verdict;
+                j.AiReasons = JsonSerializer.Serialize(res.Reasons);
+                j.AiRedFlags = JsonSerializer.Serialize(res.RedFlags);
+            }
+            else j.AiScore = j.PreScore;
+            await db.SaveChangesAsync(ct);
+            L($"  [{j.AiScore,3}] {j.Title} @ {j.Company}  ({++i}/{toScore.Count})");
+            onJob?.Report(j);
+        }
+
+        var ranked = allRelevant.OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt).ToList();
+        return new PipelineResult(ranked, ranked.Count, false);
+    }
+
     /// <summary>Overrides queries + location in the fetcher config from the profile, preserving keys/sources.</summary>
     private static void WriteFetcherConfig(string cfgPath, UserProfile profile, IProgress<string>? log)
     {

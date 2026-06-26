@@ -211,6 +211,28 @@ public partial class MainViewModel : ObservableObject
         finally { IsScoring = false; Busy = false; }
     }
 
+    /// <summary>Re-scores the cached jobs with the current model/engine (after changing it in Settings).</summary>
+    [RelayCommand]
+    private async Task Rescore()
+    {
+        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
+        ResultsTitle = "Vagas para ti"; ScoringStatus = "A reclassificar com o modelo atual…";
+        MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
+        var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
+        var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
+        try
+        {
+            var result = await Pipeline.RescoreAsync(_profile, _cfg, _root, logProg, jobProg);
+            FinalizeResults(result);
+            if (!HasJobs) ScoringStatus = "Sem vagas guardadas — usa \"Procurar vagas\" primeiro.";
+        }
+        catch (Exception ex) { ScoringStatus = "Erro: " + ex.Message; }
+        finally { IsScoring = false; Busy = false; }
+    }
+
+    /// <summary>Back to the home screen (keeps the loaded results in memory).</summary>
+    [RelayCommand] private void GoHome() => ShowOnly(welcome: true);
+
     // ---- settings ----
     [RelayCommand]
     private void OpenSettings()
