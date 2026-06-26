@@ -54,6 +54,11 @@ A space focused on *getting better positioned*, not just finding listings.
   title "Job Radar".
 - **Premium UI polish** — elevate the front-end to feel like a premium, polished product: refined visual
   design, smooth transitions/motion, consistent spacing & iconography, and proper empty/loading/error states.
+- **Local-model manager** — a UI section to pick and manage the local model, runtime-agnostic. The app
+  already talks to any OpenAI-compatible runtime (LM Studio, Ollama, llama.cpp) via the `provider`/`baseUrl`
+  setting; this adds: detect the running runtime, list installed models, and select the active one. Include
+  an **optional in-app installer for Ollama** (its `/api/pull` API streams download progress); LM Studio /
+  llama.cpp users manage models in their own tools and just point the app at their endpoint.
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.
 - A non-tech sample dataset to showcase the field-agnostic scoring.
 - Saved searches and change alerts (new strong-fit jobs since last run).
