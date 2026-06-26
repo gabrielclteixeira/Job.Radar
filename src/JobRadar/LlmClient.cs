@@ -36,6 +36,10 @@ public static class LlmClient
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
+                // The CLI emits UTF-8; without this it's decoded with the console codepage and
+                // mangles accents/em-dashes in verdicts, reasons and company research.
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
             };
             psi.ArgumentList.Add("-p");
             psi.ArgumentList.Add(prompt);

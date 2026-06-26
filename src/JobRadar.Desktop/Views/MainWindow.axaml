@@ -309,7 +309,8 @@
                                         </StackPanel>
                                         <Border Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="12"
                                                 IsVisible="{Binding ResearchText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
-                                            <md:MarkdownScrollViewer Markdown="{Binding ResearchText}" MaxHeight="440"/>
+                                            <md:MarkdownScrollViewer Markdown="{Binding ResearchText}" MaxHeight="440"
+                                                                     MarkdownStyleName="FluentAvalonia"/>
                                         </Border>
                                     </StackPanel>
                                 </Expander>
