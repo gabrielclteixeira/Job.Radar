@@ -5,6 +5,10 @@ name: release
 on:
   push:
     tags: ['v*']
+  # Also build when a Release is published from the GitHub UI (that fires a
+  # `release` event, not a tag `push`, so without this the UI flow attaches no binaries).
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       version:
