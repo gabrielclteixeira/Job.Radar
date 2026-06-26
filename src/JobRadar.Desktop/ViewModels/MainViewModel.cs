@@ -36,6 +36,9 @@ public partial class MainViewModel : ObservableObject
         ApplyLlmOverride();
         ApplyApifyOverride();
         LoadUiSettings();
+        _syncingTextSize = true;
+        _textSize = SizePresets.FirstOrDefault(p => Math.Abs(p.Zoom - _zoom) < 0.001).Label ?? CustomSize;
+        _syncingTextSize = false;
         ApplyTheme();
         LoadSavedProfile();
         LoadPlan();
@@ -79,11 +82,38 @@ public partial class MainViewModel : ObservableObject
 
     [RelayCommand] private void ToggleTheme() => ThemePref = ThemePref == "Light" ? "Dark" : "Light";
 
-    // ---- UI zoom (Ctrl +/- / 0, Ctrl+wheel, or the Definições stepper) ----
+    // ---- text size / UI zoom (Definições dropdown + Ctrl +/- / 0 + Ctrl+wheel) ----
     private const double MinZoom = 0.8, MaxZoom = 2.0, ZoomStep = 0.1;
     [ObservableProperty] private double _zoom = 1.0;
     public string ZoomLabel => $"{Zoom * 100:0}%";
-    partial void OnZoomChanged(double value) { OnPropertyChanged(nameof(ZoomLabel)); SaveUiSettings(); }
+
+    // Friendly presets shown in Definições; "Personalizado" is only ever shown (not chosen)
+    // when Ctrl +/- lands on a value between presets.
+    private const string CustomSize = "Personalizado";
+    public string[] TextSizeOptions { get; } = { "Pequeno", "Normal", "Grande", "Maior", CustomSize };
+    private static readonly (string Label, double Zoom)[] SizePresets =
+        { ("Pequeno", 0.9), ("Normal", 1.0), ("Grande", 1.2), ("Maior", 1.4) };
+    private bool _syncingTextSize;
+    [ObservableProperty] private string _textSize = "Normal";
+
+    partial void OnTextSizeChanged(string value)
+    {
+        if (_syncingTextSize) return;
+        foreach (var p in SizePresets)
+            if (p.Label == value) { Zoom = p.Zoom; return; }
+    }
+
+    partial void OnZoomChanged(double value)
+    {
+        OnPropertyChanged(nameof(ZoomLabel));
+        SaveUiSettings();
+        _syncingTextSize = true;                 // reflect the new zoom in the dropdown
+        string label = CustomSize;
+        foreach (var p in SizePresets)
+            if (Math.Abs(p.Zoom - value) < 0.001) { label = p.Label; break; }
+        TextSize = label;
+        _syncingTextSize = false;
+    }
 
     [RelayCommand] private void ZoomIn() => Zoom = Math.Min(MaxZoom, Math.Round(Zoom + ZoomStep, 2));
     [RelayCommand] private void ZoomOut() => Zoom = Math.Max(MinZoom, Math.Round(Zoom - ZoomStep, 2));

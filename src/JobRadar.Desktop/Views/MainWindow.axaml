@@ -615,15 +615,13 @@
                                 <ComboBox ItemsSource="{Binding ThemeOptions}" SelectedItem="{Binding ThemePref}" Width="160"/>
                                 <TextBlock Classes="sub" VerticalAlignment="Center" Text="Claro, escuro ou a seguir o sistema."/>
                             </StackPanel>
-                            <TextBlock Classes="fld" Text="TAMANHO DA INTERFACE" Margin="0,8,0,2"/>
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <Button Classes="ghost" Command="{Binding ZoomOutCommand}" ToolTip.Tip="Diminuir (Ctrl -)" Padding="12,6"><TextBlock Text="−" FontSize="16"/></Button>
-                                <TextBlock Text="{Binding ZoomLabel}" VerticalAlignment="Center" MinWidth="46" TextAlignment="Center"
-                                           FontFamily="{DynamicResource MonoFont}" FontWeight="SemiBold" Foreground="{DynamicResource Text}"/>
-                                <Button Classes="ghost" Command="{Binding ZoomInCommand}" ToolTip.Tip="Aumentar (Ctrl +)" Padding="12,6"><TextBlock Text="+" FontSize="16"/></Button>
-                                <Button Classes="link" Command="{Binding ZoomResetCommand}" Content="Repor" VerticalAlignment="Center" Margin="4,0,0,0"/>
-                                <TextBlock Classes="sub" VerticalAlignment="Center" Text="ou Ctrl +/− · Ctrl 0 · Ctrl+roda do rato"/>
+                            <TextBlock Classes="fld" Text="TAMANHO DO TEXTO" Margin="0,8,0,2"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <ComboBox ItemsSource="{Binding TextSizeOptions}" SelectedItem="{Binding TextSize}" Width="160"/>
+                                <TextBlock Text="{Binding ZoomLabel}" VerticalAlignment="Center"
+                                           FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource Muted}"/>
                             </StackPanel>
+                            <TextBlock Classes="sub" Text="Aumenta a app inteira. Também com Ctrl +/− · Ctrl 0 · Ctrl+roda do rato."/>
                         </StackPanel>
                     </Border>
 
