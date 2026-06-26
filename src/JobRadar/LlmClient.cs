@@ -115,9 +115,7 @@ public static class LlmClient
         if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model)) return false;
         try
         {
-            string root = baseUrl.Trim().TrimEnd('/');
-            if (root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) root = root[..^3].TrimEnd('/');
-            string url = root + "/api/pull";
+            string url = OllamaRoot(baseUrl) + "/api/pull";
 
             var payload = new { name = model.Trim(), stream = true };
             using var req = new HttpRequestMessage(HttpMethod.Post, url)
@@ -152,6 +150,68 @@ public static class LlmClient
                 catch { /* ignore a partial / non-JSON line */ }
             }
             return success;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Ollama's native API root (strip the OpenAI-compatible "/v1" suffix from the base URL).</summary>
+    private static string OllamaRoot(string baseUrl)
+    {
+        string root = (baseUrl ?? "").Trim().TrimEnd('/');
+        if (root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) root = root[..^3].TrimEnd('/');
+        return root;
+    }
+
+    /// <summary>Lists locally installed Ollama models with metadata (`GET {root}/api/tags`). Ollama-only.</summary>
+    public static async Task<List<OllamaModel>> ListOllamaModelsAsync(string baseUrl, CancellationToken ct = default)
+    {
+        var list = new List<OllamaModel>();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl)) return list;
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(8_000);
+            using var resp = await Http.GetAsync(OllamaRoot(baseUrl) + "/api/tags", cts.Token);
+            if (!resp.IsSuccessStatusCode) return list;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+            if (!doc.RootElement.TryGetProperty("models", out var models) || models.ValueKind != JsonValueKind.Array)
+                return list;
+            foreach (var m in models.EnumerateArray())
+            {
+                string name = Get(m, "name");
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                double gb = m.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number
+                    ? Math.Round(sz.GetDouble() / 1_000_000_000d, 1) : 0;
+                string param = "", quant = "", family = "";
+                if (m.TryGetProperty("details", out var d) && d.ValueKind == JsonValueKind.Object)
+                {
+                    param = Get(d, "parameter_size");
+                    quant = Get(d, "quantization_level");
+                    family = Get(d, "family");
+                }
+                list.Add(new OllamaModel(name, param, quant, gb, family));
+            }
+        }
+        catch { /* runtime down — return what we have */ }
+        return list;
+
+        static string Get(JsonElement e, string k) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+    }
+
+    /// <summary>Removes a locally installed Ollama model (`DELETE {root}/api/delete`). Ollama-only.</summary>
+    public static async Task<bool> DeleteOllamaModelAsync(string baseUrl, string name, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(name)) return false;
+            using var req = new HttpRequestMessage(HttpMethod.Delete, OllamaRoot(baseUrl) + "/api/delete")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { name = name.Trim() }), Encoding.UTF8, "application/json"),
+            };
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(15_000);
+            using var resp = await Http.SendAsync(req, cts.Token);
+            return resp.IsSuccessStatusCode;
         }
         catch { return false; }
     }

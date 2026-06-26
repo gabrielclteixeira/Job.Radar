@@ -87,6 +87,23 @@ public class JSearchConfig
     public int MaxItems { get; set; } = 20;                     // cap results → cap quota use
 }
 
+/// <summary>A locally installed Ollama model with display metadata (from /api/tags).</summary>
+public record OllamaModel(string Name, string ParamSize, string Quant, double SizeGb, string Family)
+{
+    /// <summary>"3.2B · 2.0 GB · Q4_K_M" (skips empty parts).</summary>
+    public string Meta
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(ParamSize)) parts.Add(ParamSize);
+            if (SizeGb > 0) parts.Add($"{SizeGb:0.0} GB");
+            if (!string.IsNullOrWhiteSpace(Quant)) parts.Add(Quant);
+            return string.Join(" · ", parts);
+        }
+    }
+}
+
 public class SalaryConfig
 {
     public int FloorEur { get; set; } = 45000;

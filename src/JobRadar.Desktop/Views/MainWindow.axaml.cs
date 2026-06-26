@@ -15,8 +15,26 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContextChanged += (_, _) =>
         {
-            if (DataContext is MainViewModel vm) vm.ConfirmCostAsync = ConfirmApifyCostAsync;
+            if (DataContext is MainViewModel vm)
+            {
+                vm.ConfirmCostAsync = ConfirmApifyCostAsync;
+                vm.ConfirmRemoveAsync = ConfirmRemoveModelAsync;
+            }
         };
+    }
+
+    /// <summary>Confirmation before deleting a locally installed model.</summary>
+    private async Task<bool> ConfirmRemoveModelAsync(string model)
+    {
+        var dlg = new ContentDialog
+        {
+            Title = JobRadar.Loc.Instance.F("models.removeConfirm", model),
+            Content = JobRadar.Loc.Instance.T("models.removeBody"),
+            PrimaryButtonText = JobRadar.Loc.Instance.T("models.remove"),
+            CloseButtonText = JobRadar.Loc.Instance.T("dlg.cancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        return await dlg.ShowAsync() == ContentDialogResult.Primary;
     }
 
     /// <summary>UI zoom shortcuts: Ctrl + / Ctrl - / Ctrl 0 (numpad or main row).</summary>

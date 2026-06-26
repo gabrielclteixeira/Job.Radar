@@ -318,10 +318,17 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _jSearchKey = "";
     [ObservableProperty] private string _jSearchMax = "20";
 
-    // local model download (Ollama)
+    // local model manager (Ollama)
     [ObservableProperty] private string _modelToPull = "";
     [ObservableProperty] private bool _isPullingModel;
     [ObservableProperty] private string _modelDownloadStatus = "";
+    [ObservableProperty] private double _pullProgress;
+    [ObservableProperty] private bool _ollamaReachable = true;
+    public ObservableCollection<OllamaModelVm> InstalledModels { get; } = new();
+    public bool HasInstalledModels => InstalledModels.Count > 0;
+    public string[] SuggestedModels { get; } = { "llama3.2", "qwen2.5", "phi3.5", "gemma2", "mistral", "llama3.1", "llama3.2-vision" };
+    /// <summary>Set by the view: confirms removing an installed model. Returns true to proceed.</summary>
+    public Func<string, Task<bool>>? ConfirmRemoveAsync;
 
     // about / update
     public string AppVersion => System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version is { } v
@@ -349,25 +356,84 @@ public partial class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
-    /// <summary>Downloads a model via Ollama (streamed progress), then refreshes the dropdown.</summary>
+    private string OllamaBaseUrl => string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
+
+    /// <summary>Reloads the installed-models list from Ollama and rebuilds the cards (active = LlmModel).</summary>
+    [RelayCommand]
+    private async Task RefreshInstalledModels()
+    {
+        var models = await LlmClient.ListOllamaModelsAsync(OllamaBaseUrl);
+        OllamaReachable = models.Count > 0 || await PingOllama();
+        InstalledModels.Clear();
+        foreach (var m in models)
+            InstalledModels.Add(new OllamaModelVm(m.Name, m.Meta, string.Equals(m.Name, LlmModel, StringComparison.OrdinalIgnoreCase)));
+        OnPropertyChanged(nameof(HasInstalledModels));
+    }
+
+    private async Task<bool> PingOllama()
+    {
+        try { return (await LlmClient.ListOpenAiModelsAsync(OllamaBaseUrl, LlmApiKey)).Count >= 0; } catch { return false; }
+    }
+
+    /// <summary>Makes a model the active one (used for scoring) and persists it immediately.</summary>
+    [RelayCommand]
+    private void SetActiveModel(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        LlmModel = name.Trim();
+        if (!ModelOptions.Contains(LlmModel)) ModelOptions.Add(LlmModel);
+        _cfg.Claude.Model = LlmModel;
+        SaveLlmSettings();
+        for (int i = 0; i < InstalledModels.Count; i++)
+            InstalledModels[i] = InstalledModels[i] with { IsActive = string.Equals(InstalledModels[i].Name, LlmModel, StringComparison.OrdinalIgnoreCase) };
+    }
+
+    /// <summary>Removes an installed Ollama model (after confirmation), then refreshes the list.</summary>
+    [RelayCommand]
+    private async Task RemoveModel(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || IsPullingModel) return;
+        if (ConfirmRemoveAsync is not null && !await ConfirmRemoveAsync(name)) return;
+        await LlmClient.DeleteOllamaModelAsync(OllamaBaseUrl, name);
+        await RefreshInstalledModels();
+    }
+
+    /// <summary>One-click install of a suggested model.</summary>
+    [RelayCommand]
+    private Task PullSuggested(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Task.CompletedTask;
+        ModelToPull = name.Trim();
+        return DownloadModel();
+    }
+
+    /// <summary>Downloads a model via Ollama (streamed progress + progress bar), then activates it.</summary>
     [RelayCommand]
     private async Task DownloadModel()
     {
         if (IsPullingModel || string.IsNullOrWhiteSpace(ModelToPull)) return;
-        IsPullingModel = true;
+        IsPullingModel = true; PullProgress = 0;
         string name = ModelToPull.Trim();
         ModelDownloadStatus = Loc.Instance.F("models.pulling", name, "0%");
         var progress = new Progress<(string status, double frac)>(p => Dispatcher.UIThread.Post(() =>
-            ModelDownloadStatus = Loc.Instance.F("models.pulling", name, p.frac > 0 ? $"{p.frac * 100:0}%" : p.status)));
+        {
+            if (p.frac > 0) PullProgress = p.frac;
+            ModelDownloadStatus = Loc.Instance.F("models.pulling", name, p.frac > 0 ? $"{p.frac * 100:0}%" : p.status);
+        }));
         try
         {
-            string baseUrl = string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
-            bool ok = await LlmClient.PullModelAsync(baseUrl, name, progress);
-            if (ok) { ModelDownloadStatus = Loc.Instance.F("models.pullDone", name); await LoadModels(); LlmModel = name; }
+            bool ok = await LlmClient.PullModelAsync(OllamaBaseUrl, name, progress);
+            if (ok)
+            {
+                ModelDownloadStatus = Loc.Instance.F("models.pullDone", name);
+                ModelToPull = "";
+                await RefreshInstalledModels();
+                SetActiveModel(name);
+            }
             else ModelDownloadStatus = L("models.pullFail");
         }
         catch (Exception ex) { ModelDownloadStatus = Loc.Instance.F("error.generic", ex.Message); }
-        finally { IsPullingModel = false; }
+        finally { IsPullingModel = false; PullProgress = 0; }
     }
 
     /// <summary>Checks GitHub for a newer release; on Windows downloads + launches the installer, else opens the page.</summary>
@@ -417,6 +483,7 @@ public partial class MainViewModel : ObservableObject
     {
         LlmModel = value ? "" : DefaultClaudeModel; // local needs an explicit model; Claude defaults
         RefreshModelOptions();
+        if (value) _ = RefreshInstalledModels();
     }
 
     // ---- profile form ----
@@ -620,8 +687,10 @@ public partial class MainViewModel : ObservableObject
         UseJSearch = _cfg.JSearch.Enabled;
         JSearchKey = _cfg.JSearch.ApiKey;
         JSearchMax = _cfg.JSearch.MaxItems > 0 ? _cfg.JSearch.MaxItems.ToString() : "20";
-        ModelDownloadStatus = "";
+        ModelDownloadStatus = ""; PullProgress = 0;
         UpdateStatus = ""; UpdatePageUrl = "";
+        InstalledModels.Clear(); OnPropertyChanged(nameof(HasInstalledModels));
+        if (UseLocalModel) _ = RefreshInstalledModels();
         Status = "";
         ShowOnly(settings: true);
     }
