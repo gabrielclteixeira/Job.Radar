@@ -15,9 +15,9 @@ A native desktop app that reads your CV, builds your profile with AI, then scans
 ![BYOK](https://img.shields.io/badge/BYOK-local--first-3DDC97?style=flat-square)
 ![License MIT](https://img.shields.io/badge/license-MIT-8E8AA3?style=flat-square)
 
-<img src="docs/screenshot-dark.png" width="900" alt="Job Radar — dark"/>
+<img src="docs/demo.gif" width="820" alt="Job Radar — sample CV → search demonstration"/>
 
-<sub>Mission-control dark theme · also ships a light theme (system-aware + toggle)</sub>
+<sub>Sample CV → search demonstration · mission-control dark theme (a light theme ships too)</sub>
 
 </div>
 
