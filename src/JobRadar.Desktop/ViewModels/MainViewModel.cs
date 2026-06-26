@@ -14,7 +14,11 @@ public partial class MainViewModel : ObservableObject
     private readonly string _profilePath;
     private readonly string _llmSettingsPath;
     private readonly string _uiSettingsPath;
+    private readonly string _apifySettingsPath;
     private AppConfig _cfg;
+
+    /// <summary>Set by the view: shows a cost-confirmation dialog before a paid (Apify) search.</summary>
+    public Func<Task<bool>>? ConfirmCostAsync;
     private UserProfile _profile = new();
     private List<JobVm> _all = new();
     private bool _isDemoProfile; // true while the John Doe sample is loaded → never persisted
@@ -25,8 +29,10 @@ public partial class MainViewModel : ObservableObject
         _profilePath = Path.Combine(_root, "profile.json");
         _llmSettingsPath = Path.Combine(_root, "llm-settings.json");
         _uiSettingsPath = Path.Combine(_root, "ui-settings.json");
+        _apifySettingsPath = Path.Combine(_root, "apify-settings.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
+        ApplyApifyOverride();
         LoadUiSettings();
         ApplyTheme();
         LoadSavedProfile();
@@ -114,6 +120,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _llmModel = "";
     [ObservableProperty] private string _llmApiKey = "";
     [ObservableProperty] private string _claudeExe = "claude";
+
+    // LinkedIn via Apify (paid connector)
+    [ObservableProperty] private bool _useApify;
+    [ObservableProperty] private string _apifyToken = "";
+    [ObservableProperty] private string _apifyActor = "";
+    [ObservableProperty] private string _apifyMax = "50";
 
     public ObservableCollection<string> ModelOptions { get; } = new();
     private const string DefaultClaudeModel = "(predefinido)";   // maps to empty → CLI's own default
@@ -253,6 +265,9 @@ public partial class MainViewModel : ObservableObject
     {
         CommitFormToProfile();
         SaveProfile(); // persist any edits to the saved profile
+        // Apify is paid — confirm before spending the user's credits.
+        if (_cfg.Apify.Enabled && !string.IsNullOrWhiteSpace(_cfg.Apify.Token) && ConfirmCostAsync is not null)
+            if (!await ConfirmCostAsync()) return;
         await RunPipeline(useAi: UseAi, demo: false);
     }
 
@@ -311,6 +326,10 @@ public partial class MainViewModel : ObservableObject
         // Set model AFTER UseLocalModel so the change-handler doesn't clobber it; map empty Claude → label.
         LlmModel = (!UseLocalModel && string.IsNullOrWhiteSpace(_cfg.Claude.Model)) ? DefaultClaudeModel : _cfg.Claude.Model;
         RefreshModelOptions();
+        UseApify = _cfg.Apify.Enabled;
+        ApifyToken = _cfg.Apify.Token;
+        ApifyActor = _cfg.Apify.ActorId;
+        ApifyMax = _cfg.Apify.MaxItems > 0 ? _cfg.Apify.MaxItems.ToString() : "50";
         Status = "";
         ShowOnly(settings: true);
     }
@@ -324,6 +343,11 @@ public partial class MainViewModel : ObservableObject
         _cfg.Claude.ApiKey = LlmApiKey.Trim();
         _cfg.Claude.Exe = string.IsNullOrWhiteSpace(ClaudeExe) ? "claude" : ClaudeExe.Trim();
         SaveLlmSettings();
+        _cfg.Apify.Enabled = UseApify;
+        _cfg.Apify.Token = ApifyToken.Trim();
+        _cfg.Apify.ActorId = ApifyActor.Trim();
+        _cfg.Apify.MaxItems = int.TryParse(ApifyMax, out var am) && am > 0 ? am : 50;
+        SaveApifySettings();
         Status = "Definições guardadas.";
         ShowOnly(welcome: true);
     }
@@ -511,6 +535,25 @@ public partial class MainViewModel : ObservableObject
     private void SaveLlmSettings()
     {
         try { File.WriteAllText(_llmSettingsPath, JsonSerializer.Serialize(_cfg.Claude, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+    }
+
+    /// <summary>Loads the Apify connector settings (machine-local, gitignored — contains a secret token).</summary>
+    private void ApplyApifyOverride()
+    {
+        try
+        {
+            if (!File.Exists(_apifySettingsPath)) return;
+            var c = JsonSerializer.Deserialize<ApifyConfig>(File.ReadAllText(_apifySettingsPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (c is not null) _cfg.Apify = c;
+        }
+        catch { /* ignore */ }
+    }
+
+    private void SaveApifySettings()
+    {
+        try { File.WriteAllText(_apifySettingsPath, JsonSerializer.Serialize(_cfg.Apify, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 

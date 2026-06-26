@@ -23,6 +23,8 @@ profile.json
 llm-settings.json
 # UI prefs (theme) saved from the Settings screen (machine-local)
 ui-settings.json
+# Apify connector settings — contains a secret API token (machine-local)
+apify-settings.json
 
 # app / dev scratch
 app-err.log

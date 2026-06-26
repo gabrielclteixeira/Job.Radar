@@ -66,6 +66,14 @@ public static class Pipeline
             L($"{li.Count} vagas do LinkedIn fundidas.");
         }
 
+        // Optional paid LinkedIn connector (Apify). Cost is confirmed in the UI before the search runs.
+        if (cfg.Apify.Enabled)
+        {
+            var apify = await ApifyClient.FetchLinkedInJobsAsync(
+                cfg.Apify, profile.SearchQueries(), profile.Locations.FirstOrDefault() ?? "", log, ct);
+            raw.AddRange(apify);
+        }
+
         // The SQLite cache has no migrations; if the entity schema changed, recreate it.
         string dbPath = R(cfg.DbPath);
         string marker = dbPath + ".schema";

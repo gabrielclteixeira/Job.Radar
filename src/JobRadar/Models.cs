@@ -65,6 +65,16 @@ public class AppConfig
     public string ScoringMode { get; set; } = "ai"; // "ai" | "keywords"
     public ClaudeConfig Claude { get; set; } = new();
     public SalaryConfig Salary { get; set; } = new();
+    public ApifyConfig Apify { get; set; } = new();
+}
+
+/// <summary>Optional LinkedIn-via-Apify connector. PAID — uses the user's Apify credits.</summary>
+public class ApifyConfig
+{
+    public bool Enabled { get; set; }
+    public string Token { get; set; } = "";     // Apify API token (secret)
+    public string ActorId { get; set; } = "";    // e.g. "username/linkedin-jobs-scraper"
+    public int MaxItems { get; set; } = 50;       // cap results → cap cost
 }
 
 public class SalaryConfig

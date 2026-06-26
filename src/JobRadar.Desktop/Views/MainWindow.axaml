@@ -372,13 +372,37 @@
                                            Text="Carrega a lista a partir do runtime local (tem de estar a correr no Base URL)."/>
                             </StackPanel>
 
-                            <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,8,0,0">
-                                <Button Classes="accent" Content="Guardar" Command="{Binding SaveSettingsCommand}"/>
-                            </StackPanel>
-                            <TextBlock Classes="sub" Text="{Binding Status}"
-                                       IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         </StackPanel>
                     </Border>
+
+                    <!-- LinkedIn via Apify (paid connector) -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="fld" Text="LINKEDIN (APIFY)" Margin="0,0,0,2"/>
+                            <ToggleSwitch IsChecked="{Binding UseApify}" OnContent="Ligado" OffContent="Desligado"/>
+                            <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" Background="{DynamicResource Panel2}" CornerRadius="8" Padding="11">
+                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Amber}">
+                                    <Run Text="Atenção — custos: " FontWeight="Bold"/><Run Text="o Apify é pago e cada pesquisa consome créditos da tua conta Apify. Com o Apify ligado, a app pede sempre confirmação antes de procurar."/>
+                                </TextBlock>
+                            </Border>
+                            <StackPanel IsVisible="{Binding UseApify}" Spacing="4">
+                                <TextBlock Classes="fld" Text="APIFY API TOKEN"/>
+                                <TextBox Text="{Binding ApifyToken}" PasswordChar="•" Watermark="apify_api_…"/>
+                                <TextBlock Classes="fld" Text="ACTOR ID"/>
+                                <TextBox Text="{Binding ApifyActor}" Watermark="ex.: username/linkedin-jobs-scraper"/>
+                                <TextBlock Classes="fld" Text="MÁX. RESULTADOS (limita o custo)"/>
+                                <TextBox Text="{Binding ApifyMax}" Watermark="50"/>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap"
+                                           Text="Escolhe um actor de “LinkedIn Jobs” no Apify Store e cola o ID. O token está em apify.com → Settings → API. As vagas entram na pesquisa normal."/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,14,0,0">
+                        <Button Classes="accent" Content="Guardar" Command="{Binding SaveSettingsCommand}"/>
+                    </StackPanel>
+                    <TextBlock Classes="sub" Text="{Binding Status}" Margin="0,8,0,0"
+                               IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 </StackPanel>
 
             </Grid>
