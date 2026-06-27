@@ -267,6 +267,27 @@ public static class LlmClient
             LastError = "empty response from the model";
             return null;
         }
-        catch (Exception ex) { LastError = Trim(ex.Message); return null; }
+        catch (Exception ex) { LastError = FriendlyConnError(cfg.BaseUrl, ex) ?? Trim(ex.Message); return null; }
+    }
+
+    /// <summary>Turns a raw connection failure into an actionable message naming the runtime and what to do
+    /// (LM Studio's server must be started + the model loaded; Ollama must be running). Returns null for
+    /// errors that aren't connection failures, so the caller keeps the original message.</summary>
+    private static string? FriendlyConnError(string baseUrl, Exception ex)
+    {
+        string msg = (ex.InnerException?.Message ?? "") + " " + ex.Message;
+        bool refused = ex is HttpRequestException
+            || msg.Contains("refused", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("actively refused", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("target machine", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("No connection", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("unreachable", StringComparison.OrdinalIgnoreCase)
+            || msg.Contains("connection", StringComparison.OrdinalIgnoreCase);
+        if (!refused) return null;
+        string url = (baseUrl ?? "").Trim();
+        string key = url.Contains(":1234") ? "llm.refused.lmstudio"
+                   : url.Contains(":11434") ? "llm.refused.ollama"
+                   : "llm.refused.generic";
+        return Loc.Instance.F(key, url);
     }
 }

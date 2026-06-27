@@ -719,10 +719,15 @@
                                             <Border Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="9" Padding="12,9" Margin="0,0,0,6">
                                                 <Grid ColumnDefinitions="*,Auto,Auto">
                                                     <Button Grid.Column="0" Classes="link" HorizontalAlignment="Left" Padding="0" HorizontalContentAlignment="Left"
-                                                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SetActiveModelCommand}" CommandParameter="{Binding Name}"
+                                                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SetActiveModelCommand}" CommandParameter="{Binding}"
                                                             ToolTip.Tip="{l:T models.setActive.tip}">
                                                         <StackPanel Spacing="1">
-                                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource Text}"/>
+                                                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource Text}"/>
+                                                                <Border Background="{DynamicResource AccentSoft}" CornerRadius="6" Padding="6,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="{Binding SourceLabel}" FontSize="9.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentText}"/>
+                                                                </Border>
+                                                            </StackPanel>
                                                             <TextBlock Text="{Binding Meta}" FontSize="11" Foreground="{DynamicResource Muted}" FontFamily="{DynamicResource MonoFont}"/>
                                                         </StackPanel>
                                                     </Button>
@@ -730,7 +735,7 @@
                                                         <TextBlock Text="{l:T models.active}" Foreground="{DynamicResource Signal}" FontSize="10.5" FontWeight="SemiBold"/>
                                                     </Border>
                                                     <Button Grid.Column="2" Classes="ghost" Padding="10,7" VerticalAlignment="Center" ToolTip.Tip="{l:T models.remove.tip}"
-                                                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveModelCommand}" CommandParameter="{Binding Name}">
+                                                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveModelCommand}" CommandParameter="{Binding}">
                                                         <TextBlock Text="✕"/>
                                                     </Button>
                                                 </Grid>
@@ -741,35 +746,95 @@
 
                                 <!-- empty / unreachable -->
                                 <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding !HasInstalledModels}" Text="{l:T models.none}"/>
-                                <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding !OllamaReachable}">
+                                <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding ShowOllamaWarning}">
                                     <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" Text="{l:T models.unreachable}" VerticalAlignment="Center"/>
                                     <Button Classes="link" Content="{l:T models.getOllama}" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/download"/>
                                 </StackPanel>
 
-                                <!-- install a model -->
-                                <TextBlock Classes="fld" Text="{l:T models.install}"/>
+                                <!-- live model browser: discover & install from Ollama / LM Studio (Hugging Face) -->
+                                <TextBlock Classes="fld" Text="{l:T models.install}" Margin="0,4,0,0"/>
+                                <StackPanel Orientation="Horizontal" Spacing="14">
+                                    <RadioButton GroupName="mbtab" Content="{l:T models.tab.ollama}" IsChecked="{Binding IsOllamaTab, Mode=TwoWay}"/>
+                                    <RadioButton GroupName="mbtab" Content="{l:T models.tab.lmstudio}" IsChecked="{Binding IsLmStudioTab, Mode=TwoWay}"/>
+                                </StackPanel>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0" Text="{Binding ModelSearchText}" Watermark="{l:T models.browse}">
+                                        <TextBox.InnerLeftContent><ui:SymbolIcon Symbol="Find" Margin="8,0,0,0" Foreground="{DynamicResource Muted}"/></TextBox.InnerLeftContent>
+                                    </TextBox>
+                                    <ui:ProgressRing Grid.Column="1" Width="18" Height="18" Margin="8,0,0,0" IsIndeterminate="True"
+                                                     VerticalAlignment="Center" IsVisible="{Binding IsSearchingRegistry}"/>
+                                </Grid>
+                                <TextBlock Classes="sub" FontSize="11" Text="{Binding RegistrySearchStatus}"
+                                           IsVisible="{Binding RegistrySearchStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                                <!-- how to actually use an LM Studio model -->
+                                <Border IsVisible="{Binding IsLmStudioTab}" Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="11">
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Text="{l:T models.lmGuide}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                        <Button Classes="link" HorizontalAlignment="Left" Content="{l:T models.lmOpen}" Command="{Binding OpenUrlCommand}" CommandParameter="https://lmstudio.ai/docs/app/api"/>
+                                    </StackPanel>
+                                </Border>
+                                <ScrollViewer MaxHeight="360" IsVisible="{Binding HasRegistryResults}" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding RegistryResults}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:RegistryModelVm">
+                                                <Border Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="9" Padding="12,9" Margin="0,0,0,6">
+                                                    <StackPanel Spacing="4">
+                                                        <Grid ColumnDefinitions="*,Auto">
+                                                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8">
+                                                                <Button Classes="link" Padding="0" FontWeight="Bold" FontSize="13.5" Content="{Binding Name}"
+                                                                        ToolTip.Tip="{l:T models.openPage}"
+                                                                        Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).OpenModelPageCommand}" CommandParameter="{Binding}"/>
+                                                                <TextBlock Text="{Binding CapBadges}" VerticalAlignment="Center" IsVisible="{Binding HasCaps}"/>
+                                                            </StackPanel>
+                                                            <Button Grid.Column="1" Classes="ghost" Padding="11,5" VerticalAlignment="Top" ToolTip.Tip="{l:T models.chooseSize.tip}"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).ExpandQuantsCommand}" CommandParameter="{Binding}">
+                                                                <StackPanel Orientation="Horizontal" Spacing="6"><ui:SymbolIcon Symbol="Download" FontSize="13"/><TextBlock Text="{l:T models.chooseSize}"/></StackPanel>
+                                                            </Button>
+                                                        </Grid>
+                                                        <TextBlock Text="{Binding Description}" FontSize="11.5" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"
+                                                                   MaxLines="2" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasDescription}"/>
+                                                        <TextBlock Text="{Binding Meta}" FontSize="10.5" Foreground="{DynamicResource Muted}" FontFamily="{DynamicResource MonoFont}"/>
+                                                        <!-- click a size/quant to install it -->
+                                                        <TextBlock Text="{l:T models.pickSize}" FontSize="11" Foreground="{DynamicResource AccentText}" IsVisible="{Binding Expanded}" Margin="0,3,0,0"/>
+                                                        <ItemsControl ItemsSource="{Binding Quants}" IsVisible="{Binding Expanded}">
+                                                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate x:DataType="vm:QuantOption">
+                                                                    <Button Classes="accent" Padding="10,4" Margin="0,4,6,0" ToolTip.Tip="{l:T models.pickSize}"
+                                                                            IsEnabled="{Binding $parent[Window].((vm:MainViewModel)DataContext).IsPullingModel, Converter={x:Static BoolConverters.Not}}"
+                                                                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).InstallModelCommand}" CommandParameter="{Binding Payload}">
+                                                                        <StackPanel Orientation="Horizontal" Spacing="5"><ui:SymbolIcon Symbol="Download" FontSize="12"/><TextBlock Text="{Binding Label}"/></StackPanel>
+                                                                    </Button>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <!-- per-row install feedback -->
+                                                        <StackPanel IsVisible="{Binding Installing}" Spacing="3" Margin="0,5,0,0">
+                                                            <ProgressBar Minimum="0" Maximum="1" Value="{Binding InstallProgress}" Height="5" CornerRadius="3"
+                                                                         Foreground="{DynamicResource Accent}" Background="{DynamicResource Panel}"/>
+                                                            <TextBlock Text="{Binding InstallStatus}" FontSize="11" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}" TextWrapping="Wrap"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+
+                                <!-- or install by exact name (power users) -->
+                                <TextBlock Classes="sub" FontSize="11" Text="{l:T models.byName}" Margin="0,4,0,0"/>
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBox Grid.Column="0" Text="{Binding ModelToPull}" Watermark="{l:T settings.downloadModel.wm}"/>
                                     <Button Grid.Column="1" Classes="accent" Margin="8,0,0,0" Command="{Binding DownloadModelCommand}" IsEnabled="{Binding !IsPullingModel}">
                                         <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T settings.download}"/></StackPanel>
                                     </Button>
                                 </Grid>
+
+                                <!-- shared download progress (browser + manual) -->
                                 <ProgressBar Minimum="0" Maximum="1" Value="{Binding PullProgress}" Height="6" CornerRadius="3"
                                              Foreground="{DynamicResource Accent}" Background="{DynamicResource Panel2}" IsVisible="{Binding IsPullingModel}"/>
                                 <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{Binding ModelDownloadStatus}"
                                            IsVisible="{Binding ModelDownloadStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-
-                                <!-- suggested -->
-                                <TextBlock Classes="sub" FontSize="11" Text="{l:T models.suggested}" Margin="0,2,0,0"/>
-                                <ItemsControl ItemsSource="{Binding SuggestedModels}">
-                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate x:DataType="x:String">
-                                            <Button Classes="ghost" Padding="11,5" Margin="0,4,7,0" Content="{Binding}"
-                                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).PullSuggestedCommand}" CommandParameter="{Binding}"/>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
 
                                 <StackPanel Orientation="Horizontal" Spacing="14" Margin="0,4,0,0">
                                     <Button Classes="link" Content="Ollama" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/download"/>

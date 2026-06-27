@@ -371,6 +371,137 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<OllamaModelVm> InstalledModels { get; } = new();
     public bool HasInstalledModels => InstalledModels.Count > 0;
     public string[] SuggestedModels { get; } = { "llama3.2", "qwen2.5", "phi3.5", "gemma2", "mistral", "llama3.1", "llama3.2-vision" };
+
+    // ---- live model browser (Ollama scrape + LM Studio/HF) ----
+    [ObservableProperty] private int _modelBrowserTab;          // 0 = Ollama, 1 = LM Studio
+    [ObservableProperty] private string _modelSearchText = "";
+    [ObservableProperty] private bool _isSearchingRegistry;
+    [ObservableProperty] private string _registrySearchStatus = "";
+    public ObservableCollection<RegistryModelVm> RegistryResults { get; } = new();
+    public bool HasRegistryResults => RegistryResults.Count > 0;
+    private CancellationTokenSource? _regCts;
+
+    // Two-way bools for the tab RadioButtons (int ModelBrowserTab is the source of truth).
+    public bool IsOllamaTab { get => ModelBrowserTab == 0; set { if (value) ModelBrowserTab = 0; } }
+    public bool IsLmStudioTab { get => ModelBrowserTab == 1; set { if (value) ModelBrowserTab = 1; } }
+
+    partial void OnModelSearchTextChanged(string value) => _ = DebouncedRegistrySearch();
+    partial void OnModelBrowserTabChanged(int value)
+    {
+        OnPropertyChanged(nameof(IsOllamaTab)); OnPropertyChanged(nameof(IsLmStudioTab));
+        RegistrySearchStatus = ""; _ = DebouncedRegistrySearch();
+    }
+
+    /// <summary>Debounced live search of the active tab's source; empty query → that source's popular list.</summary>
+    private async Task DebouncedRegistrySearch()
+    {
+        _regCts?.Cancel();
+        var cts = _regCts = new CancellationTokenSource();
+        try
+        {
+            await Task.Delay(300, cts.Token);
+            IsSearchingRegistry = true; RegistrySearchStatus = L("models.searching");
+            string q = (ModelSearchText ?? "").Trim();
+            var results = ModelBrowserTab == 1
+                ? await ModelRegistry.SearchLmStudioAsync(q, cts.Token)
+                : await ModelRegistry.SearchOllamaAsync(q, cts.Token);
+            if (cts.Token.IsCancellationRequested) return;
+            RegistryResults.Clear();
+            foreach (var m in results) RegistryResults.Add(new RegistryModelVm(m));
+            OnPropertyChanged(nameof(HasRegistryResults));
+            RegistrySearchStatus = results.Count == 0 ? L("models.noResults") : "";
+        }
+        catch (OperationCanceledException) { /* superseded by a newer keystroke */ }
+        catch { RegistrySearchStatus = L("models.searchError"); }
+        finally { if (_regCts == cts) IsSearchingRegistry = false; }
+    }
+
+    /// <summary>Loads the quant/size choices for a result (lazily for LM Studio) and toggles its expander.</summary>
+    [RelayCommand]
+    private async Task ExpandQuants(RegistryModelVm? vm)
+    {
+        if (vm is null) return;
+        if (vm.QuantsLoaded) { vm.Expanded = !vm.Expanded; return; }
+        if (vm.IsOllama)
+        {
+            // payload: source \t repo (for row lookup) \t install-target (ollama tag)
+            foreach (var s in vm.OllamaSizes) vm.Quants.Add(new QuantOption(s, $"ollama\t{vm.Repo}\t{vm.Repo}:{s}"));
+        }
+        else
+        {
+            var files = await ModelRegistry.GetGgufFilesAsync(vm.Repo);
+            foreach (var f in files) vm.Quants.Add(new QuantOption(QuantLabel(f), $"lmstudio\t{vm.Repo}\t{f}"));
+        }
+        vm.QuantsLoaded = true; vm.Expanded = true;
+        OnPropertyChanged(nameof(RegistryResults)); // refresh the expander binding
+    }
+
+    /// <summary>Installs a chosen quant with feedback ON the model's row: Ollama → pull; LM Studio → direct
+    /// GGUF download into ~/.lmstudio/models. payload = "source \t repo \t target".</summary>
+    [RelayCommand]
+    private async Task InstallModel(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload) || IsPullingModel) return;
+        var parts = payload.Split('\t');
+        if (parts.Length < 3) return;
+        string source = parts[0], repo = parts[1], target = parts[2];
+
+        // Find the row so progress shows exactly where the user clicked.
+        var row = RegistryResults.FirstOrDefault(r => r.Source == source && r.Repo == repo);
+        IsPullingModel = true; PullProgress = 0;
+        if (row is not null) { row.Installing = true; row.InstallProgress = 0; row.InstallStatus = L("models.starting"); }
+        ModelDownloadStatus = Loc.Instance.F("models.pulling", target, "0%");
+
+        var progress = new Progress<(string status, double frac)>(p => Dispatcher.UIThread.Post(() =>
+        {
+            string line = p.frac > 0 ? $"{p.frac * 100:0}% · {p.status}" : p.status;
+            if (p.frac > 0) PullProgress = p.frac;
+            ModelDownloadStatus = Loc.Instance.F("models.pulling", target, p.frac > 0 ? $"{p.frac * 100:0}%" : p.status);
+            if (row is not null) { if (p.frac > 0) row.InstallProgress = p.frac; row.InstallStatus = line; }
+        }));
+
+        bool ok = false;
+        try
+        {
+            if (source == "ollama")
+            {
+                ok = await LlmClient.PullModelAsync(OllamaBaseUrl, target, progress);
+                if (ok) await RefreshInstalledModels();
+            }
+            else // lmstudio
+            {
+                ok = await LmStudioInstall.DownloadGgufAsync(repo, target, progress);
+                if (ok) await RefreshInstalledModels();
+            }
+            string done = ok ? (source == "ollama" ? L("models.done") : Loc.Instance.F("models.lmInstalled", target)) : L("models.pullFail");
+            ModelDownloadStatus = done;
+            if (row is not null) row.InstallStatus = done;
+        }
+        catch (Exception ex)
+        {
+            ModelDownloadStatus = Loc.Instance.F("error.generic", ex.Message);
+            if (row is not null) row.InstallStatus = L("models.pullFail");
+        }
+        finally
+        {
+            IsPullingModel = false; PullProgress = 0;
+            if (row is not null) row.Installing = false;
+        }
+    }
+
+    /// <summary>Opens the model's page (ollama.com/library/&lt;name&gt; or huggingface.co/&lt;repo&gt;).</summary>
+    [RelayCommand]
+    private void OpenModelPage(RegistryModelVm? vm)
+    {
+        if (vm is null) return;
+        OpenUrl(vm.IsOllama ? $"https://ollama.com/library/{vm.Repo}" : $"https://huggingface.co/{vm.Repo}");
+    }
+
+    private static string QuantLabel(string ggufFile)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(ggufFile, @"(IQ\d[\w]*|Q\d[\w]*|BF16|F16|F32)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return m.Success ? m.Value : System.IO.Path.GetFileNameWithoutExtension(ggufFile);
+    }
     /// <summary>Set by the view: confirms removing an installed model. Returns true to proceed.</summary>
     public Func<string, Task<bool>>? ConfirmRemoveAsync;
 
@@ -440,7 +571,16 @@ public partial class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
-    private string OllamaBaseUrl => string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
+    // Ollama operations (pull, /api/tags) must hit the Ollama server — NOT whatever the scoring Base URL is
+    // right now (it may have been switched to LM Studio's :1234 when an LM Studio model was activated).
+    private string OllamaBaseUrl
+    {
+        get
+        {
+            string u = (LlmBaseUrl ?? "").Trim();
+            return string.IsNullOrWhiteSpace(u) || u.Contains(":1234") ? "http://localhost:11434/v1" : u;
+        }
+    }
 
     /// <summary>Reloads the installed-models list from Ollama and rebuilds the cards (active = LlmModel).</summary>
     [RelayCommand]
@@ -451,8 +591,20 @@ public partial class MainViewModel : ObservableObject
         InstalledModels.Clear();
         foreach (var m in models)
             InstalledModels.Add(new OllamaModelVm(m.Name, m.Meta, string.Equals(m.Name, LlmModel, StringComparison.OrdinalIgnoreCase)));
+        // Also detect LM Studio models (a folder scan — no LM Studio process needed).
+        foreach (var g in LmStudioInstall.ListInstalled())
+        {
+            string meta = string.Join(" · ", new[] { g.SizeGb > 0 ? $"{g.SizeGb} GB" : "", g.Repo }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            InstalledModels.Add(new OllamaModelVm(g.Name, meta, string.Equals(g.Name, LlmModel, StringComparison.OrdinalIgnoreCase), "lmstudio", g.Path));
+        }
         OnPropertyChanged(nameof(HasInstalledModels));
+        OnPropertyChanged(nameof(ShowOllamaWarning));
     }
+
+    /// <summary>Show the "Ollama isn't responding" hint only when Ollama is down AND nothing was detected at
+    /// all (so it doesn't nag when LM Studio models are listed).</summary>
+    public bool ShowOllamaWarning => !OllamaReachable && InstalledModels.Count == 0;
+    partial void OnOllamaReachableChanged(bool value) => OnPropertyChanged(nameof(ShowOllamaWarning));
 
     private async Task<bool> PingOllama()
     {
@@ -461,23 +613,43 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>Picks the active model (used for scoring). Applied to the UI immediately; persisted on Save
     /// (so it's part of the unsaved-changes state, consistent with the other settings).</summary>
+    private const string OllamaBaseDefault = "http://localhost:11434/v1";
+    private const string LmStudioBaseDefault = "http://localhost:1234/v1";
+
     [RelayCommand]
-    private void SetActiveModel(string? name)
+    private void SetActiveModel(OllamaModelVm? m)
     {
-        if (string.IsNullOrWhiteSpace(name)) return;
-        LlmModel = name.Trim();
+        if (m is null || string.IsNullOrWhiteSpace(m.Name)) return;
+        LlmModel = m.Name.Trim();
         if (!ModelOptions.Contains(LlmModel)) ModelOptions.Add(LlmModel);
+        // Point the endpoint at the model's runtime, but only when the current Base URL is clearly the OTHER
+        // runtime's default (don't clobber a custom URL).
+        if (m.IsLmStudio && (LlmBaseUrl ?? "").Contains(":11434")) LlmBaseUrl = LmStudioBaseDefault;
+        else if (!m.IsLmStudio && (LlmBaseUrl ?? "").Contains(":1234")) LlmBaseUrl = OllamaBaseDefault;
         for (int i = 0; i < InstalledModels.Count; i++)
             InstalledModels[i] = InstalledModels[i] with { IsActive = string.Equals(InstalledModels[i].Name, LlmModel, StringComparison.OrdinalIgnoreCase) };
+        // LM Studio (unlike Ollama) doesn't serve until its local server is started — warn now, not at generate time.
+        if (m.IsLmStudio) _ = HintLmStudioServer();
+        else ModelDownloadStatus = "";
     }
 
-    /// <summary>Removes an installed Ollama model (after confirmation), then refreshes the list.</summary>
-    [RelayCommand]
-    private async Task RemoveModel(string? name)
+    private async Task HintLmStudioServer()
     {
-        if (string.IsNullOrWhiteSpace(name) || IsPullingModel) return;
-        if (ConfirmRemoveAsync is not null && !await ConfirmRemoveAsync(name)) return;
-        await LlmClient.DeleteOllamaModelAsync(OllamaBaseUrl, name);
+        ModelDownloadStatus = L("models.lmCheck");
+        bool up = false;
+        try { up = (await LlmClient.ListOpenAiModelsAsync(LmStudioBaseDefault, LlmApiKey)).Count >= 0; } catch { }
+        ModelDownloadStatus = up ? L("models.lmReady") : L("models.lmStart");
+    }
+
+    /// <summary>Removes an installed model (after confirmation): Ollama via its API, LM Studio by deleting the
+    /// GGUF file. Then refreshes the list.</summary>
+    [RelayCommand]
+    private async Task RemoveModel(OllamaModelVm? m)
+    {
+        if (m is null || string.IsNullOrWhiteSpace(m.Name) || IsPullingModel) return;
+        if (ConfirmRemoveAsync is not null && !await ConfirmRemoveAsync(m.Name)) return;
+        if (m.IsLmStudio) LmStudioInstall.Remove(m.Path);
+        else await LlmClient.DeleteOllamaModelAsync(OllamaBaseUrl, m.Name);
         await RefreshInstalledModels();
     }
 
@@ -510,8 +682,9 @@ public partial class MainViewModel : ObservableObject
             {
                 ModelDownloadStatus = Loc.Instance.F("models.pullDone", name);
                 ModelToPull = "";
+                LlmModel = name;   // make the freshly pulled model active (the refresh marks it)
+                if (!ModelOptions.Contains(name)) ModelOptions.Add(name);
                 await RefreshInstalledModels();
-                SetActiveModel(name);
             }
             else ModelDownloadStatus = L("models.pullFail");
         }
@@ -566,7 +739,7 @@ public partial class MainViewModel : ObservableObject
     {
         LlmModel = value ? "" : DefaultClaudeModel; // local needs an explicit model; Claude defaults
         RefreshModelOptions();
-        if (value) _ = RefreshInstalledModels();
+        if (value) { _ = RefreshInstalledModels(); _ = DebouncedRegistrySearch(); }
     }
 
     // ---- profile form ----
@@ -778,7 +951,7 @@ public partial class MainViewModel : ObservableObject
         InstalledModels.Clear(); OnPropertyChanged(nameof(HasInstalledModels));
         // Fire-and-forget: the refresh only marks the active card, it doesn't touch any Save-backed field,
         // so the snapshot below stays correct and the screen opens instantly.
-        if (UseLocalModel) _ = RefreshInstalledModels();
+        if (UseLocalModel) { _ = RefreshInstalledModels(); _ = DebouncedRegistrySearch(); }
         PopulateUsage();
         Status = "";
         _settingsSnapshot = SettingsSignature();

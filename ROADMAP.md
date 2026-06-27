@@ -32,6 +32,11 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   fetched and read in full to ground figures the snippets omit. Still no key, no setup.
 - **Local-model manager** — pick/manage the local model from the UI: detect the running OpenAI-compatible
   runtime, list installed models, select the active one, and an in-app Ollama installer (streamed `/api/pull`).
+- **Live model browser** — search **Ollama** (scrapes ollama.com) and **LM Studio**'s catalog (the
+  `lmstudio-community` Hugging Face org) live, with capability badges, sizes/quants and one-click install
+  (Ollama pull · direct GGUF download into `~/.lmstudio/models`) with per-row progress. The installed list
+  detects **both** runtimes (Ollama via `/api/tags`, LM Studio by scanning its models folder), and clear
+  guidance covers using LM Studio (start its server + load the model). Keyless, no `lms` CLI dependency.
 - **JSearch job source** — optional free Google-for-Jobs aggregator via **OpenWeb Ninja** (direct) or
   **RapidAPI**, with a provider picker and per-country results.
 - **Delete jobs** — clear the saved job cache from the UI (with confirmation), and a settings unsaved-changes
