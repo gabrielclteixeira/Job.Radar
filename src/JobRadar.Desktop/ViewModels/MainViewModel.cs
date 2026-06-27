@@ -64,8 +64,17 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Navigate(string page)
+    private async Task Navigate(string page)
     {
+        // Guard: leaving Settings with unsaved Save-backed changes → prompt save/discard/cancel.
+        if (page != "settings" && SettingsDirty() && ConfirmLeaveSettingsAsync is not null)
+        {
+            int choice = await ConfirmLeaveSettingsAsync();
+            if (choice == 0) return;                                            // cancel — stay put
+            if (choice == 1) SaveSettings();                                    // save (persists + re-snapshots)
+            else { LoadSettingsFields(); _settingsSnapshot = SettingsSignature(); } // discard — revert fields
+        }
+
         switch (page)
         {
             case "profile": EditProfile(); break;          // loads the form + shows profile
@@ -74,7 +83,7 @@ public partial class MainViewModel : ObservableObject
                 else ShowOnly(results: true);
                 break;
             case "improve": ShowOnly(improve: true); break;  // career-growth area
-            case "settings": OpenSettings(); break;          // loads settings fields + shows
+            case "settings": OpenSettings(); break;            // loads settings fields + shows
             default: ShowOnly(welcome: true); break;          // home
         }
     }
@@ -180,6 +189,8 @@ public partial class MainViewModel : ObservableObject
                 int i = Array.IndexOf(LangModes, lg.GetString());
                 _languageIndex = i >= 0 ? i : 0;
             }
+            if (doc.RootElement.TryGetProperty("critique", out var cm) && cm.TryGetInt32(out var cmv))
+                _critiqueModeIndex = Math.Clamp(cmv, 0, 2);
         }
         catch { /* ignore */ }
     }
@@ -189,7 +200,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(
-                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)] },
+                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)], critique = CritiqueModeIndex },
                 new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* best-effort */ }
@@ -214,15 +225,32 @@ public partial class MainViewModel : ObservableObject
     // ---- improve (career plan) ----
     [ObservableProperty] private CareerPlanResult? _plan;
     [ObservableProperty] private bool _isPlanning;
+    [ObservableProperty] private bool _isCritiquing;   // plan is shown; the adversarial review is still running
     [ObservableProperty] private string _planStatus = "";
     [ObservableProperty] private string _planError = "";
+    [ObservableProperty] private int _critiqueModeIndex;   // 0 Single, 1 Debate, 2 Revise (persisted)
+    // Computed (not a field) so it picks up the current language each time the window is built — the VM is
+    // reused across language switches, and a field would freeze the labels at construction-time language.
+    public string[] CritiqueModes => new[] { L("improve.mode.single"), L("improve.mode.debate"), L("improve.mode.revise") };
     public bool HasPlan => Plan is not null;
     public bool ShowGenerateIntro => !HasPlan && !IsPlanning;
+    // Critique view-props — let the UI/PDF update when the critique fills in without reassigning Plan.
+    public IReadOnlyList<CritiquePoint>? PlanCritique => Plan?.Critique;
+    public bool HasPlanCritique => Plan?.HasCritique == true;
+    public bool PlanRevised => Plan?.Revised == true;
+    public string PlanCaveat => Plan?.CritiqueCaveat ?? "";
+    private void NotifyCritique()
+    {
+        OnPropertyChanged(nameof(PlanCritique)); OnPropertyChanged(nameof(HasPlanCritique));
+        OnPropertyChanged(nameof(PlanRevised)); OnPropertyChanged(nameof(PlanCaveat));
+    }
     partial void OnPlanChanged(CareerPlanResult? value)
     {
         OnPropertyChanged(nameof(HasPlan)); OnPropertyChanged(nameof(ShowGenerateIntro));
+        NotifyCritique();
     }
     partial void OnIsPlanningChanged(bool value) => OnPropertyChanged(nameof(ShowGenerateIntro));
+    partial void OnCritiqueModeIndexChanged(int value) => SaveUiSettings();
 
     [RelayCommand]
     private async Task GeneratePlan()
@@ -234,11 +262,18 @@ public partial class MainViewModel : ObservableObject
         try
         {
             var (result, error) = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), _careerResearchPath, progress);
-            if (result is null) PlanError = string.IsNullOrWhiteSpace(error) ? L("plan.error.insufficient") : error;
-            else { Plan = result; SavePlan(); }
+            if (result is null) { PlanError = string.IsNullOrWhiteSpace(error) ? L("plan.error.insufficient") : error; return; }
+
+            Plan = result; SavePlan();
+            // Show the plan immediately, then red-team it (the plan stays visible with a slim indicator).
+            IsPlanning = false; IsCritiquing = true;
+            var critiqued = await CareerPlan.CritiqueAsync(_cfg.Claude, _profile, result, (CritiqueMode)CritiqueModeIndex, progress);
+            Plan = critiqued;   // new instance in Revise mode; same instance otherwise
+            NotifyCritique();   // covers the same-instance case (critique attached in place)
+            SavePlan();
         }
         catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); }
-        finally { IsPlanning = false; }
+        finally { IsPlanning = false; IsCritiquing = false; }
     }
 
     [RelayCommand]
@@ -315,10 +350,17 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _apifyStatus = "";
     public ObservableCollection<string> ApifyActorOptions { get; } = new();
 
-    // JSearch (RapidAPI) connector — keyed, quota-limited
+    // JSearch connector — keyed, quota-limited. Two providers of the same API.
     [ObservableProperty] private bool _useJSearch;
+    [ObservableProperty] private int _jSearchProviderIndex;   // 0 OpenWeb Ninja (direct), 1 RapidAPI
     [ObservableProperty] private string _jSearchKey = "";
+    [ObservableProperty] private string _jSearchCountry = "pt";
     [ObservableProperty] private string _jSearchMax = "20";
+    public string[] JSearchProviders { get; } = { "OpenWeb Ninja", "RapidAPI" };
+    public string JSearchKeyUrl => JSearchProviderIndex == 1
+        ? "https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch"
+        : "https://app.openwebninja.com/";
+    partial void OnJSearchProviderIndexChanged(int value) => OnPropertyChanged(nameof(JSearchKeyUrl));
 
     // local model manager (Ollama)
     [ObservableProperty] private string _modelToPull = "";
@@ -417,15 +459,14 @@ public partial class MainViewModel : ObservableObject
         try { return (await LlmClient.ListOpenAiModelsAsync(OllamaBaseUrl, LlmApiKey)).Count >= 0; } catch { return false; }
     }
 
-    /// <summary>Makes a model the active one (used for scoring) and persists it immediately.</summary>
+    /// <summary>Picks the active model (used for scoring). Applied to the UI immediately; persisted on Save
+    /// (so it's part of the unsaved-changes state, consistent with the other settings).</summary>
     [RelayCommand]
     private void SetActiveModel(string? name)
     {
         if (string.IsNullOrWhiteSpace(name)) return;
         LlmModel = name.Trim();
         if (!ModelOptions.Contains(LlmModel)) ModelOptions.Add(LlmModel);
-        _cfg.Claude.Model = LlmModel;
-        SaveLlmSettings();
         for (int i = 0; i < InstalledModels.Count; i++)
             InstalledModels[i] = InstalledModels[i] with { IsActive = string.Equals(InstalledModels[i].Name, LlmModel, StringComparison.OrdinalIgnoreCase) };
     }
@@ -686,6 +727,23 @@ public partial class MainViewModel : ObservableObject
         finally { IsScoring = false; Busy = false; }
     }
 
+    /// <summary>Set by the View: confirms before deleting all saved jobs. Returns true to proceed.</summary>
+    public Func<Task<bool>>? ConfirmDeleteJobsAsync;
+
+    /// <summary>Deletes every saved job (after confirmation) — clears the on-screen list and the SQLite cache,
+    /// so "View jobs" comes up empty until the next search.</summary>
+    [RelayCommand]
+    private async Task DeleteJobs()
+    {
+        if (_all.Count == 0 || Busy) return;
+        if (ConfirmDeleteJobsAsync is not null && !await ConfirmDeleteJobsAsync()) return;
+        try { Pipeline.ClearCache(_cfg, _root); }
+        catch (Exception ex) { Status = Loc.Instance.F("error.generic", ex.Message); }
+        _all = new(); Jobs.Clear(); HasJobs = false; TotalCount = 0; ExportMsg = "";
+        EmptyMessage = L("empty.noneToShow");
+        Status = L("results.deleted");
+    }
+
     /// <summary>Re-scores the cached jobs with the current model/engine (after changing it in Settings).</summary>
     [RelayCommand]
     private async Task Rescore()
@@ -709,8 +767,26 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void GoHome() => ShowOnly(welcome: true);
 
     // ---- settings ----
-    [RelayCommand]
     private void OpenSettings()
+    {
+        LoadSettingsFields();
+        ApifyStatus = "";
+        ApifyActorOptions.Clear();
+        if (!string.IsNullOrWhiteSpace(_cfg.Apify.ActorId)) ApifyActorOptions.Add(_cfg.Apify.ActorId);
+        ModelDownloadStatus = ""; PullProgress = 0;
+        UpdateStatus = ""; UpdatePageUrl = "";
+        InstalledModels.Clear(); OnPropertyChanged(nameof(HasInstalledModels));
+        // Fire-and-forget: the refresh only marks the active card, it doesn't touch any Save-backed field,
+        // so the snapshot below stays correct and the screen opens instantly.
+        if (UseLocalModel) _ = RefreshInstalledModels();
+        PopulateUsage();
+        Status = "";
+        _settingsSnapshot = SettingsSignature();
+        ShowOnly(settings: true);
+    }
+
+    /// <summary>Loads the Save-backed settings fields from the live config (used on open and on discard).</summary>
+    private void LoadSettingsFields()
     {
         UseLocalModel = string.Equals(_cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase);
         LlmBaseUrl = _cfg.Claude.BaseUrl;
@@ -723,20 +799,27 @@ public partial class MainViewModel : ObservableObject
         ApifyToken = _cfg.Apify.Token;
         ApifyActor = _cfg.Apify.ActorId;
         ApifyMax = _cfg.Apify.MaxItems > 0 ? _cfg.Apify.MaxItems.ToString() : "50";
-        ApifyStatus = "";
-        ApifyActorOptions.Clear();
-        if (!string.IsNullOrWhiteSpace(_cfg.Apify.ActorId)) ApifyActorOptions.Add(_cfg.Apify.ActorId);
         UseJSearch = _cfg.JSearch.Enabled;
+        JSearchProviderIndex = string.Equals(_cfg.JSearch.Provider, "rapidapi", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         JSearchKey = _cfg.JSearch.ApiKey;
+        JSearchCountry = string.IsNullOrWhiteSpace(_cfg.JSearch.Country) ? "pt" : _cfg.JSearch.Country;
         JSearchMax = _cfg.JSearch.MaxItems > 0 ? _cfg.JSearch.MaxItems.ToString() : "20";
-        ModelDownloadStatus = ""; PullProgress = 0;
-        UpdateStatus = ""; UpdatePageUrl = "";
-        InstalledModels.Clear(); OnPropertyChanged(nameof(HasInstalledModels));
-        if (UseLocalModel) _ = RefreshInstalledModels();
-        PopulateUsage();
-        Status = "";
-        ShowOnly(settings: true);
     }
+
+    /// <summary>A stable fingerprint of every Save-backed setting — used to detect unsaved edits.
+    /// Theme/text-size/language are excluded: they apply and persist live, not via Save.</summary>
+    private string SettingsSignature() => string.Join("",
+        UseLocalModel, LlmBaseUrl, LlmModel, LlmApiKey, ClaudeExe,
+        UseApify, ApifyToken, ApifyActor, ApifyMax,
+        UseJSearch, JSearchProviderIndex, JSearchKey, JSearchCountry, JSearchMax);
+
+    private string _settingsSnapshot = "";
+
+    /// <summary>True when the user changed a Save-backed setting without saving or discarding.</summary>
+    private bool SettingsDirty() => IsSettings && SettingsSignature() != _settingsSnapshot;
+
+    /// <summary>Set by the View: prompts to save/discard unsaved settings. Returns 1=save, 2=discard, 0=cancel.</summary>
+    public Func<Task<int>>? ConfirmLeaveSettingsAsync;
 
     [RelayCommand]
     private void SaveSettings()
@@ -753,9 +836,12 @@ public partial class MainViewModel : ObservableObject
         _cfg.Apify.MaxItems = int.TryParse(ApifyMax, out var am) && am > 0 ? am : 50;
         SaveApifySettings();
         _cfg.JSearch.Enabled = UseJSearch;
+        _cfg.JSearch.Provider = JSearchProviderIndex == 1 ? "rapidapi" : "openwebninja";
         _cfg.JSearch.ApiKey = JSearchKey.Trim();
+        _cfg.JSearch.Country = string.IsNullOrWhiteSpace(JSearchCountry) ? "pt" : JSearchCountry.Trim().ToLowerInvariant();
         _cfg.JSearch.MaxItems = int.TryParse(JSearchMax, out var jm) && jm > 0 ? jm : 20;
         SaveJSearchSettings();
+        _settingsSnapshot = SettingsSignature();
         Status = L("settings.saved");
         ShowOnly(welcome: true);
     }
@@ -884,10 +970,32 @@ public partial class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
+    /// <summary>Exports the current career plan to a styled PDF (reuses the CV/report HTML→PDF path).</summary>
+    [RelayCommand]
+    private async Task ExportPlan()
+    {
+        if (Plan is null || Busy) return;
+        Busy = true;
+        try
+        {
+            string outDir = Path.Combine(_root, "output");
+            string stamp = DateTime.Now.ToString("yyyy-MM-dd-HHmm");
+            string? path = await Task.Run(() => CareerPlanPdf.Export(Plan, _profile, outDir, stamp));
+            if (path is not null)
+            {
+                Status = Loc.Instance.F("plan.exported", path);
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+                catch { /* opening is best-effort */ }
+            }
+            else Status = L("plan.exportFailed");
+        }
+        finally { Busy = false; }
+    }
+
     // ---- helpers ----
     /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
-    private Task<(CompanyBrief? brief, string? error)> ResearchCompanyAsync(JobEntity j)
-        => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location);
+    private Task<(CompanyBrief? brief, string? error)> ResearchCompanyAsync(JobEntity j, IProgress<string> progress)
+        => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location, progress);
 
     private void AddStreamed(JobEntity j)
     {

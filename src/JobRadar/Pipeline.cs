@@ -192,6 +192,16 @@ public static class Pipeline
     }
 
     /// <summary>Returns the jobs already in the local cache (relevant, ranked) without fetching or scoring.</summary>
+    /// <summary>Deletes the cached jobs store (SQLite db + schema marker + WAL/SHM). After this,
+    /// "View jobs" shows nothing until a fresh search. Best-effort; pools are flushed so the file unlocks.</summary>
+    public static void ClearCache(AppConfig cfg, string root)
+    {
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();  // release handles so the .db can be deleted
+        string dbPath = Path.IsPathRooted(cfg.DbPath) ? cfg.DbPath : Path.Combine(root, cfg.DbPath);
+        foreach (var p in new[] { dbPath, dbPath + ".schema", dbPath + "-wal", dbPath + "-shm" })
+            try { if (File.Exists(p)) File.Delete(p); } catch { /* may be locked — best-effort */ }
+    }
+
     public static async Task<PipelineResult> LoadCachedAsync(
         AppConfig cfg, string root, IProgress<JobEntity>? onJob = null, CancellationToken ct = default)
     {

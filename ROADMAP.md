@@ -21,6 +21,21 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   already scored, powered by **multi-step deep research** (seed searches → the model picks angles to dig into →
   targeted searches → synthesis). Returns strengths, skill gaps with actions, target roles, a **salary
   trajectory** (now → 12–24 months) and time-boxed next steps — with sources. Key-free search, BYOK.
+  Salaries are anchored to the candidate's **local market in EUR** (not inflated US/remote figures), and the
+  plan can be **exported to PDF**.
+- **Adversarial self-critique** of the career plan — after generating, an independent reviewer (framed as
+  critiquing a rival tool, so it's honest) red-teams the plan for inflated salaries, over-optimism and
+  contradictions, so the user calibrates trust. Three user-selectable depths: **Critique** (flag weak points),
+  **Debate** (the author rebuts), **Debate + revise** (re-searches for real local data and rewrites the plan).
+- **Reliable key-free web search** — search runs through **Jina Reader** (renders the SERP server-side, so it
+  isn't blocked like a raw scrape), with the keyless Mojeek/DuckDuckGo scrape kept as a fallback; pages can be
+  fetched and read in full to ground figures the snippets omit. Still no key, no setup.
+- **Local-model manager** — pick/manage the local model from the UI: detect the running OpenAI-compatible
+  runtime, list installed models, select the active one, and an in-app Ollama installer (streamed `/api/pull`).
+- **JSearch job source** — optional free Google-for-Jobs aggregator via **OpenWeb Ninja** (direct) or
+  **RapidAPI**, with a provider picker and per-country results.
+- **Delete jobs** — clear the saved job cache from the UI (with confirmation), and a settings unsaved-changes
+  guard so edits aren't lost on navigation.
 - **Rebranding** — settled product identity: the **Job Radar** name, the concentric-ring radar mark used as
   logo + app icon, and the "mission control" palette.
 
@@ -47,8 +62,16 @@ A dedicated area to **create and improve a CV**, not just consume one.
 
 ### 2. Improvement — deepen it
 
-The career-plan area shipped (see above). Next for it: **track progress over time** — save successive plans
-and surface what changed as the profile and market move, so the plan becomes a living document.
+The career-plan area shipped (see above), now with adversarial self-critique. Next for it: **track progress
+over time** — save successive plans and surface what changed as the profile and market move, so the plan
+becomes a living document.
+
+### 3. Pause / resume classification
+
+Let the user **pause an in-progress run** — scoring jobs or researching companies — and resume it later,
+without losing what's already done. Useful for long scans or to stop spending tokens mid-run. Already-scored
+jobs are persisted, so resuming should pick up where it left off; the work is a cancellation/pause control in
+the UI wired through the streaming pipeline (and the per-company research).
 
 ---
 
@@ -56,11 +79,6 @@ and surface what changed as the profile and market move, so the plan becomes a l
 
 - **Premium UI polish** — elevate the front-end to feel like a premium, polished product: refined visual
   design, smooth transitions/motion, consistent spacing & iconography, and proper empty/loading/error states.
-- **Local-model manager** — a UI section to pick and manage the local model, runtime-agnostic. The app
-  already talks to any OpenAI-compatible runtime (LM Studio, Ollama, llama.cpp) via the `provider`/`baseUrl`
-  setting; this adds: detect the running runtime, list installed models, and select the active one. Include
-  an **optional in-app installer for Ollama** (its `/api/pull` API streams download progress); LM Studio /
-  llama.cpp users manage models in their own tools and just point the app at their endpoint.
 - **LinkedIn aggregation** — LinkedIn isn't scraped (ToS). Today: a "Procurar no LinkedIn" button opens
   LinkedIn Jobs in the browser pre-filled from the profile, plus the optional `linkedin-jobs.json` merge.
   Explore a ToS-respecting way to pull results into the app (e.g. a user-run browser snippet/export, or a

@@ -82,8 +82,10 @@ public class ApifyConfig
 public class JSearchConfig
 {
     public bool Enabled { get; set; }
-    public string ApiKey { get; set; } = "";                    // RapidAPI key (secret)
-    public string ApiHost { get; set; } = "jsearch.p.rapidapi.com";
+    public string Provider { get; set; } = "openwebninja";      // "openwebninja" (direct) | "rapidapi"
+    public string ApiKey { get; set; } = "";                    // API key (secret)
+    public string ApiHost { get; set; } = "jsearch.p.rapidapi.com"; // RapidAPI host (only used in rapidapi mode)
+    public string Country { get; set; } = "pt";                 // 2-letter country code (JSearch needs it; "us" is its default)
     public int MaxItems { get; set; } = 20;                     // cap results → cap quota use
     // Last RapidAPI rate-limit headers seen (for the Usage & limits view); -1 = unknown.
     public int LastRemaining { get; set; } = -1;

@@ -44,16 +44,68 @@ public static class WebSearch
     // own timeout (kept high for other callers) would let each failing attempt run for ~20s.
     private const int PerRequestMs = 5000;
 
+    // Jina renders pages server-side, so it takes longer than a raw scrape but isn't blocked.
+    private const int JinaMs = 15000;
+
     public static async Task<List<WebResult>> SearchAsync(string query, int max = 6, CancellationToken ct = default)
     {
-        // One quick pass over the engines (primary Mojeek first). No extra retry pass — a throttled
-        // engine just tarpits to the per-request timeout, so retrying only doubles the wait.
+        // Primary: DuckDuckGo fetched THROUGH Jina Reader. Jina renders and proxies the SERP, so we get
+        // real results where our direct scrape hits the 202 anti-bot wall — and it's still keyless.
+        var jina = await JinaDdgAsync(query, max, ct);
+        if (jina.Count > 0) return jina;
+
+        // Fallback only (rare): direct keyless scrape (Mojeek, then DDG) if Jina is unavailable.
         for (int e = 0; e < Engines.Length; e++)
         {
             var list = await AttemptAsync(Engines[e], query, max, UserAgents[e % UserAgents.Length], ct);
             if (list.Count > 0) return list;
         }
         return new List<WebResult>();
+    }
+
+    /// <summary>Search via DuckDuckGo's HTML endpoint rendered by Jina Reader (r.jina.ai). Keyless.
+    /// Jina returns the SERP as markdown where each result is "## [Title](ddg-redirect)" followed by a
+    /// snippet paragraph; we parse those. Returns [] on any failure so the caller falls back to scraping.</summary>
+    private static async Task<List<WebResult>> JinaDdgAsync(string query, int max, CancellationToken ct)
+    {
+        var list = new List<WebResult>();
+        try
+        {
+            string serp = "https://html.duckduckgo.com/html/?q=" + Uri.EscapeDataString(query);
+            using var req = new HttpRequestMessage(HttpMethod.Get, "https://r.jina.ai/" + serp);
+            req.Headers.TryAddWithoutValidation("User-Agent", UserAgents[0]);
+            req.Headers.TryAddWithoutValidation("Accept", "text/plain");
+            req.Headers.TryAddWithoutValidation("X-Return-Format", "markdown");
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(JinaMs);
+            using var resp = await Http.SendAsync(req, cts.Token);
+            if (!resp.IsSuccessStatusCode) return list;
+            string md = await resp.Content.ReadAsStringAsync(ct);
+
+            // Split before each result heading, then pull title/url from the heading and the longest
+            // (non-image, non-display-url) bracketed text as the snippet.
+            foreach (var block in Regex.Split(md, @"(?=^##\s+\[)", RegexOptions.Multiline))
+            {
+                if (list.Count >= max) break;
+                var h = Regex.Match(block, @"^##\s+\[([^\]]+)\]\((https?://[^)]+)\)", RegexOptions.Multiline);
+                if (!h.Success) continue;
+                string title = Strip(h.Groups[1].Value);
+                string url = DecodeUrl(h.Groups[2].Value);
+                if (string.IsNullOrWhiteSpace(title) || !url.StartsWith("http")) continue;
+                if (list.Any(r => r.Url == url)) continue;
+
+                string snippet = Regex.Matches(block, @"\[([^\]]{12,})\]\(")
+                    .Select(m => m.Groups[1].Value)
+                    .Where(s => !s.StartsWith("!") && !s.StartsWith("www.") && !Regex.IsMatch(s, "^https?://"))
+                    .OrderByDescending(s => s.Length).Select(Strip)
+                    .FirstOrDefault(s => s != title) ?? "";
+                if (snippet.Length > 240) snippet = snippet[..240] + "…";
+                list.Add(new WebResult(title, url, snippet));
+            }
+        }
+        catch { /* fall back to keyless scrape */ }
+        return list;
     }
 
     private static async Task<List<WebResult>> AttemptAsync(Engine engine, string query, int max, string ua, CancellationToken ct)
@@ -106,5 +158,10 @@ public static class WebSearch
     }
 
     private static string Strip(string s)
-        => WebUtility.HtmlDecode(Regex.Replace(s, "<.*?>", "")).Trim();
+    {
+        // Drop HTML tags and markdown bold; replace ** with a space (not "") so adjacent bold runs like
+        // "**BitPay****salary**" don't fuse into "BitPaysalary", then collapse the resulting whitespace.
+        s = WebUtility.HtmlDecode(Regex.Replace(s, "<.*?>", "")).Replace("**", " ");
+        return Regex.Replace(s, @"\s+", " ").Trim();
+    }
 }

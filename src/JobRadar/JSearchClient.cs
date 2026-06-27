@@ -26,17 +26,35 @@ public static class JSearchClient
 
         try
         {
-            // One query keeps quota use down: top job title (+ location for relevance).
-            string q = string.Join(" ", queries.Where(s => !string.IsNullOrWhiteSpace(s)).Take(1));
-            if (string.IsNullOrWhiteSpace(q)) q = "software developer";
-            if (!string.IsNullOrWhiteSpace(location)) q += " in " + location;
+            // JSearch needs BOTH a country code AND the location (incl. country NAME) in the query text —
+            // "backend developer in Porto" alone returns nothing; "backend developer Porto Portugal" + country=pt works.
+            string code = (string.IsNullOrWhiteSpace(cfg.Country) ? "pt" : cfg.Country.Trim()).ToLowerInvariant();
+            string countryName = "";
+            try { countryName = new System.Globalization.RegionInfo(code.ToUpperInvariant()).EnglishName; } catch { /* unknown code */ }
 
-            string host = string.IsNullOrWhiteSpace(cfg.ApiHost) ? "jsearch.p.rapidapi.com" : cfg.ApiHost.Trim();
-            string url = $"https://{host}/search?query={Uri.EscapeDataString(q)}&page=1&num_pages=1";
+            // One query keeps quota use down: top job title + location + country name.
+            string topTitle = string.Join(" ", queries.Where(s => !string.IsNullOrWhiteSpace(s)).Take(1));
+            if (string.IsNullOrWhiteSpace(topTitle)) topTitle = "software developer";
+            string q = string.Join(" ", new[] { topTitle, location, countryName }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            string common = $"query={Uri.EscapeDataString(q)}&page=1&num_pages=1&country={code}";
 
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.TryAddWithoutValidation("X-RapidAPI-Key", cfg.ApiKey.Trim());
-            req.Headers.TryAddWithoutValidation("X-RapidAPI-Host", host);
+            // Two distributions of the same JSearch API (identical "data[]" response shape):
+            //   • OpenWeb Ninja (direct, the publisher's own platform) — api.openwebninja.com, x-api-key header.
+            //   • RapidAPI — jsearch.p.rapidapi.com, X-RapidAPI-Key/Host headers.
+            bool rapid = string.Equals(cfg.Provider, "rapidapi", StringComparison.OrdinalIgnoreCase);
+            using var req = new HttpRequestMessage(HttpMethod.Get, rapid
+                ? $"https://{(string.IsNullOrWhiteSpace(cfg.ApiHost) ? "jsearch.p.rapidapi.com" : cfg.ApiHost.Trim())}/search?{common}"
+                : $"https://api.openwebninja.com/jsearch/search?{common}");
+            if (rapid)
+            {
+                string host = string.IsNullOrWhiteSpace(cfg.ApiHost) ? "jsearch.p.rapidapi.com" : cfg.ApiHost.Trim();
+                req.Headers.TryAddWithoutValidation("X-RapidAPI-Key", cfg.ApiKey.Trim());
+                req.Headers.TryAddWithoutValidation("X-RapidAPI-Host", host);
+            }
+            else
+            {
+                req.Headers.TryAddWithoutValidation("x-api-key", cfg.ApiKey.Trim());
+            }
 
             log?.Report(Loc.Instance.T("jsearch.fetching"));
             using var resp = await Http.SendAsync(req, ct);

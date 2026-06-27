@@ -19,7 +19,44 @@ public partial class MainWindow : Window
             {
                 vm.ConfirmCostAsync = ConfirmApifyCostAsync;
                 vm.ConfirmRemoveAsync = ConfirmRemoveModelAsync;
+                vm.ConfirmLeaveSettingsAsync = ConfirmLeaveSettingsAsync;
+                vm.ConfirmDeleteJobsAsync = ConfirmDeleteJobsAsync;
             }
+        };
+    }
+
+    /// <summary>Confirmation before deleting all saved jobs (destructive, clears the cache).</summary>
+    private async Task<bool> ConfirmDeleteJobsAsync()
+    {
+        var dlg = new ContentDialog
+        {
+            Title = JobRadar.Loc.Instance.T("dlg.deleteJobs.title"),
+            Content = JobRadar.Loc.Instance.T("dlg.deleteJobs.body"),
+            PrimaryButtonText = JobRadar.Loc.Instance.T("dlg.delete"),
+            CloseButtonText = JobRadar.Loc.Instance.T("dlg.cancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        return await dlg.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    /// <summary>Prompt shown when navigating away from Settings with unsaved changes.
+    /// Returns 1 = save, 2 = discard, 0 = cancel (stay).</summary>
+    private async Task<int> ConfirmLeaveSettingsAsync()
+    {
+        var dlg = new ContentDialog
+        {
+            Title = JobRadar.Loc.Instance.T("dlg.unsaved.title"),
+            Content = JobRadar.Loc.Instance.T("dlg.unsaved.body"),
+            PrimaryButtonText = JobRadar.Loc.Instance.T("dlg.save"),
+            SecondaryButtonText = JobRadar.Loc.Instance.T("dlg.discard"),
+            CloseButtonText = JobRadar.Loc.Instance.T("dlg.cancel"),
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        return await dlg.ShowAsync() switch
+        {
+            ContentDialogResult.Primary => 1,
+            ContentDialogResult.Secondary => 2,
+            _ => 0,
         };
     }
 

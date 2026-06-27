@@ -12,9 +12,9 @@ namespace JobRadar.Desktop.ViewModels;
 public partial class JobVm : ObservableObject
 {
     private readonly JobEntity _j;
-    private readonly Func<JobEntity, Task<(CompanyBrief? brief, string? error)>>? _research;
+    private readonly Func<JobEntity, IProgress<string>, Task<(CompanyBrief? brief, string? error)>>? _research;
 
-    public JobVm(JobEntity j, Func<JobEntity, Task<(CompanyBrief? brief, string? error)>>? research = null)
+    public JobVm(JobEntity j, Func<JobEntity, IProgress<string>, Task<(CompanyBrief? brief, string? error)>>? research = null)
     {
         _j = j;
         _research = research;
@@ -23,6 +23,7 @@ public partial class JobVm : ObservableObject
 
     [ObservableProperty] private CompanyBrief? _brief;
     [ObservableProperty] private bool _isResearching;
+    [ObservableProperty] private string _researchStatus = "";
     [ObservableProperty] private string _researchError = "";
     public bool HasBrief => Brief is not null;
     partial void OnBriefChanged(CompanyBrief? value) => OnPropertyChanged(nameof(HasBrief));
@@ -33,9 +34,11 @@ public partial class JobVm : ObservableObject
     {
         if (_research is null || IsResearching) return;
         IsResearching = true; ResearchError = ""; Brief = null;
+        ResearchStatus = Loc.Instance.T("research.starting");
+        var progress = new Progress<string>(m => ResearchStatus = m);
         try
         {
-            var (b, err) = await _research(_j);
+            var (b, err) = await _research(_j, progress);
             if (b is null) ResearchError = string.IsNullOrWhiteSpace(err) ? Loc.Instance.T("research.failed") : err;
             else Brief = b;
         }

@@ -19,6 +19,11 @@ public class CareerPlanResult
     public string RawFallback { get; set; } = "";          // set when JSON parsing failed
     public List<SourceRef> Sources { get; set; } = new();
 
+    // Adversarial self-critique: a second pass red-teams the plan so the user calibrates trust.
+    public List<CritiquePoint> Critique { get; set; } = new();
+    public string CritiqueCaveat { get; set; } = "";       // one-line "this is AI, question it" framing
+    public bool Revised { get; set; }                       // true when the plan was rewritten from the critique
+
     public bool HasHeadline => !string.IsNullOrWhiteSpace(Headline);
     public bool HasStrengths => Strengths.Count > 0;
     public bool HasSkillGaps => SkillGaps.Count > 0;
@@ -32,6 +37,18 @@ public class CareerPlanResult
     public bool HasBottomLine => !string.IsNullOrWhiteSpace(BottomLine);
     public bool HasFallback => !string.IsNullOrWhiteSpace(RawFallback);
     public bool HasSources => Sources.Count > 0;
+    public bool HasCritique => Critique.Count > 0;
+    public bool HasCaveat => !string.IsNullOrWhiteSpace(CritiqueCaveat);
+}
+
+/// <summary>One adversarial objection to the plan: the claim under scrutiny, the flaw, and (in debate
+/// modes) the defender's one-line response.</summary>
+public class CritiquePoint
+{
+    public string Claim { get; set; } = "";   // the plan claim being challenged
+    public string Issue { get; set; } = "";    // the attacker's objection
+    public string Rebuttal { get; set; } = ""; // defender's response (debate / revise modes)
+    public bool HasRebuttal => !string.IsNullOrWhiteSpace(Rebuttal);
 }
 
 /// <summary>A capability to build, why it matters, and a concrete way to close it.</summary>
