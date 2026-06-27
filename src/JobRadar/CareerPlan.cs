@@ -21,7 +21,7 @@ public static class CareerPlan
 
     public static async Task<(CareerPlanResult? plan, string? error)> GenerateAsync(
         ClaudeConfig llm, UserProfile profile, string marketContext,
-        string? cachePath = null, IProgress<string>? log = null, CancellationToken ct = default)
+        string? cachePath = null, IProgress<string>? log = null, IProgress<string>? reasoning = null, CancellationToken ct = default)
     {
         void L(string m) => log?.Report(m);
 
@@ -75,26 +75,10 @@ public static class CareerPlan
             ? Snippets(results.Take(10).ToList())
             : "(no web results this time — use your general knowledge, lean on the candidate profile and the scored jobs below, and be explicitly cautious about any figures)";
 
-        // Anchors that keep weaker models honest: their own salary range, local market, and existing stack.
-        int floor = profile.SalaryFloorEur, target = profile.SalaryTargetEur;
-        string locName = string.IsNullOrWhiteSpace(loc) ? "the candidate's country" : loc;
-        string anchor = (floor > 0 || target > 0)
-            ? $"the candidate's own floor €{floor:N0} / target €{target:N0} per year"
-            : "the candidate's stated level and local market norms";
-        string core = profile.CoreSkills.Count > 0 ? string.Join(", ", profile.CoreSkills.Take(6)) : "their current stack";
-
-        // Hand the model a concrete local-market ceiling to reason against (a vague "be conservative"
-        // doesn't land on weaker models). It's an input to the prompt only — never a post-hoc override.
-        int ceiling = SalaryCeiling(profile);
-        string targetText = target > 0 ? $"€{target:N0}/yr" : "the local senior norm for this field";
-        string ceilingLine = ceiling > 0
-            ? $"HARD CAP: salaryPotential's upper bound must be €{ceiling:N0}/yr or LESS, and salaryNow's upper bound below that. A higher figure is WRONG unless a cited LOCAL source proves it — there is almost never such a source. {targetText} is the realistic centre."
-            : $"Keep the 12–24 month \"potential\" near {targetText} — conservative local figures, never aspirational US/remote ones.";
-        string reminderLine =
-            $"Plans here almost always INFLATE salary — the real local band is LOWER than you think. You rarely have a cited " +
-            $"local figure, so anchor salaryNow and salaryPotential to {anchor}, as LOCAL {locName} EUR" +
-            (ceiling > 0 ? $", potential upper bound ≤ €{ceiling:N0}/yr. " : ". ") +
-            $"Ignore €100k+ remote listings (they carry crypto/US-only/contractor caveats). Build on the candidate's {core} stack; don't switch primary language.";
+        // Salary anchors that keep weaker models honest (single source — shared with the split parts and revise).
+        var salary = BuildSalaryCtx(profile, loc);
+        string locName = salary.LocName, anchor = salary.Anchor, core = salary.Core,
+               ceilingLine = salary.CeilingLine, reminderLine = salary.ReminderLine;
 
         string prompt =
 $@"You are a candid career coach. From the candidate, the jobs the app already found, and the web
@@ -129,19 +113,231 @@ double-quoted keys/values, shape:
 == FINAL REMINDER (this overrides anything inflated above) ==
 {reminderLine}";
 
-        string? text = await LlmClient.CompleteAsync(llm, prompt, ct);
-        if (string.IsNullOrWhiteSpace(text))
+        CareerPlanResult plan;
+        if (IsLocal(llm))
+        {
+            // Local/OpenAI-compatible models truncate one big JSON — build the plan in small, reliably-
+            // completing parts (helps reasoning models that overthink AND weak small models alike).
+            plan = await SynthesizeAsync(llm, profile, marketContext, snippets, salary, log, reasoning, ct);
+        }
+        else
+        {
+            // Claude CLI handles the whole plan in one shot and is metered — keep it a single call.
+            string? text = await LlmClient.CompleteAsync(llm, prompt, reasoning, ct);
+            plan = string.IsNullOrWhiteSpace(text)
+                ? new CareerPlanResult()
+                : (Parse(text) ?? new CareerPlanResult { RawFallback = text!.Trim() });
+        }
+
+        // Nothing usable came back (even Positioning failed, or the model is down).
+        if (!plan.HasHeadline && plan.Strengths.Count == 0 && plan.Steps.Count == 0 && !plan.HasSalaryNow && !plan.HasFallback)
         {
             string msg = Loc.Instance.T("plan.noModel");
             if (!string.IsNullOrWhiteSpace(LlmClient.LastError)) msg += ": " + LlmClient.LastError;
             return (null, msg);
         }
 
-        var plan = Parse(text) ?? new CareerPlanResult { RawFallback = text!.Trim() };
         for (int i = 0; i < results.Count; i++)
             plan.Sources.Add(new SourceRef { N = i + 1, Url = results[i].Url, Host = Host(results[i].Url) });
         return (plan, null);
     }
+
+    // ===== Split synthesis (local models): build the plan in small parts that complete reliably =====
+
+    private static bool IsLocal(ClaudeConfig cfg)
+        => (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http";
+
+    /// <summary>Salary-prompt anchors, computed once and shared by the one-shot prompt, the split Salary part,
+    /// and the surgical revise — so "what counts as a sane local band" is defined in exactly one place.</summary>
+    private readonly record struct SalaryCtx(string LocName, string Anchor, string Core, int Ceiling,
+        string CeilingLine, string ReminderLine, string TargetText);
+
+    private static SalaryCtx BuildSalaryCtx(UserProfile profile, string loc)
+    {
+        int floor = profile.SalaryFloorEur, target = profile.SalaryTargetEur;
+        string locName = string.IsNullOrWhiteSpace(loc) ? "the candidate's country" : loc;
+        string anchor = (floor > 0 || target > 0)
+            ? $"the candidate's own floor €{floor:N0} / target €{target:N0} per year"
+            : "the candidate's stated level and local market norms";
+        string core = profile.CoreSkills.Count > 0 ? string.Join(", ", profile.CoreSkills.Take(6)) : "their current stack";
+        int ceiling = SalaryCeiling(profile);
+        string targetText = target > 0 ? $"€{target:N0}/yr" : "the local senior norm for this field";
+        string ceilingLine = ceiling > 0
+            ? $"HARD CAP: salaryPotential's upper bound must be €{ceiling:N0}/yr or LESS, and salaryNow's upper bound below that. A higher figure is WRONG unless a cited LOCAL source proves it — there is almost never such a source. {targetText} is the realistic centre."
+            : $"Keep the 12–24 month \"potential\" near {targetText} — conservative local figures, never aspirational US/remote ones.";
+        string reminderLine =
+            $"Plans here almost always INFLATE salary — the real local band is LOWER than you think. You rarely have a cited " +
+            $"local figure, so anchor salaryNow and salaryPotential to {anchor}, as LOCAL {locName} EUR" +
+            (ceiling > 0 ? $", potential upper bound ≤ €{ceiling:N0}/yr. " : ". ") +
+            $"Ignore €100k+ remote listings (they carry crypto/US-only/contractor caveats). Build on the candidate's {core} stack; don't switch primary language.";
+        return new SalaryCtx(locName, anchor, core, ceiling, ceilingLine, reminderLine, targetText);
+    }
+
+    /// <summary>Shared candidate/jobs/research context block, identical across every part prompt.</summary>
+    private static string CandidateBlock(UserProfile profile, string marketContext, string snippets) =>
+$@"== CANDIDATE ==
+{profile.ToScoringText()}
+== JOBS THE APP ALREADY SCORED ==
+{(string.IsNullOrWhiteSpace(marketContext) ? "(none yet)" : marketContext)}
+== WEB RESEARCH (reference only — skews US/global, do not copy figures) ==
+{snippets}";
+
+    /// <summary>A one-line hand-off so later parts cohere with the positioning/roles chosen first.</summary>
+    private static string Coherence(string? headline, List<string>? roles)
+    {
+        var bits = new List<string>();
+        if (!string.IsNullOrWhiteSpace(headline)) bits.Add($"Positioning: {headline}");
+        if (roles is { Count: > 0 }) bits.Add("Target roles: " + string.Join(", ", roles));
+        return bits.Count == 0 ? "" : "Stay coherent with the rest of the plan — " + string.Join("; ", bits) + ". ";
+    }
+
+    /// <summary>Builds the plan as 4 small, sequential calls (each a tiny JSON that finishes inside the cap),
+    /// then assembles them. Positioning runs first and feeds the others for coherence.</summary>
+    private static async Task<CareerPlanResult> SynthesizeAsync(ClaudeConfig llm, UserProfile profile,
+        string marketContext, string snippets, SalaryCtx salary, IProgress<string>? log, IProgress<string>? reasoning, CancellationToken ct)
+    {
+        string lang = Loc.Instance.T("ai.lang");
+        string ctx = CandidateBlock(profile, marketContext, snippets);
+
+        log?.Report(Loc.Instance.T("plan.synth.positioning"));
+        var pos = ParsePart<PositioningDto>(await LlmClient.CompleteAsync(llm,
+$@"You are a candid career coach. Using the candidate, the jobs already scored, and the research below, output
+ONLY one JSON object: {{""headline"":""one-line positioning for this candidate"",""strengths"":[""short phrase""],""targetRoles"":[""role title""]}}
+- 3–5 strengths, 2–4 targetRoles. Every phrase concrete, under ~16 words. Write in {lang}.
+{ctx}", reasoning, ct));
+        if (pos is null || string.IsNullOrWhiteSpace(pos.Headline)) return new CareerPlanResult();  // hard-fail upstream
+        string coherence = Coherence(pos.Headline, pos.TargetRoles);
+
+        log?.Report(Loc.Instance.T("plan.synth.gaps"));
+        var gs = ParsePart<GapsStepsDto>(await LlmClient.CompleteAsync(llm,
+$@"You are a candid career coach. {coherence}Output ONLY one JSON object:
+{{""skillGaps"":[{{""skill"":""name"",""why"":""why it matters"",""action"":""one concrete way to build it""}}],""steps"":[{{""horizon"":""0–3 meses"",""title"":""short action"",""detail"":""one sentence""}}]}}
+- 2–4 skillGaps, 3–5 steps ordered by horizon (0–3 / 3–6 / 6–12 meses). Cite sources [n] where relevant.
+- BUILD ON THE CANDIDATE'S CORE STACK ({salary.Core}); deepen/specialise within it plus adjacent in-demand areas.
+  Do NOT make ""learn Python"" (or switching primary language) a step; express AI/data work THROUGH their stack.
+- Every phrase concrete, under ~16 words. Write in {lang}.
+{ctx}", reasoning, ct));
+
+        log?.Report(Loc.Instance.T("plan.synth.salary"));
+        var sal = ParsePart<SalaryDto>(await LlmClient.CompleteAsync(llm,
+            BuildSalaryPrompt(profile, marketContext, snippets, salary, coherence), reasoning, ct));
+
+        log?.Report(Loc.Instance.T("plan.synth.signals"));
+        var sig = ParsePart<SignalsDto>(await LlmClient.CompleteAsync(llm,
+$@"You are a candid career coach. {coherence}From the research snippets, output ONLY one JSON object:
+{{""marketSignals"":[""in-demand skill or hiring trend, cite [n]""],""bottomLine"":""one encouraging, honest sentence""}}
+- 2–5 marketSignals, each citing [n]. Use ONLY the snippets for market claims. Write in {lang}.
+{ctx}", reasoning, ct));
+
+        return Assemble(pos, gs, sal, sig);
+    }
+
+    /// <summary>The Salary sub-prompt — the anti-inflation hard rules live ONLY here, so they don't bloat (and
+    /// truncate) the other parts. Shared by synthesis and surgical revise.</summary>
+    private static string BuildSalaryPrompt(UserProfile profile, string marketContext, string snippets, SalaryCtx s, string coherence) =>
+$@"You are a candid career coach setting REALISTIC LOCAL salary expectations. {coherence}Output ONLY one JSON object:
+{{""salaryRationale"":""1 sentence: the local {s.LocName} EUR range you assume, then how you derived the bands"",""salaryNow"":""realistic LOCAL €/yr band today"",""salaryPotential"":""LOCAL €/yr band reachable in 12–24 months""}}
+
+== HARD RULES — READ BEFORE WRITING ANY NUMBER (most models inflate salary here) ==
+1. ALL salary figures must be LOCAL {s.LocName} EUR/year.
+2. The snippets rarely contain a real local figure. When you DON'T have a cited local number (you usually don't),
+   anchor to {s.Anchor} — NOT your general expectations, US/global pay, or remote listings. A cautious range
+   anchored to the candidate's own floor/target is the correct answer; do not invent an aspirational figure.
+3. €100k+ remote listings carry crypto/US-only/contractor caveats — they are NOT the local {s.LocName} rate.
+4. {s.CeilingLine}
+5. Write salaryRationale FIRST, then salaryNow and salaryPotential consistent with it. Write in {Loc.Instance.T("ai.lang")}.
+{CandidateBlock(profile, marketContext, snippets)}
+== FINAL REMINDER (overrides anything inflated above) ==
+{s.ReminderLine}";
+
+    /// <summary>Generalized JSON salvage (same as <see cref="Parse"/>) for the small part objects.</summary>
+    private static T? ParsePart<T>(string? raw) where T : class
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        int a = raw.IndexOf('{'), b = raw.LastIndexOf('}');
+        if (a < 0 || b <= a) return null;
+        string block = raw.Substring(a, b - a + 1);
+        return TryGet<T>(block) ?? TryGet<T>(LoosenJson(block));
+    }
+
+    /// <summary>Merges the part fragments into one plan, with the SAME defaults/filters as the one-shot
+    /// <see cref="Parse"/> — a missing part just degrades to empty and its UI/PDF section hides.</summary>
+    private static CareerPlanResult Assemble(PositioningDto pos, GapsStepsDto? gs, SalaryDto? sal, SignalsDto? sig) => new()
+    {
+        Headline = pos.Headline ?? "",
+        Strengths = pos.Strengths ?? new(),
+        TargetRoles = pos.TargetRoles ?? new(),
+        SkillGaps = (gs?.SkillGaps ?? new()).Select(g => new SkillGap { Skill = g.Skill ?? "", Why = g.Why ?? "", Action = g.Action ?? "" })
+            .Where(g => !string.IsNullOrWhiteSpace(g.Skill)).ToList(),
+        Steps = (gs?.Steps ?? new()).Select(s => new PlanStep { Horizon = s.Horizon ?? "", Title = s.Title ?? "", Detail = s.Detail ?? "" })
+            .Where(s => !string.IsNullOrWhiteSpace(s.Title)).ToList(),
+        SalaryRationale = sal?.SalaryRationale ?? "",
+        SalaryNow = sal?.SalaryNow ?? "",
+        SalaryPotential = sal?.SalaryPotential ?? "",
+        MarketSignals = sig?.MarketSignals ?? new(),
+        BottomLine = sig?.BottomLine ?? "",
+    };
+
+    private sealed class PositioningDto
+    {
+        public string? Headline { get; set; }
+        [JsonConverter(typeof(StringListConverter))] public List<string>? Strengths { get; set; }
+        [JsonConverter(typeof(StringListConverter))] public List<string>? TargetRoles { get; set; }
+    }
+    private sealed class GapsStepsDto { public List<GapDto>? SkillGaps { get; set; } public List<StepDto>? Steps { get; set; } }
+    private sealed class SalaryDto { public string? SalaryRationale { get; set; } public string? SalaryNow { get; set; } public string? SalaryPotential { get; set; } }
+    private sealed class SignalsDto { [JsonConverter(typeof(StringListConverter))] public List<string>? MarketSignals { get; set; } public string? BottomLine { get; set; } }
+
+    /// <summary>Local-model revise: re-run ONLY the salary part with fresh research + objections (salary is the
+    /// usual downward correction), then overwrite just those fields. Mutates and returns the plan in place; a
+    /// failed re-run leaves it untouched. Other sections are kept (rarely the flagged problem).</summary>
+    private static async Task<CareerPlanResult> ReviseSurgicalAsync(ClaudeConfig llm, UserProfile profile,
+        CareerPlanResult plan, List<CritiquePoint> points, List<WebResult> fresh, SalaryCtx salary,
+        IProgress<string>? log, IProgress<string>? reasoning, CancellationToken ct)
+    {
+        log?.Report(Loc.Instance.T("plan.revising.salary"));
+        string freshBlock = fresh.Count > 0
+            ? Snippets(fresh)
+            : "(no additional local data found — stay cautious and anchor to the candidate's floor/target; do not invent figures)";
+        string objections = string.Join("\n", points.Select((p, i) =>
+            $"{i + 1}. {p.Claim} — {p.Issue}" + (p.HasRebuttal ? $" (author: {p.Rebuttal})" : "")));
+        string coherence = Coherence(plan.Headline, plan.TargetRoles);
+
+        var sal = ParsePart<SalaryDto>(await LlmClient.CompleteAsync(llm,
+            BuildSalaryRevisePrompt(profile, freshBlock, salary, coherence, objections), reasoning, ct));
+        if (sal is not null)
+        {
+            if (!string.IsNullOrWhiteSpace(sal.SalaryRationale)) plan.SalaryRationale = sal.SalaryRationale!;
+            if (!string.IsNullOrWhiteSpace(sal.SalaryNow)) plan.SalaryNow = sal.SalaryNow!;
+            if (!string.IsNullOrWhiteSpace(sal.SalaryPotential)) plan.SalaryPotential = sal.SalaryPotential!;
+        }
+
+        // Append any freshly-cited sources so inline [n] resolve.
+        foreach (var w in fresh)
+            if (!plan.Sources.Any(s => string.Equals(s.Url, w.Url, StringComparison.OrdinalIgnoreCase)))
+                plan.Sources.Add(new SourceRef { N = plan.Sources.Count + 1, Url = w.Url, Host = Host(w.Url) });
+        plan.Revised = true;
+        return plan;
+    }
+
+    private static string BuildSalaryRevisePrompt(UserProfile profile, string freshBlock, SalaryCtx s, string coherence, string objections) =>
+$@"A reviewer flagged salary problems in a career plan for a candidate in {s.LocName}. Re-state ONLY the salary,
+corrected. {coherence}Salary corrections here are almost always DOWNWARD: if a band looks high, LOWER it toward
+local reality; do NOT raise unless the FRESH RESEARCH cites a local figure that supports it.
+Output ONLY one JSON object: {{""salaryRationale"":""whether you found a cited local figure, then the bands"",""salaryNow"":""local €/yr band"",""salaryPotential"":""local €/yr band""}}
+
+== HARD RULES ==
+1. ALL figures LOCAL {s.LocName} EUR/year, anchored to {s.Anchor}.
+2. {s.CeilingLine}
+3. €100k+ remote listings carry crypto/US-only/contractor caveats — never the local rate.
+Write in {Loc.Instance.T("ai.lang")}.
+
+== OBJECTIONS ==
+{objections}
+== FRESH RESEARCH (newly fetched — use for local salary grounding) ==
+{freshBlock}
+== CANDIDATE ==
+{profile.ToScoringText()}";
 
     /// <summary>
     /// Adversarial self-critique. Plays an independent reviewer that is told a RIVAL tool produced the plan
@@ -154,7 +350,7 @@ double-quoted keys/values, shape:
     /// </summary>
     public static async Task<CareerPlanResult> CritiqueAsync(
         ClaudeConfig llm, UserProfile profile, CareerPlanResult plan, CritiqueMode mode,
-        IProgress<string>? log = null, CancellationToken ct = default)
+        IProgress<string>? log = null, IProgress<string>? reasoning = null, CancellationToken ct = default)
     {
         void L(string m) => log?.Report(m);
         string loc = profile.Locations.FirstOrDefault() ?? "the candidate's market";
@@ -175,26 +371,15 @@ double-quoted keys/values, shape:
 
         try
         {
-            // 1) ATTACKER — framed as reviewing a competitor's output.
+            // 1) ATTACKER — split by dimension: two tiny single-objection calls instead of one open-ended
+            // "find all flaws" pass. Each is the smallest possible adversarial ask, so a heavy reasoning model
+            // is likelier to commit and emit; any that still ruminates to truncation is dropped (clean skip).
             L(Loc.Instance.T("plan.critiquing"));
-            string attackPrompt =
-$@"A rival career-planning tool produced the plan below for a candidate based in {loc}. You are a rigorous,
-independent senior reviewer with NO stake in it — your job is to expose where it is WRONG, overstated or
-generic so the candidate doesn't trust it blindly. Scrutinise especially:
-- SALARY INFLATION — in this market the usual error is salaries set TOO HIGH (especially the 12–24 month
-  ""potential""). Flag bands that exceed realistic local {loc} pay or contradict the plan's own rationale.
-  {ceilingNote} Do NOT argue salaries should be higher unless a cited local source proves it.
-- assuming remote/global roles pay US rates (they don't; €100k+ remote listings carry crypto/US-only/contractor caveats);
-- advice that ignores the candidate's actual stack ({core}) or is vague boilerplate.
-Reply with ONLY one JSON object: {{""critique"":[{{""claim"":""the plan's claim, short"",""issue"":""the specific problem, blunt""}}]}}.
-3–5 items, most serious first; each phrase under ~22 words. Write in {lang}.
-
-== CANDIDATE ==
-{profile.ToScoringText()}
-== THE PLAN UNDER REVIEW ==
-{summary}";
-            string? aText = await LlmClient.CompleteAsync(llm, attackPrompt, ct);
-            var points = ParseCritique(aText);
+            var points = new List<CritiquePoint>();
+            AddIfReal(points, ParsePart<CritiqueItemDto>(
+                await LlmClient.CompleteAsync(llm, BuildSalaryObjectionPrompt(loc, ceilingNote, lang, summary), reasoning, ct)));
+            AddIfReal(points, ParsePart<CritiqueItemDto>(
+                await LlmClient.CompleteAsync(llm, BuildAdviceObjectionPrompt(core, lang, summary), reasoning, ct)));
             if (points.Count == 0) return plan;   // nothing usable — leave the plan as-is
             plan.Critique = points;
 
@@ -204,16 +389,14 @@ Reply with ONLY one JSON object: {{""critique"":[{{""claim"":""the plan's claim,
                 L(Loc.Instance.T("plan.debating"));
                 string objections = string.Join("\n", points.Select((p, i) => $"{i + 1}. {p.Claim} — {p.Issue}"));
                 string defendPrompt =
-$@"You are the author of the plan below, responding to a reviewer's objections. For EACH objection, reply in
-ONE honest sentence: either concede (state what you would change) or justify it. Do not be defensive for its
-own sake. Reply with ONLY one JSON object: {{""responses"":[{{""claim"":""echo the objection's claim"",""rebuttal"":""your one-sentence response""}}]}}.
-Keep the same order as the objections. Write in {lang}.
+$@"You are the plan's author. For EACH objection below, reply in ONE honest sentence (≤20 words): concede what
+you'd change, or briefly justify. Output ONLY this JSON, then STOP — do not deliberate:
+{{""responses"":[{{""claim"":""echo the objection's claim"",""rebuttal"":""your one-sentence response""}}]}}
+Same order as the objections. Write in {lang}.
 
-== THE PLAN ==
-{summary}
 == OBJECTIONS ==
 {objections}";
-                string? dText = await LlmClient.CompleteAsync(llm, defendPrompt, ct);
+                string? dText = await LlmClient.CompleteAsync(llm, defendPrompt, reasoning, ct);
                 ApplyRebuttals(points, dText);
             }
 
@@ -224,6 +407,12 @@ Keep the same order as the objections. Write in {lang}.
                 // reviser grounds in real data instead of falling back to a hallucinated 'target'.
                 L(Loc.Instance.T("plan.researching"));
                 var fresh = await GapFillResearchAsync(llm, loc, core, points, ct);
+
+                // Local models: surgically re-run ONLY the salary part (the usual downward correction) — a whole-
+                // plan rewrite would truncate just like synthesis. Claude keeps the full rewrite below.
+                if (IsLocal(llm))
+                    return await ReviseSurgicalAsync(llm, profile, plan, points, fresh, BuildSalaryCtx(profile, loc), log, reasoning, ct);
+
                 string freshBlock = fresh.Count > 0
                     ? Snippets(fresh)
                     : "(no additional local data found — stay cautious and anchor to the candidate's floor/target; do not invent figures)";
@@ -246,7 +435,7 @@ Write in {lang}.
 {freshBlock}
 == CURRENT PLAN ==
 {summary}";
-                string? rText = await LlmClient.CompleteAsync(llm, revisePrompt, ct);
+                string? rText = await LlmClient.CompleteAsync(llm, revisePrompt, reasoning, ct);
                 var revised = Parse(rText ?? "");
                 if (revised is not null)
                 {
@@ -340,18 +529,42 @@ precise web-search queries that would fetch the MISSING factual data — above a
         return sb.ToString();
     }
 
-    private static List<CritiquePoint> ParseCritique(string? raw)
+    /// <summary>A salvaged-from-a-truncated-draft value: empty, or just the schema's "…"/stub placeholder. We
+    /// must drop these so a critique that didn't finish renders nothing (not garbage) and never feeds the defender.</summary>
+    private static bool Degenerate(string? s)
+        => string.IsNullOrWhiteSpace(s) || s.Trim().Trim('.', '…', '"', ' ', '-').Length < 4;
+
+    /// <summary>Adds a single salvaged objection only if it's real — non-degenerate and not an explicit "none".</summary>
+    private static void AddIfReal(List<CritiquePoint> list, CritiqueItemDto? c)
     {
-        if (string.IsNullOrWhiteSpace(raw)) return new();
-        int a = raw.IndexOf('{'), b = raw.LastIndexOf('}');
-        if (a < 0 || b <= a) return new();
-        string block = raw.Substring(a, b - a + 1);
-        var dto = TryGet<CritiqueDto>(block) ?? TryGet<CritiqueDto>(LoosenJson(block));
-        return (dto?.Critique ?? new())
-            .Select(c => new CritiquePoint { Claim = c.Claim ?? "", Issue = c.Issue ?? "" })
-            .Where(c => !string.IsNullOrWhiteSpace(c.Issue))
-            .Take(5).ToList();
+        if (c is null) return;
+        string claim = c.Claim ?? "", issue = c.Issue ?? "";
+        if (Degenerate(claim) || Degenerate(issue)) return;
+        if (issue.Trim().Equals("none", StringComparison.OrdinalIgnoreCase) ||
+            claim.Trim().Equals("none", StringComparison.OrdinalIgnoreCase)) return;
+        list.Add(new CritiquePoint { Claim = claim, Issue = issue });
     }
+
+    private static string BuildSalaryObjectionPrompt(string loc, string ceilingNote, string lang, string summary) =>
+$@"Check ONE thing in the plan below: is the salary (especially the 12–24 month ""potential"") set too HIGH for the
+local {loc} market? {ceilingNote} Never argue it should be higher.
+If a band is unrealistic or contradicts the plan's own rationale, output the objection; otherwise output 'none'.
+Output ONLY this JSON, then STOP — do not deliberate:
+{{""claim"":""the plan's exact salary claim, ≤10 words, or 'none'"",""issue"":""why it's too high, ≤18 words, or 'none'""}}
+Write in {lang}.
+
+== THE PLAN ==
+{summary}";
+
+    private static string BuildAdviceObjectionPrompt(string core, string lang, string summary) =>
+$@"Check ONE thing in the plan below: is there a single most generic/boilerplate item, or a ""gap"" the candidate's
+stack ({core}) already covers? If so, output the objection; otherwise output 'none'.
+Output ONLY this JSON, then STOP — do not deliberate:
+{{""claim"":""the plan's exact claim, ≤10 words, or 'none'"",""issue"":""why it's generic, ≤18 words, or 'none'""}}
+Write in {lang}.
+
+== THE PLAN ==
+{summary}";
 
     /// <summary>Maps the defender's responses back onto the objections (by order, then by claim match).</summary>
     private static void ApplyRebuttals(List<CritiquePoint> points, string? raw)
@@ -363,7 +576,7 @@ precise web-search queries that would fetch the MISSING factual data — above a
         var dto = TryGet<RebuttalDto>(block) ?? TryGet<RebuttalDto>(LoosenJson(block));
         var resp = dto?.Responses ?? new();
         for (int i = 0; i < points.Count && i < resp.Count; i++)
-            if (!string.IsNullOrWhiteSpace(resp[i].Rebuttal))
+            if (!Degenerate(resp[i].Rebuttal))
                 points[i].Rebuttal = resp[i].Rebuttal!.Trim();
     }
 
@@ -509,7 +722,6 @@ trajectory, hiring trends). Reply with ONLY a JSON object: {{""queries"":[""..."
     private sealed class GapDto { public string? Skill { get; set; } public string? Why { get; set; } public string? Action { get; set; } }
     private sealed class StepDto { public string? Horizon { get; set; } public string? Title { get; set; } public string? Detail { get; set; } }
 
-    private sealed class CritiqueDto { public List<CritiqueItemDto>? Critique { get; set; } }
     private sealed class CritiqueItemDto { public string? Claim { get; set; } public string? Issue { get; set; } }
     private sealed class RebuttalDto { public List<RebuttalItemDto>? Responses { get; set; } }
     private sealed class RebuttalItemDto { public string? Claim { get; set; } public string? Rebuttal { get; set; } }

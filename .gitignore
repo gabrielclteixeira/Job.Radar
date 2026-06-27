@@ -29,6 +29,8 @@ apify-settings.json
 jsearch-settings.json
 # saved career plan (built from the personal profile, machine-local)
 career-plan.json
+# persisted reasoning transcript for the saved plan (machine-local)
+career-plan.reasoning.txt
 # short-lived career-research cache (machine-local)
 career-research.json
 

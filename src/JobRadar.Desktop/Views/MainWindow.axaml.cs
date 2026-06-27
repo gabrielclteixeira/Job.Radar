@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using FluentAvalonia.UI.Controls;
 using JobRadar.Desktop.ViewModels;
 
@@ -21,9 +22,23 @@ public partial class MainWindow : Window
                 vm.ConfirmRemoveAsync = ConfirmRemoveModelAsync;
                 vm.ConfirmLeaveSettingsAsync = ConfirmLeaveSettingsAsync;
                 vm.ConfirmDeleteJobsAsync = ConfirmDeleteJobsAsync;
+                vm.ScrollToMaxTokensRequested += ScrollToMaxTokens;
+                vm.CopyToClipboardAsync = async text =>
+                {
+                    if (TopLevel.GetTopLevel(this)?.Clipboard is { } cb) await cb.SetTextAsync(text);
+                };
             }
         };
     }
+
+    /// <summary>Brings the token-limit setting into view after navigating to Settings (deferred so the
+    /// view has switched and laid out first).</summary>
+    private void ScrollToMaxTokens()
+        => Dispatcher.UIThread.Post(async () =>
+        {
+            await Task.Delay(140);
+            MaxTokensField?.BringIntoView();
+        }, DispatcherPriority.Background);
 
     /// <summary>Confirmation before deleting all saved jobs (destructive, clears the cache).</summary>
     private async Task<bool> ConfirmDeleteJobsAsync()

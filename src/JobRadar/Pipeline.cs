@@ -276,6 +276,59 @@ public static class Pipeline
         return new PipelineResult(ranked, ranked.Count, false);
     }
 
+    /// <summary>Resume scoring after a pause: scores only the still-unscored relevant jobs (no fetch, no
+    /// re-scoring of done ones), streaming + persisting each. Same loop as <see cref="RescoreAsync"/> but the
+    /// candidate set is <c>AiScore == null</c>.</summary>
+    public static async Task<PipelineResult> ScoreRemainingAsync(
+        UserProfile profile, AppConfig cfg, string root,
+        IProgress<string>? log = null, IProgress<JobEntity>? onJob = null, CancellationToken ct = default)
+    {
+        void L(string m) => log?.Report(m);
+        string dbPath = Path.IsPathRooted(cfg.DbPath) ? cfg.DbPath : Path.Combine(root, cfg.DbPath);
+        string marker = dbPath + ".schema";
+        if (!File.Exists(dbPath) || !File.Exists(marker) || File.ReadAllText(marker) != SchemaVersion)
+            return new PipelineResult(new(), 0, false);
+
+        using var db = new RadarDb(dbPath);
+        await db.Database.EnsureCreatedAsync(ct);
+        var allRelevant = await db.Jobs.Where(j => j.Relevant)
+            .OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt).ToListAsync(ct);
+
+        // Stream what's already known, then score only the remaining unscored candidates.
+        var toScore = cfg.Claude.Enabled
+            ? allRelevant.Where(j => j.AiScore == null).OrderByDescending(j => j.PreScore).Take(cfg.ScoreTopN).ToList()
+            : new List<JobEntity>();
+        var pending = toScore.ToHashSet();
+        foreach (var j in allRelevant.Where(j => !pending.Contains(j))) onJob?.Report(j);
+
+        if (toScore.Count > 0)
+        {
+            int floor = profile.SalaryFloorEur > 0 ? profile.SalaryFloorEur : cfg.Salary.FloorEur;
+            int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
+            var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
+            L(Loc.Instance.F("pipe.rescoring", toScore.Count));
+            int i = 0;
+            foreach (var j in toScore)
+            {
+                ct.ThrowIfCancellationRequested();
+                var res = await scorer.ScoreAsync(j);
+                if (res is not null)
+                {
+                    j.AiScore = res.Score; j.AiVerdict = res.Verdict;
+                    j.AiReasons = JsonSerializer.Serialize(res.Reasons);
+                    j.AiRedFlags = JsonSerializer.Serialize(res.RedFlags);
+                }
+                else j.AiScore = j.PreScore;
+                await db.SaveChangesAsync(ct);
+                L($"  [{j.AiScore,3}] {j.Title} @ {j.Company}  ({++i}/{toScore.Count})");
+                onJob?.Report(j);
+            }
+        }
+
+        var ranked = allRelevant.OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt).ToList();
+        return new PipelineResult(ranked, ranked.Count, false);
+    }
+
     /// <summary>Overrides queries + location in the fetcher config from the profile, preserving keys/sources.</summary>
     private static void WriteFetcherConfig(string cfgPath, UserProfile profile, IProgress<string>? log)
     {

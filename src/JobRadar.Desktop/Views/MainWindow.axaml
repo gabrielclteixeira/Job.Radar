@@ -40,6 +40,23 @@
         <Style Selector="Button.nav.active:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource AccentHover}"/>
         </Style>
+
+        <!-- Brief accent flash used to draw the eye to a setting jumped to from elsewhere -->
+        <Style Selector="Border.flash">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="BorderBrush" Duration="0:0:0.45"/>
+                    <BrushTransition Property="Background" Duration="0:0:0.45"/>
+                </Transitions>
+            </Setter>
+        </Style>
+        <Style Selector="Border.flash.on">
+            <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
+            <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+        </Style>
     </Window.Styles>
 
     <LayoutTransformControl>
@@ -282,12 +299,25 @@
 
                     <TextBlock Classes="sub" Text="{Binding ExportMsg}" IsVisible="{Binding ExportMsg, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                    <!-- Scanning state: the radar -->
+                    <!-- Scanning state: the radar (+ pause) -->
                     <Border IsVisible="{Binding IsScoring}" Classes="card" Padding="24" Margin="0,2,0,2">
                         <StackPanel HorizontalAlignment="Center" Spacing="14">
                             <ctl:RadarScope HorizontalAlignment="Center"/>
                             <TextBlock Text="{Binding ScoringStatus}" Foreground="{DynamicResource AccentText}" FontFamily="{DynamicResource MonoFont}"
                                        FontSize="12" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                            <Button Classes="ghost" HorizontalAlignment="Center" Command="{Binding PauseScoringCommand}" IsVisible="{Binding CanPause}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Pause"/><TextBlock Text="{l:T scoring.pause}"/></StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Paused: resume -->
+                    <Border IsVisible="{Binding CanResume}" Classes="card" Margin="0,2,0,2" BorderBrush="{DynamicResource Accent}" BorderThickness="1">
+                        <StackPanel Spacing="10">
+                            <TextBlock Classes="sub" TextWrapping="Wrap" Text="{l:T scoring.paused}"/>
+                            <Button Classes="accent" HorizontalAlignment="Left" Command="{Binding ResumeScoringCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Play"/><TextBlock Text="{l:T scoring.resume}"/></StackPanel>
+                            </Button>
                         </StackPanel>
                     </Border>
 
@@ -301,12 +331,16 @@
                                    Text="{l:T results.howScore.body}"/>
                     </Expander>
 
+                    <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,4"
+                               Foreground="{DynamicResource Muted}" Text="{l:T engine.localNote}"
+                               IsVisible="{Binding UsingLocalEngine}"/>
+
                     <ItemsControl ItemsSource="{Binding Jobs}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:JobVm">
                                 <Expander Margin="0,0,0,8" HorizontalAlignment="Stretch">
                                     <Expander.Header>
-                                        <Grid ColumnDefinitions="Auto,16,*" HorizontalAlignment="Stretch">
+                                        <Grid ColumnDefinitions="Auto,16,*" HorizontalAlignment="Stretch" Margin="2,9,8,9">
                                             <ctl:ScoreDial Grid.Column="0" Score="{Binding Score}" Label="{Binding ScoreLabel}" VerticalAlignment="Top"/>
                                             <StackPanel Grid.Column="2" Spacing="3">
                                                 <Button Classes="link" Command="{Binding OpenCommand}" ToolTip.Tip="{l:T job.openTip}">
@@ -339,8 +373,11 @@
                                             <Button Classes="ghost" Command="{Binding OpenCommand}">
                                                 <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Open"/><TextBlock Text="{l:T job.openJob}"/></StackPanel>
                                             </Button>
-                                            <Button Classes="ghost" Command="{Binding ResearchCommand}" IsEnabled="{Binding !IsResearching}" ToolTip.Tip="{l:T job.research.tip}">
-                                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T job.research}"/></StackPanel>
+                                            <Button Classes="ghost" Command="{Binding ResearchCommand}" ToolTip.Tip="{l:T job.research.tip}">
+                                                <Panel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding !IsResearching}"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T job.research}"/></StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding IsResearching}"><TextBlock Text="✕" VerticalAlignment="Center"/><TextBlock Text="{l:T job.research.cancel}"/></StackPanel>
+                                                </Panel>
                                             </Button>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" Spacing="9" IsVisible="{Binding IsResearching}">
@@ -459,15 +496,26 @@
                             <TextBlock Classes="sub" Text="{l:T improve.byok}"/>
                             <TextBlock Text="{Binding PlanError}" Foreground="{DynamicResource Danger}" FontSize="12" TextWrapping="Wrap"
                                        IsVisible="{Binding PlanError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <Button Classes="ghost" HorizontalAlignment="Left" IsVisible="{Binding PlanErrorIsTokenLimit}"
+                                    Command="{Binding GoToTokenSettingCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Settings"/><TextBlock Text="{l:T plan.error.fixTokens}"/></StackPanel>
+                            </Button>
                         </StackPanel>
                     </Border>
 
-                    <!-- Researching: the radar -->
+                    <!-- Researching: the radar + live model thinking -->
                     <Border IsVisible="{Binding IsPlanning}" Classes="card" Padding="24" Margin="0,12,0,0">
                         <StackPanel HorizontalAlignment="Center" Spacing="14">
                             <ctl:RadarScope HorizontalAlignment="Center"/>
                             <TextBlock Text="{Binding PlanStatus}" Foreground="{DynamicResource AccentText}" FontFamily="{DynamicResource MonoFont}"
                                        FontSize="12" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"/>
+                            <Border IsVisible="{Binding HasPlanReasoning}" Background="{DynamicResource Panel2}" CornerRadius="8" Padding="12,10" MaxWidth="600">
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="{l:T plan.thinking}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
+                                    <TextBlock Text="{Binding PlanReasoningTail}" FontFamily="{DynamicResource MonoFont}" FontSize="11"
+                                               TextWrapping="Wrap" Foreground="{DynamicResource TextSoft}"/>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
                     </Border>
 
@@ -489,6 +537,8 @@
                         <!-- AI caveat — temper trust right under the headline -->
                         <TextBlock Text="{Binding PlanCaveat}" FontSize="11" FontStyle="Italic" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"
                                    IsVisible="{Binding PlanCaveat, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        <TextBlock Text="{l:T engine.localNote}" FontSize="11" FontStyle="Italic" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"
+                                   IsVisible="{Binding UsingLocalEngine}"/>
 
                         <!-- Actions -->
                         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -502,9 +552,13 @@
 
                         <!-- Adversarial review still running (plan already visible) -->
                         <Border IsVisible="{Binding IsCritiquing}" Background="{DynamicResource AccentSoft}" CornerRadius="8" Padding="11,8">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" VerticalAlignment="Center"/>
-                                <TextBlock Text="{Binding PlanStatus}" FontSize="11.5" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="10">
+                                    <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding PlanStatus}" FontSize="11.5" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                </StackPanel>
+                                <TextBlock Text="{Binding PlanReasoningTail}" FontFamily="{DynamicResource MonoFont}" FontSize="11" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource TextSoft}" IsVisible="{Binding HasPlanReasoning}"/>
                             </StackPanel>
                         </Border>
 
@@ -666,6 +720,28 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
+
+                        <!-- Model reasoning — the full generation transcript. Collapsed by default; never in the PDF. -->
+                        <Expander IsVisible="{Binding HasPlanReasoning}" Header="{l:T plan.reasoning.title}">
+                            <StackPanel Spacing="7" Margin="2,4,2,2">
+                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                    <TextBlock Grid.Column="0" Classes="sub" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:T plan.reasoning.hint}"/>
+                                    <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding CopyReasoningCommand}">
+                                        <Panel>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding !ReasoningCopied}"><ui:SymbolIcon Symbol="Copy"/><TextBlock Text="{l:T reasoning.copy}"/></StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ReasoningCopied}"><TextBlock Text="✓" Foreground="{DynamicResource Signal}"/><TextBlock Text="{l:T reasoning.copied}"/></StackPanel>
+                                        </Panel>
+                                    </Button>
+                                    <Button Grid.Column="2" Classes="ghost" Margin="6,0,0,0" Command="{Binding SaveReasoningCommand}" IsEnabled="{Binding !Busy}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T reasoning.save}"/></StackPanel>
+                                    </Button>
+                                </Grid>
+                                <ScrollViewer MaxHeight="320" VerticalScrollBarVisibility="Auto">
+                                    <TextBlock Text="{Binding PlanReasoning}" FontFamily="{DynamicResource MonoFont}" FontSize="11"
+                                               TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Expander>
                     </StackPanel>
                 </StackPanel>
 
@@ -705,6 +781,19 @@
 
                             <!-- ===== Local model manager (Ollama) ===== -->
                             <StackPanel IsVisible="{Binding UseLocalModel}" Spacing="8">
+                                <!-- machine-aware recommended first model -->
+                                <Border Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="10" Padding="14,12">
+                                    <StackPanel Spacing="7">
+                                        <TextBlock Text="{Binding RecommendedLabel}" FontWeight="SemiBold" FontSize="13" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                        <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T models.recommend.why}" IsVisible="{Binding !RecommendedInstalled}"/>
+                                        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource Signal}" Text="{l:T models.recommend.have}" IsVisible="{Binding RecommendedInstalled}"/>
+                                        <Button Classes="accent" HorizontalAlignment="Left" Command="{Binding InstallRecommendedCommand}" IsEnabled="{Binding !IsPullingModel}" IsVisible="{Binding !RecommendedInstalled}">
+                                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T models.install}"/></StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" Text="{l:T models.smallWarn}"/>
+
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBlock Grid.Column="0" Classes="fld" Text="{l:T models.section}" Margin="0,4,0,0" VerticalAlignment="Center"/>
                                     <Button Grid.Column="1" Classes="link" Command="{Binding RefreshInstalledModelsCommand}">
@@ -751,12 +840,8 @@
                                     <Button Classes="link" Content="{l:T models.getOllama}" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/download"/>
                                 </StackPanel>
 
-                                <!-- live model browser: discover & install from Ollama / LM Studio (Hugging Face) -->
+                                <!-- live model browser: discover & one-click install from Ollama -->
                                 <TextBlock Classes="fld" Text="{l:T models.install}" Margin="0,4,0,0"/>
-                                <StackPanel Orientation="Horizontal" Spacing="14">
-                                    <RadioButton GroupName="mbtab" Content="{l:T models.tab.ollama}" IsChecked="{Binding IsOllamaTab, Mode=TwoWay}"/>
-                                    <RadioButton GroupName="mbtab" Content="{l:T models.tab.lmstudio}" IsChecked="{Binding IsLmStudioTab, Mode=TwoWay}"/>
-                                </StackPanel>
                                 <Grid ColumnDefinitions="*,Auto">
                                     <TextBox Grid.Column="0" Text="{Binding ModelSearchText}" Watermark="{l:T models.browse}">
                                         <TextBox.InnerLeftContent><ui:SymbolIcon Symbol="Find" Margin="8,0,0,0" Foreground="{DynamicResource Muted}"/></TextBox.InnerLeftContent>
@@ -766,13 +851,6 @@
                                 </Grid>
                                 <TextBlock Classes="sub" FontSize="11" Text="{Binding RegistrySearchStatus}"
                                            IsVisible="{Binding RegistrySearchStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
-                                <!-- how to actually use an LM Studio model -->
-                                <Border IsVisible="{Binding IsLmStudioTab}" Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="11">
-                                    <StackPanel Spacing="5">
-                                        <TextBlock Text="{l:T models.lmGuide}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
-                                        <Button Classes="link" HorizontalAlignment="Left" Content="{l:T models.lmOpen}" Command="{Binding OpenUrlCommand}" CommandParameter="https://lmstudio.ai/docs/app/api"/>
-                                    </StackPanel>
-                                </Border>
                                 <ScrollViewer MaxHeight="360" IsVisible="{Binding HasRegistryResults}" VerticalScrollBarVisibility="Auto">
                                     <ItemsControl ItemsSource="{Binding RegistryResults}">
                                         <ItemsControl.ItemTemplate>
@@ -869,6 +947,23 @@
                                         <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T settings.load}"/></StackPanel>
                                     </Button>
                                 </Grid>
+                                <Border x:Name="MaxTokensField" Classes="flash" Classes.on="{Binding HighlightMaxTokens}" CornerRadius="9" Padding="8" Margin="0,4,0,0">
+                                    <StackPanel Spacing="5">
+                                        <TextBlock Classes="fld" Text="{l:T settings.maxTokens}" Margin="0"/>
+                                        <NumericUpDown Value="{Binding LlmMaxTokens}" Minimum="1024" Maximum="32768" Increment="1024"
+                                                       FormatString="0" Width="160" HorizontalAlignment="Left"/>
+                                        <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.maxTokens.hint}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,2,0,0">
+                                            <TextBlock Classes="sub" FontSize="11" VerticalAlignment="Center" Text="{Binding MaxTokensRecLabel}"/>
+                                            <Button Classes="link" FontSize="11" VerticalAlignment="Center"
+                                                    Command="{Binding UseRecommendedMaxTokensCommand}" Content="{l:T settings.maxTokens.use}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <TextBlock Classes="fld" Text="{l:T settings.timeout}"/>
+                                <NumericUpDown Value="{Binding LlmTimeoutSeconds}" Minimum="30" Maximum="1800" Increment="30"
+                                               FormatString="0" Width="160" HorizontalAlignment="Left"/>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.timeout.hint}"/>
                             </StackPanel>
 
                         </StackPanel>
@@ -965,6 +1060,22 @@
                                 <TextBlock Grid.Column="1" Text="{Binding LlmUsage}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
                             </Grid>
                             <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T usage.hint}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Diagnostics / logs -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="fld" Text="{l:T settings.diagnostics}" Margin="0,0,0,2"/>
+                            <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.diagnostics.hint}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <Button Classes="ghost" Command="{Binding ExportDiagnosticsCommand}" IsEnabled="{Binding !Busy}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T settings.diagnostics.export}"/></StackPanel>
+                                </Button>
+                                <Button Classes="ghost" Command="{Binding OpenLogsFolderCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Folder"/><TextBlock Text="{l:T settings.diagnostics.openFolder}"/></StackPanel>
+                                </Button>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 

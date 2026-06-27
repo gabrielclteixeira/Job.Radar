@@ -18,6 +18,7 @@ public partial class MainViewModel : ObservableObject
     private readonly string _apifySettingsPath;
     private readonly string _jsearchSettingsPath;
     private readonly string _planPath;
+    private readonly string _planReasoningPath;
     private readonly string _careerResearchPath;
     private AppConfig _cfg;
 
@@ -36,6 +37,7 @@ public partial class MainViewModel : ObservableObject
         _apifySettingsPath = Path.Combine(_root, "apify-settings.json");
         _jsearchSettingsPath = Path.Combine(_root, "jsearch-settings.json");
         _planPath = Path.Combine(_root, "career-plan.json");
+        _planReasoningPath = Path.Combine(_root, "career-plan.reasoning.txt");
         _careerResearchPath = Path.Combine(_root, "career-research.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
@@ -218,6 +220,37 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _savedProfileLabel = "";
     [ObservableProperty] private bool _isScoring;          // pipeline still running (streaming jobs in)
     [ObservableProperty] private string _scoringStatus = "";
+    [ObservableProperty] private bool _paused;             // a scoring run was paused (cancelled, work persisted)
+    private CancellationTokenSource? _scoreCts;
+    public bool CanPause => IsScoring;
+    public bool CanResume => Paused && !IsScoring;
+    partial void OnIsScoringChanged(bool value) { OnPropertyChanged(nameof(CanPause)); OnPropertyChanged(nameof(CanResume)); }
+    partial void OnPausedChanged(bool value) => OnPropertyChanged(nameof(CanResume));
+
+    /// <summary>Pause the running classification — cancels the run; jobs scored so far are already saved.</summary>
+    [RelayCommand]
+    private void PauseScoring() => _scoreCts?.Cancel();
+
+    /// <summary>Resume after a pause: scores only the still-unscored jobs (no fetch, no re-score).</summary>
+    [RelayCommand]
+    private async Task ResumeScoring()
+    {
+        if (IsScoring) return;
+        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
+        Paused = false; ResultsTitle = L("title.jobs"); ScoringStatus = L("scoring.resuming");
+        MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
+        _scoreCts = new CancellationTokenSource();
+        var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
+        var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
+        try
+        {
+            var result = await Pipeline.ScoreRemainingAsync(_profile, _cfg, _root, logProg, jobProg, _scoreCts.Token);
+            FinalizeResults(result);
+        }
+        catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
+        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
+        finally { IsScoring = false; Busy = false; }
+    }
     [ObservableProperty] private bool _hasJobs;
     [ObservableProperty] private bool _isSettings;
     [ObservableProperty] private bool _isImprove;
@@ -228,6 +261,26 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isCritiquing;   // plan is shown; the adversarial review is still running
     [ObservableProperty] private string _planStatus = "";
     [ObservableProperty] private string _planError = "";
+    // True when the plan failed because the model's reply was cut off at the token cap — surfaces a
+    // shortcut button to the token-limit setting. Matched against the same localized string we set.
+    public bool PlanErrorIsTokenLimit =>
+        !string.IsNullOrEmpty(PlanError) && PlanError.Contains(Loc.Instance.T("llm.truncated"), StringComparison.Ordinal);
+    partial void OnPlanErrorChanged(string value) => OnPropertyChanged(nameof(PlanErrorIsTokenLimit));
+    // Live transcript of the generation: phase headers + the model's streamed "thinking". Shown while the plan
+    // builds (so it's not just a spinner) and kept in a collapsible section below. VM-only — never exported to PDF.
+    [ObservableProperty] private string _planReasoning = "";
+    public bool HasPlanReasoning => !string.IsNullOrWhiteSpace(PlanReasoning);
+    public string PlanReasoningTail => Tail(PlanReasoning, 700);
+    partial void OnPlanReasoningChanged(string value)
+    { OnPropertyChanged(nameof(HasPlanReasoning)); OnPropertyChanged(nameof(PlanReasoningTail)); }
+    /// <summary>Last <paramref name="max"/> chars, trimmed to a line start — the live "thinking" ticker.</summary>
+    private static string Tail(string s, int max)
+    {
+        if (string.IsNullOrEmpty(s) || s.Length <= max) return s ?? "";
+        string cut = s[^max..];
+        int nl = cut.IndexOf('\n');
+        return nl >= 0 && nl < cut.Length - 1 ? cut[(nl + 1)..] : cut;
+    }
     [ObservableProperty] private int _critiqueModeIndex;   // 0 Single, 1 Debate, 2 Revise (persisted)
     // Computed (not a field) so it picks up the current language each time the window is built — the VM is
     // reused across language switches, and a field would freeze the labels at construction-time language.
@@ -258,22 +311,33 @@ public partial class MainViewModel : ObservableObject
         if (IsPlanning) return;
         IsPlanning = true; PlanError = ""; Plan = null;
         PlanStatus = L("plan.preparing");
-        var progress = new Progress<string>(m => Dispatcher.UIThread.Post(() => PlanStatus = m));
+        PlanReasoning = "";
+        Diag.Info($"plan: generate start (engine={_cfg.Claude.Provider} model={_cfg.Claude.Model} max_tokens={_cfg.Claude.MaxTokens} critique={(CritiqueMode)CritiqueModeIndex})");
+        // `progress` drives the status line AND seeds the transcript with a phase header; `reasoning` appends the
+        // model's streamed thinking. Both marshalled to the UI thread. `progress` also mirrors phases to the log.
+        var progress = new Progress<string>(m => { Diag.Info("plan: " + m); Dispatcher.UIThread.Post(() => { PlanStatus = m; PlanReasoning += $"\n▸ {m}\n"; }); });
+        var reasoning = new Progress<string>(d => Dispatcher.UIThread.Post(() => PlanReasoning += d));
         try
         {
-            var (result, error) = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), _careerResearchPath, progress);
-            if (result is null) { PlanError = string.IsNullOrWhiteSpace(error) ? L("plan.error.insufficient") : error; return; }
+            var (result, error) = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), _careerResearchPath, progress, reasoning);
+            if (result is null)
+            {
+                PlanError = string.IsNullOrWhiteSpace(error) ? L("plan.error.insufficient") : error;
+                Diag.Warn("plan: generate failed — " + PlanError);
+                return;
+            }
 
             Plan = result; SavePlan();
             // Show the plan immediately, then red-team it (the plan stays visible with a slim indicator).
             IsPlanning = false; IsCritiquing = true;
-            var critiqued = await CareerPlan.CritiqueAsync(_cfg.Claude, _profile, result, (CritiqueMode)CritiqueModeIndex, progress);
+            var critiqued = await CareerPlan.CritiqueAsync(_cfg.Claude, _profile, result, (CritiqueMode)CritiqueModeIndex, progress, reasoning);
             Plan = critiqued;   // new instance in Revise mode; same instance otherwise
             NotifyCritique();   // covers the same-instance case (critique attached in place)
             SavePlan();
+            Diag.Info("plan: done" + (critiqued.Revised ? " (revised)" : ""));
         }
-        catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); }
-        finally { IsPlanning = false; IsCritiquing = false; }
+        catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); Diag.Error("plan: generate threw", ex); }
+        finally { IsPlanning = false; IsCritiquing = false; SaveReasoningRecord(); }
     }
 
     [RelayCommand]
@@ -302,6 +366,8 @@ public partial class MainViewModel : ObservableObject
             var p = JsonSerializer.Deserialize<CareerPlanResult>(File.ReadAllText(_planPath),
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (p is not null) Plan = p;
+            // Restore the last run's reasoning so the in-app panel + Copy/Save survive a restart.
+            if (File.Exists(_planReasoningPath)) PlanReasoning = File.ReadAllText(_planReasoningPath);
         }
         catch { /* ignore a bad plan file */ }
     }
@@ -310,6 +376,8 @@ public partial class MainViewModel : ObservableObject
     {
         if (Plan is null || _isDemoProfile) return; // don't persist a plan built from the sample profile
         try { File.WriteAllText(_planPath, JsonSerializer.Serialize(Plan, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+        try { if (!string.IsNullOrWhiteSpace(PlanReasoning)) File.WriteAllText(_planReasoningPath, PlanReasoning); }
         catch { /* best-effort */ }
     }
 
@@ -340,7 +408,37 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _llmBaseUrl = "";
     [ObservableProperty] private string _llmModel = "";
     [ObservableProperty] private string _llmApiKey = "";
+    [ObservableProperty] private int _llmMaxTokens = 4096;   // response cap for local models (raise if cut off)
+    [ObservableProperty] private int _llmTimeoutSeconds = 300; // per-call timeout; reasoning models are slow
+    [ObservableProperty] private bool _highlightMaxTokens;   // briefly flashes the field when jumped to from the error
     [ObservableProperty] private string _claudeExe = "claude";
+
+    // Machine-aware suggestion for the response token cap: bigger budgets let reasoning models finish, but cost
+    // latency — so scale with RAM (a proxy for how much compute the machine can spend). Always a multiple of 1024.
+    // Reasoning models (Gemma/Qwen/DeepSeek) spend most of the budget "thinking" before the answer, so the cap
+    // needs real headroom — these tiers leave room to think AND emit on a machine of the given size.
+    public int RecommendedMaxTokens =>
+        RecommendedRamGb >= 32 ? 24576 : RecommendedRamGb >= 16 ? 16384 : RecommendedRamGb >= 8 ? 8192 : 4096;
+    public string MaxTokensRecLabel => RecommendedRamGb > 0
+        ? Loc.Instance.F("settings.maxTokens.rec", RecommendedRamGb, RecommendedMaxTokens)
+        : Loc.Instance.F("settings.maxTokens.recNoRam", RecommendedMaxTokens);
+    [RelayCommand] private void UseRecommendedMaxTokens() => LlmMaxTokens = RecommendedMaxTokens;
+
+    /// <summary>Raised by <see cref="GoToTokenSettingCommand"/> so the View scrolls the token-limit field into view.</summary>
+    public event Action? ScrollToMaxTokensRequested;
+
+    /// <summary>Opens Settings, scrolls to the token-limit field and flashes it — the shortcut from the
+    /// "reply was cut off" error in Grow.</summary>
+    [RelayCommand]
+    private async Task GoToTokenSetting()
+    {
+        await Navigate("settings");
+        if (!IsSettings) return;   // user cancelled an unsaved-changes prompt
+        ScrollToMaxTokensRequested?.Invoke();
+        HighlightMaxTokens = true;
+        await Task.Delay(2800);
+        HighlightMaxTokens = false;
+    }
 
     // LinkedIn via Apify (paid connector)
     [ObservableProperty] private bool _useApify;
@@ -372,8 +470,33 @@ public partial class MainViewModel : ObservableObject
     public bool HasInstalledModels => InstalledModels.Count > 0;
     public string[] SuggestedModels { get; } = { "llama3.2", "qwen2.5", "phi3.5", "gemma2", "mistral", "llama3.1", "llama3.2-vision" };
 
-    // ---- live model browser (Ollama scrape + LM Studio/HF) ----
-    [ObservableProperty] private int _modelBrowserTab;          // 0 = Ollama, 1 = LM Studio
+    // Machine-aware "good first model" recommendation (RAM-based; GC reports ≈ physical RAM on desktop).
+    private static readonly long RecommendedRamGb =
+        (long)Math.Round(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / (1024d * 1024 * 1024));
+    public string RecommendedTag => RecommendedRamGb >= 16 ? "gemma4:12b" : RecommendedRamGb >= 8 ? "gemma4:e4b" : "gemma4:e2b";
+    public string RecommendedLabel => RecommendedRamGb > 0
+        ? Loc.Instance.F("models.recommend", RecommendedRamGb, RecommendedTag)
+        : Loc.Instance.F("models.recommendNoRam", RecommendedTag);
+
+    /// <summary>True once the recommended model is already on disk — hides the install button, keeps the message.</summary>
+    public bool RecommendedInstalled => InstalledModels.Any(m =>
+        string.Equals(m.Name, RecommendedTag, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(m.Name, RecommendedTag + ":latest", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>One-click install the recommended model (reuses the Ollama pull path: progress + active).</summary>
+    [RelayCommand]
+    private async Task InstallRecommended()
+    {
+        if (IsPullingModel) return;
+        ModelToPull = RecommendedTag;
+        await DownloadModel();
+    }
+
+    /// <summary>True when the active engine is a local OpenAI-compatible model — drives the "smaller models are
+    /// less accurate" note on the plan/scoring screens.</summary>
+    public bool UsingLocalEngine => string.Equals(_cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase);
+
+    // ---- live model browser (Ollama discovery + one-click install) ----
     [ObservableProperty] private string _modelSearchText = "";
     [ObservableProperty] private bool _isSearchingRegistry;
     [ObservableProperty] private string _registrySearchStatus = "";
@@ -381,16 +504,7 @@ public partial class MainViewModel : ObservableObject
     public bool HasRegistryResults => RegistryResults.Count > 0;
     private CancellationTokenSource? _regCts;
 
-    // Two-way bools for the tab RadioButtons (int ModelBrowserTab is the source of truth).
-    public bool IsOllamaTab { get => ModelBrowserTab == 0; set { if (value) ModelBrowserTab = 0; } }
-    public bool IsLmStudioTab { get => ModelBrowserTab == 1; set { if (value) ModelBrowserTab = 1; } }
-
     partial void OnModelSearchTextChanged(string value) => _ = DebouncedRegistrySearch();
-    partial void OnModelBrowserTabChanged(int value)
-    {
-        OnPropertyChanged(nameof(IsOllamaTab)); OnPropertyChanged(nameof(IsLmStudioTab));
-        RegistrySearchStatus = ""; _ = DebouncedRegistrySearch();
-    }
 
     /// <summary>Debounced live search of the active tab's source; empty query → that source's popular list.</summary>
     private async Task DebouncedRegistrySearch()
@@ -401,10 +515,7 @@ public partial class MainViewModel : ObservableObject
         {
             await Task.Delay(300, cts.Token);
             IsSearchingRegistry = true; RegistrySearchStatus = L("models.searching");
-            string q = (ModelSearchText ?? "").Trim();
-            var results = ModelBrowserTab == 1
-                ? await ModelRegistry.SearchLmStudioAsync(q, cts.Token)
-                : await ModelRegistry.SearchOllamaAsync(q, cts.Token);
+            var results = await ModelRegistry.SearchOllamaAsync((ModelSearchText ?? "").Trim(), cts.Token);
             if (cts.Token.IsCancellationRequested) return;
             RegistryResults.Clear();
             foreach (var m in results) RegistryResults.Add(new RegistryModelVm(m));
@@ -416,28 +527,20 @@ public partial class MainViewModel : ObservableObject
         finally { if (_regCts == cts) IsSearchingRegistry = false; }
     }
 
-    /// <summary>Loads the quant/size choices for a result (lazily for LM Studio) and toggles its expander.</summary>
+    /// <summary>Reveals a result's size choices (Ollama tags) and toggles its expander.</summary>
     [RelayCommand]
-    private async Task ExpandQuants(RegistryModelVm? vm)
+    private void ExpandQuants(RegistryModelVm? vm)
     {
         if (vm is null) return;
         if (vm.QuantsLoaded) { vm.Expanded = !vm.Expanded; return; }
-        if (vm.IsOllama)
-        {
-            // payload: source \t repo (for row lookup) \t install-target (ollama tag)
-            foreach (var s in vm.OllamaSizes) vm.Quants.Add(new QuantOption(s, $"ollama\t{vm.Repo}\t{vm.Repo}:{s}"));
-        }
-        else
-        {
-            var files = await ModelRegistry.GetGgufFilesAsync(vm.Repo);
-            foreach (var f in files) vm.Quants.Add(new QuantOption(QuantLabel(f), $"lmstudio\t{vm.Repo}\t{f}"));
-        }
+        // payload: source \t repo (for row lookup) \t install-target (ollama tag)
+        foreach (var s in vm.OllamaSizes) vm.Quants.Add(new QuantOption(s, $"ollama\t{vm.Repo}\t{vm.Repo}:{s}"));
         vm.QuantsLoaded = true; vm.Expanded = true;
         OnPropertyChanged(nameof(RegistryResults)); // refresh the expander binding
     }
 
     /// <summary>Installs a chosen quant with feedback ON the model's row: Ollama → pull; LM Studio → direct
-    /// GGUF download into ~/.lmstudio/models. payload = "source \t repo \t target".</summary>
+    /// one-click install of an Ollama model with feedback ON the model's row. payload = "ollama \t repo \t tag".</summary>
     [RelayCommand]
     private async Task InstallModel(string? payload)
     {
@@ -463,17 +566,9 @@ public partial class MainViewModel : ObservableObject
         bool ok = false;
         try
         {
-            if (source == "ollama")
-            {
-                ok = await LlmClient.PullModelAsync(OllamaBaseUrl, target, progress);
-                if (ok) await RefreshInstalledModels();
-            }
-            else // lmstudio
-            {
-                ok = await LmStudioInstall.DownloadGgufAsync(repo, target, progress);
-                if (ok) await RefreshInstalledModels();
-            }
-            string done = ok ? (source == "ollama" ? L("models.done") : Loc.Instance.F("models.lmInstalled", target)) : L("models.pullFail");
+            ok = await LlmClient.PullModelAsync(OllamaBaseUrl, target, progress);
+            if (ok) await RefreshInstalledModels();
+            string done = ok ? L("models.done") : L("models.pullFail");
             ModelDownloadStatus = done;
             if (row is not null) row.InstallStatus = done;
         }
@@ -494,13 +589,7 @@ public partial class MainViewModel : ObservableObject
     private void OpenModelPage(RegistryModelVm? vm)
     {
         if (vm is null) return;
-        OpenUrl(vm.IsOllama ? $"https://ollama.com/library/{vm.Repo}" : $"https://huggingface.co/{vm.Repo}");
-    }
-
-    private static string QuantLabel(string ggufFile)
-    {
-        var m = System.Text.RegularExpressions.Regex.Match(ggufFile, @"(IQ\d[\w]*|Q\d[\w]*|BF16|F16|F32)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        return m.Success ? m.Value : System.IO.Path.GetFileNameWithoutExtension(ggufFile);
+        OpenUrl($"https://ollama.com/library/{vm.Repo}");
     }
     /// <summary>Set by the view: confirms removing an installed model. Returns true to proceed.</summary>
     public Func<string, Task<bool>>? ConfirmRemoveAsync;
@@ -598,6 +687,7 @@ public partial class MainViewModel : ObservableObject
             InstalledModels.Add(new OllamaModelVm(g.Name, meta, string.Equals(g.Name, LlmModel, StringComparison.OrdinalIgnoreCase), "lmstudio", g.Path));
         }
         OnPropertyChanged(nameof(HasInstalledModels));
+        OnPropertyChanged(nameof(RecommendedInstalled));
         OnPropertyChanged(nameof(ShowOllamaWarning));
     }
 
@@ -887,16 +977,18 @@ public partial class MainViewModel : ObservableObject
     {
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
         ResultsTitle = L("title.saved");
-        ScoringStatus = L("scoring.loadingSaved"); MinScore = 0; IsScoring = true;
+        ScoringStatus = L("scoring.loadingSaved"); MinScore = 0; IsScoring = true; Paused = false;
         ShowOnly(results: true); Busy = true;
+        _scoreCts = new CancellationTokenSource();
         var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
         try
         {
-            var result = await Pipeline.LoadCachedAsync(_cfg, _root, jobProg);
+            var result = await Pipeline.LoadCachedAsync(_cfg, _root, jobProg, _scoreCts.Token);
             FinalizeResults(result);
             if (!HasJobs) ScoringStatus = L("empty.noSaved");
         }
-        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); }
+        catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
+        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
         finally { IsScoring = false; Busy = false; }
     }
 
@@ -923,16 +1015,18 @@ public partial class MainViewModel : ObservableObject
     {
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
         ResultsTitle = L("title.jobs"); ScoringStatus = L("scoring.rescoring");
-        MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
+        MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); Busy = true;
+        _scoreCts = new CancellationTokenSource();
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
         var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
         try
         {
-            var result = await Pipeline.RescoreAsync(_profile, _cfg, _root, logProg, jobProg);
+            var result = await Pipeline.RescoreAsync(_profile, _cfg, _root, logProg, jobProg, _scoreCts.Token);
             FinalizeResults(result);
             if (!HasJobs) ScoringStatus = L("empty.noSavedRescore");
         }
-        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); }
+        catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
+        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
         finally { IsScoring = false; Busy = false; }
     }
 
@@ -967,6 +1061,8 @@ public partial class MainViewModel : ObservableObject
         ClaudeExe = string.IsNullOrWhiteSpace(_cfg.Claude.Exe) ? "claude" : _cfg.Claude.Exe;
         // Set model AFTER UseLocalModel so the change-handler doesn't clobber it; map empty Claude → label.
         LlmModel = (!UseLocalModel && string.IsNullOrWhiteSpace(_cfg.Claude.Model)) ? DefaultClaudeModel : _cfg.Claude.Model;
+        LlmMaxTokens = _cfg.Claude.MaxTokens > 0 ? _cfg.Claude.MaxTokens : 4096;
+        LlmTimeoutSeconds = _cfg.Claude.TimeoutSeconds > 0 ? _cfg.Claude.TimeoutSeconds : 300;
         RefreshModelOptions();
         UseApify = _cfg.Apify.Enabled;
         ApifyToken = _cfg.Apify.Token;
@@ -982,7 +1078,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>A stable fingerprint of every Save-backed setting — used to detect unsaved edits.
     /// Theme/text-size/language are excluded: they apply and persist live, not via Save.</summary>
     private string SettingsSignature() => string.Join("",
-        UseLocalModel, LlmBaseUrl, LlmModel, LlmApiKey, ClaudeExe,
+        UseLocalModel, LlmBaseUrl, LlmModel, LlmApiKey, LlmMaxTokens, LlmTimeoutSeconds, ClaudeExe,
         UseApify, ApifyToken, ApifyActor, ApifyMax,
         UseJSearch, JSearchProviderIndex, JSearchKey, JSearchCountry, JSearchMax);
 
@@ -1000,6 +1096,8 @@ public partial class MainViewModel : ObservableObject
         _cfg.Claude.Provider = UseLocalModel ? "openai" : "claude-cli";
         _cfg.Claude.BaseUrl = string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
         _cfg.Claude.Model = LlmModel == DefaultClaudeModel ? "" : (LlmModel ?? "").Trim();
+        _cfg.Claude.MaxTokens = LlmMaxTokens > 0 ? (int)(Math.Round(LlmMaxTokens / 1024.0) * 1024) : 4096;
+        _cfg.Claude.TimeoutSeconds = LlmTimeoutSeconds >= 30 ? LlmTimeoutSeconds : 300;
         _cfg.Claude.ApiKey = LlmApiKey.Trim();
         _cfg.Claude.Exe = string.IsNullOrWhiteSpace(ClaudeExe) ? "claude" : ClaudeExe.Trim();
         SaveLlmSettings();
@@ -1015,6 +1113,7 @@ public partial class MainViewModel : ObservableObject
         _cfg.JSearch.MaxItems = int.TryParse(JSearchMax, out var jm) && jm > 0 ? jm : 20;
         SaveJSearchSettings();
         _settingsSnapshot = SettingsSignature();
+        OnPropertyChanged(nameof(UsingLocalEngine));
         Status = L("settings.saved");
         ShowOnly(welcome: true);
     }
@@ -1076,17 +1175,19 @@ public partial class MainViewModel : ObservableObject
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
         ResultsTitle = demo ? L("title.demo") : L("title.jobs");
         ScoringStatus = demo ? L("scoring.loadingDemo") : L("scoring.searching");
-        MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
+        MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); Busy = true;
+        _scoreCts = new CancellationTokenSource();
 
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
         var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
         try
         {
             var result = await Pipeline.RunAsync(
-                demo ? new UserProfile() : _profile, _cfg, _root, useAi, logProg, demo, jobProg);
+                demo ? new UserProfile() : _profile, _cfg, _root, useAi, logProg, demo, jobProg, _scoreCts.Token);
             FinalizeResults(result);
         }
-        catch (Exception ex) { var m = Loc.Instance.F("error.generic", ex.Message); Log.Add(m); ScoringStatus = m; }
+        catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
+        catch (Exception ex) { var m = Loc.Instance.F("error.generic", ex.Message); Log.Add(m); ScoringStatus = m; Diag.Error("search/score run failed", ex); }
         finally { IsScoring = false; Busy = false; }
     }
 
@@ -1165,10 +1266,139 @@ public partial class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
+    // ---- diagnostics ----
+    /// <summary>Opens the folder where the daily metadata-only log files live.</summary>
+    [RelayCommand]
+    private void OpenLogsFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(Diag.LogDir);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = Diag.LogDir, UseShellExecute = true });
+        }
+        catch (Exception ex) { Status = Loc.Instance.F("error.generic", ex.Message); Diag.Error("open logs folder failed", ex); }
+    }
+
+    /// <summary>Writes a redacted diagnostics bundle (system info + engine config without secrets + recent log
+    /// lines) to output/ and opens it — the "download my logs" path for support.</summary>
+    [RelayCommand]
+    private async Task ExportDiagnostics()
+    {
+        if (Busy) return;
+        Busy = true;
+        try
+        {
+            string text = BuildDiagnosticsBundle();
+            string outDir = Path.Combine(_root, "output");
+            string path = Path.Combine(outDir, $"jobradar-diagnostics-{DateTime.Now:yyyy-MM-dd-HHmm}.txt");
+            await Task.Run(() => { Directory.CreateDirectory(outDir); File.WriteAllText(path, text, System.Text.Encoding.UTF8); });
+            Status = Loc.Instance.F("diag.exported", path);
+            Diag.Info("diagnostics exported");
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+            catch { /* opening is best-effort */ }
+        }
+        catch (Exception ex) { Status = Loc.Instance.F("error.generic", ex.Message); Diag.Error("export diagnostics failed", ex); }
+        finally { Busy = false; }
+    }
+
+    /// <summary>Builds the redacted bundle. NEVER includes API keys, tokens, prompts, replies or CV text.</summary>
+    private string BuildDiagnosticsBundle()
+    {
+        double ramGb = Math.Round(GC.GetGCMemoryInfo().TotalAvailableMemoryBytes / (1024d * 1024 * 1024), 1);
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Job Radar — diagnostics");
+        sb.AppendLine($"generated:   {DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ} (UTC)");
+        sb.AppendLine($"version:     v{AppVersion}");
+        sb.AppendLine($"os:          {System.Runtime.InteropServices.RuntimeInformation.OSDescription.Trim()} ({System.Runtime.InteropServices.RuntimeInformation.OSArchitecture})");
+        sb.AppendLine($"dotnet:      {Environment.Version}");
+        sb.AppendLine($"ram:         {ramGb} GB");
+        sb.AppendLine();
+        sb.AppendLine("AI engine (no secrets):");
+        sb.AppendLine($"  provider:  {_cfg.Claude.Provider}");
+        sb.AppendLine($"  baseUrl:   {_cfg.Claude.BaseUrl}");
+        sb.AppendLine($"  model:     {_cfg.Claude.Model}");
+        sb.AppendLine($"  maxTokens: {_cfg.Claude.MaxTokens}");
+        sb.AppendLine($"  timeout:   {_cfg.Claude.TimeoutSeconds}s");
+        sb.AppendLine($"  apiKey:    {(string.IsNullOrWhiteSpace(_cfg.Claude.ApiKey) ? "(none)" : "(set, redacted)")}");
+        sb.AppendLine();
+        sb.AppendLine("Connectors:");
+        sb.AppendLine($"  Apify:     {(_cfg.Apify.Enabled ? "on" : "off")}");
+        sb.AppendLine($"  JSearch:   {(_cfg.JSearch.Enabled ? "on" : "off")} provider={_cfg.JSearch.Provider} country={_cfg.JSearch.Country}");
+        sb.AppendLine();
+        sb.AppendLine("Last errors:");
+        sb.AppendLine($"  llm:       {(string.IsNullOrWhiteSpace(LlmClient.LastError) ? "(none)" : LlmClient.LastError)}");
+        sb.AppendLine($"  plan:      {(string.IsNullOrWhiteSpace(PlanError) ? "(none)" : PlanError)}");
+        sb.AppendLine();
+        sb.AppendLine("Recent log (metadata only):");
+        sb.AppendLine(Diag.Tail(300));
+        return sb.ToString();
+    }
+
+    public string LogDir => Diag.LogDir;
+
+    // ---- model reasoning: copy / save ----
+    /// <summary>Set by the View — copies text to the system clipboard.</summary>
+    public Func<string, Task>? CopyToClipboardAsync;
+    [ObservableProperty] private bool _reasoningCopied;   // flips the Copy button to "✓ Copied" briefly
+
+    [RelayCommand]
+    private async Task CopyReasoning()
+    {
+        if (CopyToClipboardAsync is null || string.IsNullOrEmpty(PlanReasoning)) return;
+        await CopyToClipboardAsync(PlanReasoning);
+        ReasoningCopied = true;
+        await Task.Delay(1500);
+        ReasoningCopied = false;
+    }
+
+    /// <summary>Saves the full reasoning transcript to a .txt in output/ and opens it.</summary>
+    [RelayCommand]
+    private async Task SaveReasoning()
+    {
+        if (string.IsNullOrWhiteSpace(PlanReasoning) || Busy) return;
+        Busy = true;
+        try
+        {
+            string outDir = Path.Combine(_root, "output");
+            string path = Path.Combine(outDir, $"jobradar-reasoning-{DateTime.Now:yyyy-MM-dd-HHmm}.txt");
+            await Task.Run(() => { Directory.CreateDirectory(outDir); File.WriteAllText(path, PlanReasoning, System.Text.Encoding.UTF8); });
+            Status = Loc.Instance.F("reasoning.saved", path);
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+            catch { /* opening is best-effort */ }
+        }
+        catch (Exception ex) { Status = Loc.Instance.F("error.generic", ex.Message); Diag.Error("save reasoning failed", ex); }
+        finally { Busy = false; }
+    }
+
+    /// <summary>Archives this generation's run record (config + this run's per-call metadata + the full reasoning)
+    /// to the pruned reasoning/ folder, so model performance can be reviewed across runs. Best-effort.</summary>
+    private void SaveReasoningRecord()
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(PlanReasoning)) return;
+            string outcome = string.IsNullOrWhiteSpace(PlanError) ? "ok" : "failed: " + PlanError;
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"Job Radar — plan run record  {DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ} (UTC)");
+            sb.AppendLine($"engine={_cfg.Claude.Provider} model={_cfg.Claude.Model} max_tokens={_cfg.Claude.MaxTokens} timeout={_cfg.Claude.TimeoutSeconds}s critique={(CritiqueMode)CritiqueModeIndex} outcome={outcome}");
+            sb.AppendLine();
+            sb.AppendLine("== per-call metadata (this run) ==");
+            var lines = Diag.Tail(200).Split('\n');
+            int start = Array.FindLastIndex(lines, l => l.Contains("plan: generate start"));
+            for (int i = Math.Max(0, start); i < lines.Length; i++)
+                if (lines[i].Contains("LLM ")) sb.AppendLine(lines[i].Trim());
+            sb.AppendLine();
+            sb.AppendLine("== reasoning transcript ==");
+            sb.AppendLine(PlanReasoning);
+            Diag.SaveRunRecord(sb.ToString());
+        }
+        catch { /* best-effort archive */ }
+    }
+
     // ---- helpers ----
     /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
-    private Task<(CompanyBrief? brief, string? error)> ResearchCompanyAsync(JobEntity j, IProgress<string> progress)
-        => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location, progress);
+    private Task<(CompanyBrief? brief, string? error)> ResearchCompanyAsync(JobEntity j, IProgress<string> progress, CancellationToken ct)
+        => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location, progress, ct);
 
     private void AddStreamed(JobEntity j)
     {
@@ -1330,7 +1560,7 @@ public partial class MainViewModel : ObservableObject
                 return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(p),
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
         }
-        catch { }
+        catch (Exception ex) { Diag.Error("appsettings.json load failed — using defaults", ex); }
         return new AppConfig();
     }
 

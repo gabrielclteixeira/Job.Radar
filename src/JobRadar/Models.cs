@@ -132,7 +132,8 @@ public class ClaudeConfig
     public string BaseUrl { get; set; } = "http://localhost:11434/v1"; // openai: Ollama default
     public string Model { get; set; } = "";              // openai: model name (required for that provider)
     public string ApiKey { get; set; } = "";             // openai: optional bearer token
-    public int TimeoutSeconds { get; set; } = 90;
+    public int TimeoutSeconds { get; set; } = 300; // reasoning models are slow; a trivial reply can take ~1 min
+    public int MaxTokens { get; set; } = 4096;     // openai: response cap; raise if reasoning models get cut off
 }
 
 public record AiResult(int Score, string Verdict, string[] Reasons, string[] RedFlags);

@@ -12,9 +12,10 @@ namespace JobRadar.Desktop.ViewModels;
 public partial class JobVm : ObservableObject
 {
     private readonly JobEntity _j;
-    private readonly Func<JobEntity, IProgress<string>, Task<(CompanyBrief? brief, string? error)>>? _research;
+    private readonly Func<JobEntity, IProgress<string>, CancellationToken, Task<(CompanyBrief? brief, string? error)>>? _research;
+    private CancellationTokenSource? _researchCts;
 
-    public JobVm(JobEntity j, Func<JobEntity, IProgress<string>, Task<(CompanyBrief? brief, string? error)>>? research = null)
+    public JobVm(JobEntity j, Func<JobEntity, IProgress<string>, CancellationToken, Task<(CompanyBrief? brief, string? error)>>? research = null)
     {
         _j = j;
         _research = research;
@@ -32,16 +33,19 @@ public partial class JobVm : ObservableObject
     [RelayCommand]
     private async Task Research()
     {
-        if (_research is null || IsResearching) return;
+        if (_research is null) return;
+        if (IsResearching) { _researchCts?.Cancel(); return; }   // clicking again cancels
         IsResearching = true; ResearchError = ""; Brief = null;
         ResearchStatus = Loc.Instance.T("research.starting");
+        _researchCts = new CancellationTokenSource();
         var progress = new Progress<string>(m => ResearchStatus = m);
         try
         {
-            var (b, err) = await _research(_j, progress);
+            var (b, err) = await _research(_j, progress, _researchCts.Token);
             if (b is null) ResearchError = string.IsNullOrWhiteSpace(err) ? Loc.Instance.T("research.failed") : err;
             else Brief = b;
         }
+        catch (OperationCanceledException) { /* cancelled by the user — no error */ }
         catch { ResearchError = Loc.Instance.T("research.failed"); }
         finally { IsResearching = false; }
     }

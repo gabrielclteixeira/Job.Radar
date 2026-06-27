@@ -34,9 +34,22 @@ public static class LlmClient
             _ => ClaudeCliAsync(cfg, prompt, ct),
         };
 
+    /// <summary>
+    /// Same as <see cref="CompleteAsync(ClaudeConfig,string,CancellationToken)"/> but, for the OpenAI-compatible
+    /// backend, streams the model's live "thinking" (its <c>reasoning_content</c> deltas, and any inline
+    /// &lt;think&gt;…&lt;/think&gt; in the content) to <paramref name="onReasoning"/> as it arrives — so the UI can show
+    /// what the model is reasoning instead of a bare spinner. The return value is still the final answer text.
+    /// For the Claude CLI (no token stream in JSON mode) it falls back to the non-streaming call.
+    /// </summary>
+    public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, IProgress<string>? onReasoning, CancellationToken ct = default)
+        => (onReasoning is not null && (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http")
+            ? OpenAiStreamingAsync(cfg, prompt, onReasoning, ct)
+            : CompleteAsync(cfg, prompt, ct);
+
     /// <summary>Runs `claude -p &lt;prompt&gt; --output-format json` and unwraps the "result" envelope.</summary>
     private static async Task<string?> ClaudeCliAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
     {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             var psi = new ProcessStartInfo
@@ -71,7 +84,13 @@ public static class LlmClient
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(cfg.TimeoutSeconds * 1000);
             try { await p.WaitForExitAsync(cts.Token); }
-            catch (OperationCanceledException) { try { p.Kill(true); } catch { } LastError = $"timeout ({cfg.TimeoutSeconds}s)"; return null; }
+            catch (OperationCanceledException)
+            {
+                try { p.Kill(true); } catch { }
+                LastError = $"timeout ({cfg.TimeoutSeconds}s)";
+                LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, $"timeout {cfg.TimeoutSeconds}s");
+                return null;
+            }
 
             string raw = await stdout;
             string err = await stderr;
@@ -80,14 +99,29 @@ public static class LlmClient
                 using var env = JsonDocument.Parse(raw);
                 if (env.RootElement.ValueKind == JsonValueKind.Object &&
                     env.RootElement.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.String)
-                { LastError = null; return r.GetString(); }
+                {
+                    LastError = null;
+                    LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, "ok");
+                    return r.GetString();
+                }
             }
             catch { /* not an envelope — return raw text */ }
-            if (string.IsNullOrWhiteSpace(raw)) { LastError = Trim(err) ?? $"exit {p.ExitCode}"; return null; }
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                LastError = Trim(err) ?? $"exit {p.ExitCode}";
+                LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, "error: " + (LastError ?? "?"));
+                return null;
+            }
             LastError = null;
+            LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, "ok (raw)");
             return raw;
         }
-        catch (Exception ex) { LastError = Trim(ex.Message); return null; }
+        catch (Exception ex)
+        {
+            LastError = Trim(ex.Message);
+            LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, "error: " + Trim(ex.Message));
+            return null;
+        }
     }
 
     /// <summary>Lists model ids from an OpenAI-compatible endpoint (`GET {baseUrl}/models`).
@@ -232,6 +266,8 @@ public static class LlmClient
     /// <summary>POSTs to an OpenAI-compatible chat-completions endpoint and returns the message content.</summary>
     private static async Task<string?> OpenAiAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
     {
+        int cap = cfg.MaxTokens > 0 ? cfg.MaxTokens : 4096;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             if (string.IsNullOrWhiteSpace(cfg.BaseUrl) || string.IsNullOrWhiteSpace(cfg.Model))
@@ -244,6 +280,9 @@ public static class LlmClient
                 messages = new[] { new { role = "user", content = prompt } },
                 stream = false,
                 temperature = 0,
+                // Give reasoning models (Gemma 4, Qwen3, DeepSeek-R1) room to emit the answer AFTER thinking —
+                // without a cap they often spend the budget reasoning and return empty/truncated content. User-tunable.
+                max_tokens = cap,
             };
             using var req = new HttpRequestMessage(HttpMethod.Post, url)
             {
@@ -255,20 +294,241 @@ public static class LlmClient
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(cfg.TimeoutSeconds * 1000);
             using var resp = await Http.SendAsync(req, cts.Token);
-            if (!resp.IsSuccessStatusCode) { LastError = $"HTTP {(int)resp.StatusCode}"; return null; }
+            if (!resp.IsSuccessStatusCode)
+            {
+                LastError = $"HTTP {(int)resp.StatusCode}";
+                LogCall("openai", cfg.Model, cap, prompt.Length, "", "", sw.ElapsedMilliseconds, $"HTTP {(int)resp.StatusCode}");
+                return null;
+            }
 
             string json = await resp.Content.ReadAsStringAsync(cts.Token);
             using var doc = JsonDocument.Parse(json);
+            string usage = ParseUsage(doc.RootElement);
+            string finish = "";
+            string text = "";
             if (doc.RootElement.TryGetProperty("choices", out var choices) &&
-                choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0 &&
-                choices[0].TryGetProperty("message", out var msg) &&
-                msg.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
-            { LastError = null; return content.GetString(); }
-            LastError = "empty response from the model";
+                choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
+            {
+                var c0 = choices[0];
+                if (c0.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
+                    finish = fr.GetString() ?? "";
+                if (c0.TryGetProperty("message", out var msg))
+                {
+                    // Prefer the answer; if empty (reasoning model), fall back to its thinking channel
+                    // (reasoning_content on vLLM/DeepSeek, reasoning on Ollama, thinking elsewhere) — often carries the JSON.
+                    text = StripThink(Field(msg, "content"));
+                    if (string.IsNullOrWhiteSpace(text)) text = StripThink(FirstField(msg, "reasoning_content", "reasoning", "thinking"));
+                }
+            }
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                LastError = null;
+                LogCall("openai", cfg.Model, cap, prompt.Length, finish, usage, sw.ElapsedMilliseconds, "ok");
+                return text;
+            }
+
+            // 200 OK but nothing usable — almost always a reasoning model that ran out of budget thinking.
+            bool truncated = string.Equals(finish, "length", StringComparison.OrdinalIgnoreCase);
+            LastError = truncated ? Loc.Instance.T("llm.truncated") : Loc.Instance.T("llm.empty");
+            LogCall("openai", cfg.Model, cap, prompt.Length, finish, usage, sw.ElapsedMilliseconds, truncated ? "truncated" : "empty");
             return null;
         }
-        catch (Exception ex) { LastError = FriendlyConnError(cfg.BaseUrl, ex) ?? Trim(ex.Message); return null; }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }  // user/caller cancel → propagate
+        catch (OperationCanceledException)  // our timeout
+        {
+            LastError = Loc.Instance.F("llm.timeout", cfg.TimeoutSeconds);
+            LogCall("openai", cfg.Model, cap, prompt.Length, "", "", sw.ElapsedMilliseconds, $"timeout {cfg.TimeoutSeconds}s");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            LastError = FriendlyConnError(cfg.BaseUrl, ex) ?? Trim(ex.Message);
+            LogCall("openai", cfg.Model, cap, prompt.Length, "", "", sw.ElapsedMilliseconds, "error: " + Trim(ex.Message));
+            return null;
+        }
     }
+
+    /// <summary>Streamed sibling of <see cref="OpenAiAsync"/>: sets <c>stream:true</c>, parses the SSE deltas,
+    /// forwards reasoning chunks to <paramref name="onReasoning"/>, and returns the assembled answer.</summary>
+    private static async Task<string?> OpenAiStreamingAsync(ClaudeConfig cfg, string prompt, IProgress<string> onReasoning, CancellationToken ct)
+    {
+        int cap = cfg.MaxTokens > 0 ? cfg.MaxTokens : 4096;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(cfg.BaseUrl) || string.IsNullOrWhiteSpace(cfg.Model))
+            { LastError = "no base URL / model set"; return null; }
+            string url = cfg.BaseUrl.TrimEnd('/') + "/chat/completions";
+
+            var body = new
+            {
+                model = cfg.Model,
+                messages = new[] { new { role = "user", content = prompt } },
+                stream = true,
+                temperature = 0,
+                max_tokens = cap,
+            };
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
+            };
+            if (!string.IsNullOrWhiteSpace(cfg.ApiKey))
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + cfg.ApiKey);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(cfg.TimeoutSeconds * 1000);
+            // ResponseHeadersRead: start reading as tokens arrive instead of buffering the whole response.
+            using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                LastError = $"HTTP {(int)resp.StatusCode}";
+                LogCall("openai-stream", cfg.Model, cap, prompt.Length, "", "", sw.ElapsedMilliseconds, $"HTTP {(int)resp.StatusCode}");
+                return null;
+            }
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream);
+            var answer = new StringBuilder();      // the real reply (think tags routed out)
+            var reasoning = new StringBuilder();    // live thinking, surfaced to the caller
+            int flushed = 0;
+            bool inThink = false;
+            string carry = "";
+            string finish = "";
+            string usage = "";                      // some servers send a usage object in the final chunk
+            string? line;
+
+            void Flush()
+            {
+                if (reasoning.Length > flushed)
+                { onReasoning.Report(reasoning.ToString(flushed, reasoning.Length - flushed)); flushed = reasoning.Length; }
+            }
+
+            while ((line = await reader.ReadLineAsync(cts.Token)) is not null)
+            {
+                if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+                string data = line[5..].Trim();
+                if (data.Length == 0) continue;
+                if (data == "[DONE]") break;
+                try
+                {
+                    using var doc = JsonDocument.Parse(data);
+                    string u = ParseUsage(doc.RootElement);
+                    if (u.Length > 0) usage = u;
+                    if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
+                        choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0) continue;
+                    var ch = choices[0];
+                    if (ch.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
+                        finish = fr.GetString() ?? finish;
+                    if (ch.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
+                    {
+                        // Thinking channel varies by runtime: reasoning_content (vLLM/DeepSeek), reasoning (Ollama), thinking.
+                        string rc = FirstField(delta, "reasoning_content", "reasoning", "thinking");
+                        if (rc.Length > 0) reasoning.Append(rc);
+                        string c = Field(delta, "content");               // answer — may carry inline <think>…</think>
+                        if (c.Length > 0) RouteThink(c, ref inThink, ref carry, answer, reasoning);
+                    }
+                }
+                catch { /* ignore a partial / non-JSON SSE line */ }
+                if (reasoning.Length - flushed >= 24) Flush();   // coalesce UI updates
+            }
+            if (carry.Length > 0) (inThink ? reasoning : answer).Append(carry);
+            Flush();
+
+            string text = StripThink(answer.ToString());
+            if (string.IsNullOrWhiteSpace(text)) text = reasoning.ToString().Trim();
+            // think_chars/ans_chars give a feel for how much went to reasoning vs answer when usage is absent.
+            string sizes = $"think_chars={reasoning.Length} ans_chars={answer.Length}";
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                LastError = null;
+                LogCall("openai-stream", cfg.Model, cap, prompt.Length, finish, usage, sw.ElapsedMilliseconds, "ok " + sizes);
+                return text;
+            }
+
+            bool truncated = string.Equals(finish, "length", StringComparison.OrdinalIgnoreCase);
+            LastError = truncated ? Loc.Instance.T("llm.truncated") : Loc.Instance.T("llm.empty");
+            LogCall("openai-stream", cfg.Model, cap, prompt.Length, finish, usage, sw.ElapsedMilliseconds, (truncated ? "truncated " : "empty ") + sizes);
+            return null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException)
+        {
+            LastError = Loc.Instance.F("llm.timeout", cfg.TimeoutSeconds);
+            LogCall("openai-stream", cfg.Model, cap, prompt.Length, "", "", sw.ElapsedMilliseconds, $"timeout {cfg.TimeoutSeconds}s");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            LastError = FriendlyConnError(cfg.BaseUrl, ex) ?? Trim(ex.Message);
+            LogCall("openai-stream", cfg.Model, cap, prompt.Length, "", "", sw.ElapsedMilliseconds, "error: " + Trim(ex.Message));
+            return null;
+        }
+    }
+
+    /// <summary>Splits a streamed content chunk into answer vs. thinking on &lt;think&gt;/&lt;/think&gt; boundaries that may
+    /// straddle chunk edges. <paramref name="carry"/> holds a possible partial tag between calls.</summary>
+    private static void RouteThink(string chunk, ref bool inThink, ref string carry, StringBuilder answer, StringBuilder reasoning)
+    {
+        carry += chunk;
+        while (carry.Length > 0)
+        {
+            if (!inThink)
+            {
+                int open = carry.IndexOf("<think>", StringComparison.OrdinalIgnoreCase);
+                if (open < 0) { int safe = SafeLen(carry, "<think>"); answer.Append(carry, 0, safe); carry = carry[safe..]; break; }
+                answer.Append(carry, 0, open); carry = carry[(open + 7)..]; inThink = true;
+            }
+            else
+            {
+                int close = carry.IndexOf("</think>", StringComparison.OrdinalIgnoreCase);
+                if (close < 0) { int safe = SafeLen(carry, "</think>"); reasoning.Append(carry, 0, safe); carry = carry[safe..]; break; }
+                reasoning.Append(carry, 0, close); carry = carry[(close + 8)..]; inThink = false;
+            }
+        }
+    }
+
+    /// <summary>Length of <paramref name="text"/> safe to emit now — i.e. excluding any trailing run that could be
+    /// the start of <paramref name="tag"/> still being streamed.</summary>
+    private static int SafeLen(string text, string tag)
+    {
+        int max = Math.Min(text.Length, tag.Length - 1);
+        for (int k = max; k > 0; k--)
+            if (string.Compare(text, text.Length - k, tag, 0, k, StringComparison.OrdinalIgnoreCase) == 0)
+                return text.Length - k;
+        return text.Length;
+    }
+
+    private static string Field(JsonElement e, string k)
+        => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+
+    /// <summary>First non-empty string field among <paramref name="keys"/> — used to read the thinking channel
+    /// across runtimes that name it differently (reasoning_content, reasoning, thinking).</summary>
+    private static string FirstField(JsonElement e, params string[] keys)
+    {
+        foreach (var k in keys) { string v = Field(e, k); if (v.Length > 0) return v; }
+        return "";
+    }
+
+    /// <summary>Extracts an OpenAI-style usage object as "prompt/completion/total", or "" if absent/empty.</summary>
+    private static string ParseUsage(JsonElement root)
+    {
+        if (!root.TryGetProperty("usage", out var u) || u.ValueKind != JsonValueKind.Object) return "";
+        int p = Int(u, "prompt_tokens"), c = Int(u, "completion_tokens"), t = Int(u, "total_tokens");
+        return (p == 0 && c == 0 && t == 0) ? "" : $"{p}/{c}/{t}";
+        static int Int(JsonElement e, string k) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : 0;
+    }
+
+    /// <summary>One metadata-only diagnostic line per LLM call — no prompt body, no API key.</summary>
+    private static void LogCall(string provider, string model, int cap, int promptChars, string finish, string usage, long ms, string outcome)
+    {
+        string f = string.IsNullOrEmpty(finish) ? "" : $" finish={finish}";
+        string u = string.IsNullOrEmpty(usage) ? "" : $" usage(p/c/t)={usage}";
+        Diag.Info($"LLM {provider} model={model} max_tokens={cap} prompt_chars={promptChars}{f}{u} dur={ms}ms → {outcome}");
+    }
+
+    /// <summary>Removes a leading &lt;think&gt;…&lt;/think&gt; block so reasoning chatter doesn't crowd the JSON parse.</summary>
+    private static string StripThink(string s)
+        => string.IsNullOrEmpty(s) ? "" : System.Text.RegularExpressions.Regex.Replace(s, "<think>.*?</think>", "", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
 
     /// <summary>Turns a raw connection failure into an actionable message naming the runtime and what to do
     /// (LM Studio's server must be started + the model loaded; Ollama must be running). Returns null for

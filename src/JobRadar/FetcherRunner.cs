@@ -64,6 +64,7 @@ public static class FetcherRunner
         catch (Exception ex)
         {
             L($"Fetcher falhou ({ex.Message}) — a usar jobs.raw.json existente, se houver.");
+            Diag.Warn("fetcher failed — falling back to existing jobs.raw.json | " + ex.Message);
         }
     }
 }
