@@ -73,6 +73,15 @@ without losing what's already done. Useful for long scans or to stop spending to
 jobs are persisted, so resuming should pick up where it left off; the work is a cancellation/pause control in
 the UI wired through the streaming pipeline (and the per-company research).
 
+### 4. Richer local-model install & selection
+
+Build on the shipped local-model manager (list installed · activate · remove · pull · Ollama installer) with a
+**curated model catalog**, like the Saga project: pickable model chips grouped by use-case — **General + tools/web**,
+**Small / fast**, **Code**, **Reasoning**, **Vision** — each showing **size** and **capability badges**
+(tools/web · vision · reasoning) so the user knows what a model can do before downloading. Click a chip to pull
+it (streamed progress), and surface the installed list with **active / Activate / remove** inline. Goal: make
+choosing and installing a good local model a one-click, no-jargon decision for non-technical users.
+
 ---
 
 ## 💡 Backlog / ideas
