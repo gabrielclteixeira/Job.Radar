@@ -25,8 +25,12 @@ llm-settings.json
 ui-settings.json
 # Apify connector settings — contains a secret API token (machine-local)
 apify-settings.json
+# JSearch connector settings — contains a secret RapidAPI key (machine-local)
+jsearch-settings.json
 # saved career plan (built from the personal profile, machine-local)
 career-plan.json
+# short-lived career-research cache (machine-local)
+career-research.json
 
 # app / dev scratch
 app-err.log

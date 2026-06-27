@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -15,7 +16,9 @@ public partial class MainViewModel : ObservableObject
     private readonly string _llmSettingsPath;
     private readonly string _uiSettingsPath;
     private readonly string _apifySettingsPath;
+    private readonly string _jsearchSettingsPath;
     private readonly string _planPath;
+    private readonly string _careerResearchPath;
     private AppConfig _cfg;
 
     /// <summary>Set by the view: shows a cost-confirmation dialog before a paid (Apify) search.</summary>
@@ -31,10 +34,13 @@ public partial class MainViewModel : ObservableObject
         _llmSettingsPath = Path.Combine(_root, "llm-settings.json");
         _uiSettingsPath = Path.Combine(_root, "ui-settings.json");
         _apifySettingsPath = Path.Combine(_root, "apify-settings.json");
+        _jsearchSettingsPath = Path.Combine(_root, "jsearch-settings.json");
         _planPath = Path.Combine(_root, "career-plan.json");
+        _careerResearchPath = Path.Combine(_root, "career-research.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
         ApplyApifyOverride();
+        ApplyJSearchOverride();
         LoadUiSettings();
         Loc.Instance.SetPreference(LangModes[Math.Clamp(_languageIndex, 0, 2)]);
         ApplyTheme();
@@ -58,8 +64,17 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void Navigate(string page)
+    private async Task Navigate(string page)
     {
+        // Guard: leaving Settings with unsaved Save-backed changes → prompt save/discard/cancel.
+        if (page != "settings" && SettingsDirty() && ConfirmLeaveSettingsAsync is not null)
+        {
+            int choice = await ConfirmLeaveSettingsAsync();
+            if (choice == 0) return;                                            // cancel — stay put
+            if (choice == 1) SaveSettings();                                    // save (persists + re-snapshots)
+            else { LoadSettingsFields(); _settingsSnapshot = SettingsSignature(); } // discard — revert fields
+        }
+
         switch (page)
         {
             case "profile": EditProfile(); break;          // loads the form + shows profile
@@ -68,7 +83,7 @@ public partial class MainViewModel : ObservableObject
                 else ShowOnly(results: true);
                 break;
             case "improve": ShowOnly(improve: true); break;  // career-growth area
-            case "settings": OpenSettings(); break;          // loads settings fields + shows
+            case "settings": OpenSettings(); break;            // loads settings fields + shows
             default: ShowOnly(welcome: true); break;          // home
         }
     }
@@ -174,6 +189,8 @@ public partial class MainViewModel : ObservableObject
                 int i = Array.IndexOf(LangModes, lg.GetString());
                 _languageIndex = i >= 0 ? i : 0;
             }
+            if (doc.RootElement.TryGetProperty("critique", out var cm) && cm.TryGetInt32(out var cmv))
+                _critiqueModeIndex = Math.Clamp(cmv, 0, 2);
         }
         catch { /* ignore */ }
     }
@@ -183,7 +200,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(
-                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)] },
+                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)], critique = CritiqueModeIndex },
                 new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* best-effort */ }
@@ -208,15 +225,32 @@ public partial class MainViewModel : ObservableObject
     // ---- improve (career plan) ----
     [ObservableProperty] private CareerPlanResult? _plan;
     [ObservableProperty] private bool _isPlanning;
+    [ObservableProperty] private bool _isCritiquing;   // plan is shown; the adversarial review is still running
     [ObservableProperty] private string _planStatus = "";
     [ObservableProperty] private string _planError = "";
+    [ObservableProperty] private int _critiqueModeIndex;   // 0 Single, 1 Debate, 2 Revise (persisted)
+    // Computed (not a field) so it picks up the current language each time the window is built — the VM is
+    // reused across language switches, and a field would freeze the labels at construction-time language.
+    public string[] CritiqueModes => new[] { L("improve.mode.single"), L("improve.mode.debate"), L("improve.mode.revise") };
     public bool HasPlan => Plan is not null;
     public bool ShowGenerateIntro => !HasPlan && !IsPlanning;
+    // Critique view-props — let the UI/PDF update when the critique fills in without reassigning Plan.
+    public IReadOnlyList<CritiquePoint>? PlanCritique => Plan?.Critique;
+    public bool HasPlanCritique => Plan?.HasCritique == true;
+    public bool PlanRevised => Plan?.Revised == true;
+    public string PlanCaveat => Plan?.CritiqueCaveat ?? "";
+    private void NotifyCritique()
+    {
+        OnPropertyChanged(nameof(PlanCritique)); OnPropertyChanged(nameof(HasPlanCritique));
+        OnPropertyChanged(nameof(PlanRevised)); OnPropertyChanged(nameof(PlanCaveat));
+    }
     partial void OnPlanChanged(CareerPlanResult? value)
     {
         OnPropertyChanged(nameof(HasPlan)); OnPropertyChanged(nameof(ShowGenerateIntro));
+        NotifyCritique();
     }
     partial void OnIsPlanningChanged(bool value) => OnPropertyChanged(nameof(ShowGenerateIntro));
+    partial void OnCritiqueModeIndexChanged(int value) => SaveUiSettings();
 
     [RelayCommand]
     private async Task GeneratePlan()
@@ -227,12 +261,19 @@ public partial class MainViewModel : ObservableObject
         var progress = new Progress<string>(m => Dispatcher.UIThread.Post(() => PlanStatus = m));
         try
         {
-            var result = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), progress);
-            if (result is null) PlanError = L("plan.error.insufficient");
-            else { Plan = result; SavePlan(); }
+            var (result, error) = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), _careerResearchPath, progress);
+            if (result is null) { PlanError = string.IsNullOrWhiteSpace(error) ? L("plan.error.insufficient") : error; return; }
+
+            Plan = result; SavePlan();
+            // Show the plan immediately, then red-team it (the plan stays visible with a slim indicator).
+            IsPlanning = false; IsCritiquing = true;
+            var critiqued = await CareerPlan.CritiqueAsync(_cfg.Claude, _profile, result, (CritiqueMode)CritiqueModeIndex, progress);
+            Plan = critiqued;   // new instance in Revise mode; same instance otherwise
+            NotifyCritique();   // covers the same-instance case (critique attached in place)
+            SavePlan();
         }
         catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); }
-        finally { IsPlanning = false; }
+        finally { IsPlanning = false; IsCritiquing = false; }
     }
 
     [RelayCommand]
@@ -309,6 +350,78 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _apifyStatus = "";
     public ObservableCollection<string> ApifyActorOptions { get; } = new();
 
+    // JSearch connector — keyed, quota-limited. Two providers of the same API.
+    [ObservableProperty] private bool _useJSearch;
+    [ObservableProperty] private int _jSearchProviderIndex;   // 0 OpenWeb Ninja (direct), 1 RapidAPI
+    [ObservableProperty] private string _jSearchKey = "";
+    [ObservableProperty] private string _jSearchCountry = "pt";
+    [ObservableProperty] private string _jSearchMax = "20";
+    public string[] JSearchProviders { get; } = { "OpenWeb Ninja", "RapidAPI" };
+    public string JSearchKeyUrl => JSearchProviderIndex == 1
+        ? "https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch"
+        : "https://app.openwebninja.com/";
+    partial void OnJSearchProviderIndexChanged(int value) => OnPropertyChanged(nameof(JSearchKeyUrl));
+
+    // local model manager (Ollama)
+    [ObservableProperty] private string _modelToPull = "";
+    [ObservableProperty] private bool _isPullingModel;
+    [ObservableProperty] private string _modelDownloadStatus = "";
+    [ObservableProperty] private double _pullProgress;
+    [ObservableProperty] private bool _ollamaReachable = true;
+    public ObservableCollection<OllamaModelVm> InstalledModels { get; } = new();
+    public bool HasInstalledModels => InstalledModels.Count > 0;
+    public string[] SuggestedModels { get; } = { "llama3.2", "qwen2.5", "phi3.5", "gemma2", "mistral", "llama3.1", "llama3.2-vision" };
+    /// <summary>Set by the view: confirms removing an installed model. Returns true to proceed.</summary>
+    public Func<string, Task<bool>>? ConfirmRemoveAsync;
+
+    // about / update
+    public string AppVersion => System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version is { } v
+        ? $"{v.Major}.{v.Minor}.{v.Build}" : "0.0.0";
+    [ObservableProperty] private string _updateStatus = "";
+    [ObservableProperty] private string _updatePageUrl = "";
+    public bool HasUpdatePage => !string.IsNullOrWhiteSpace(UpdatePageUrl);
+    partial void OnUpdatePageUrlChanged(string value) => OnPropertyChanged(nameof(HasUpdatePage));
+
+    // usage & limits
+    [ObservableProperty] private string _apifyUsage = "";
+    [ObservableProperty] private string _jSearchUsage = "";
+    [ObservableProperty] private string _llmUsage = "";
+    [ObservableProperty] private bool _checkingUsage;
+
+    private string ComposeJSearchUsage()
+    {
+        int rem = _cfg.JSearch.LastRemaining, lim = _cfg.JSearch.LastLimit;
+        if (rem < 0 && lim < 0) return L("usage.jsearch.none");
+        return Loc.Instance.F("usage.jsearch", rem >= 0 ? rem.ToString() : "?", lim >= 0 ? lim.ToString() : "?");
+    }
+
+    private void PopulateUsage()
+    {
+        JSearchUsage = ComposeJSearchUsage();
+        LlmUsage = UseLocalModel ? L("usage.local") : L("usage.claude");
+        ApifyUsage = "";
+    }
+
+    /// <summary>Refreshes the usage lines: a free Apify usage call + the last-known JSearch quota.</summary>
+    [RelayCommand]
+    private async Task CheckUsage()
+    {
+        if (CheckingUsage) return;
+        CheckingUsage = true;
+        try
+        {
+            JSearchUsage = ComposeJSearchUsage();
+            LlmUsage = UseLocalModel ? L("usage.local") : L("usage.claude");
+            if (_cfg.Apify.Enabled && !string.IsNullOrWhiteSpace(_cfg.Apify.Token))
+            {
+                var u = await ApifyClient.GetUsageAsync(_cfg.Apify.Token);
+                ApifyUsage = string.IsNullOrWhiteSpace(u) ? L("usage.unknown") : u;
+            }
+            else ApifyUsage = L("usage.unknown");
+        }
+        finally { CheckingUsage = false; }
+    }
+
     /// <summary>Validates the Apify token (free) and auto-fills the actor dropdown from the store.</summary>
     [RelayCommand]
     private async Task ProbeApify()
@@ -327,6 +440,124 @@ public partial class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
+    private string OllamaBaseUrl => string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
+
+    /// <summary>Reloads the installed-models list from Ollama and rebuilds the cards (active = LlmModel).</summary>
+    [RelayCommand]
+    private async Task RefreshInstalledModels()
+    {
+        var models = await LlmClient.ListOllamaModelsAsync(OllamaBaseUrl);
+        OllamaReachable = models.Count > 0 || await PingOllama();
+        InstalledModels.Clear();
+        foreach (var m in models)
+            InstalledModels.Add(new OllamaModelVm(m.Name, m.Meta, string.Equals(m.Name, LlmModel, StringComparison.OrdinalIgnoreCase)));
+        OnPropertyChanged(nameof(HasInstalledModels));
+    }
+
+    private async Task<bool> PingOllama()
+    {
+        try { return (await LlmClient.ListOpenAiModelsAsync(OllamaBaseUrl, LlmApiKey)).Count >= 0; } catch { return false; }
+    }
+
+    /// <summary>Picks the active model (used for scoring). Applied to the UI immediately; persisted on Save
+    /// (so it's part of the unsaved-changes state, consistent with the other settings).</summary>
+    [RelayCommand]
+    private void SetActiveModel(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return;
+        LlmModel = name.Trim();
+        if (!ModelOptions.Contains(LlmModel)) ModelOptions.Add(LlmModel);
+        for (int i = 0; i < InstalledModels.Count; i++)
+            InstalledModels[i] = InstalledModels[i] with { IsActive = string.Equals(InstalledModels[i].Name, LlmModel, StringComparison.OrdinalIgnoreCase) };
+    }
+
+    /// <summary>Removes an installed Ollama model (after confirmation), then refreshes the list.</summary>
+    [RelayCommand]
+    private async Task RemoveModel(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name) || IsPullingModel) return;
+        if (ConfirmRemoveAsync is not null && !await ConfirmRemoveAsync(name)) return;
+        await LlmClient.DeleteOllamaModelAsync(OllamaBaseUrl, name);
+        await RefreshInstalledModels();
+    }
+
+    /// <summary>One-click install of a suggested model.</summary>
+    [RelayCommand]
+    private Task PullSuggested(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return Task.CompletedTask;
+        ModelToPull = name.Trim();
+        return DownloadModel();
+    }
+
+    /// <summary>Downloads a model via Ollama (streamed progress + progress bar), then activates it.</summary>
+    [RelayCommand]
+    private async Task DownloadModel()
+    {
+        if (IsPullingModel || string.IsNullOrWhiteSpace(ModelToPull)) return;
+        IsPullingModel = true; PullProgress = 0;
+        string name = ModelToPull.Trim();
+        ModelDownloadStatus = Loc.Instance.F("models.pulling", name, "0%");
+        var progress = new Progress<(string status, double frac)>(p => Dispatcher.UIThread.Post(() =>
+        {
+            if (p.frac > 0) PullProgress = p.frac;
+            ModelDownloadStatus = Loc.Instance.F("models.pulling", name, p.frac > 0 ? $"{p.frac * 100:0}%" : p.status);
+        }));
+        try
+        {
+            bool ok = await LlmClient.PullModelAsync(OllamaBaseUrl, name, progress);
+            if (ok)
+            {
+                ModelDownloadStatus = Loc.Instance.F("models.pullDone", name);
+                ModelToPull = "";
+                await RefreshInstalledModels();
+                SetActiveModel(name);
+            }
+            else ModelDownloadStatus = L("models.pullFail");
+        }
+        catch (Exception ex) { ModelDownloadStatus = Loc.Instance.F("error.generic", ex.Message); }
+        finally { IsPullingModel = false; PullProgress = 0; }
+    }
+
+    /// <summary>Checks GitHub for a newer release; on Windows downloads + launches the installer, else opens the page.</summary>
+    [RelayCommand]
+    private async Task CheckForUpdate()
+    {
+        UpdateStatus = L("update.checking"); UpdatePageUrl = "";
+        try
+        {
+            var info = await UpdateChecker.CheckAsync();
+            if (info is null) { UpdateStatus = L("update.failed"); return; }
+            if (!UpdateChecker.IsNewer(info.Latest, AppVersion))
+            {
+                UpdateStatus = Loc.Instance.F("update.upToDate", AppVersion);
+                return;
+            }
+            UpdateStatus = Loc.Instance.F("update.available", info.Latest);
+            UpdatePageUrl = info.HtmlUrl; // surfaces an "open download page" link as a fallback
+
+            if (OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(info.WinInstallerUrl))
+            {
+                var progress = new Progress<double>(f => Dispatcher.UIThread.Post(() =>
+                    UpdateStatus = Loc.Instance.F("update.downloading", $"{f * 100:0}%")));
+                string dest = Path.Combine(Path.GetTempPath(), $"JobRadar-Setup-{info.Latest}.exe");
+                if (await UpdateChecker.DownloadAsync(info.WinInstallerUrl!, dest, progress))
+                {
+                    UpdateStatus = L("update.installing");
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = dest, UseShellExecute = true });
+                        (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
+                    }
+                    catch { OpenUrl(info.HtmlUrl); }
+                }
+                else { UpdateStatus = L("update.failed"); }
+            }
+            else OpenUrl(info.HtmlUrl); // macOS / Linux: manual download
+        }
+        catch (Exception ex) { UpdateStatus = Loc.Instance.F("error.generic", ex.Message); }
+    }
+
     public ObservableCollection<string> ModelOptions { get; } = new();
     private const string DefaultClaudeModel = "(predefinido)";   // maps to empty → CLI's own default
     private static readonly string[] ClaudeModels = { DefaultClaudeModel, "sonnet", "opus", "haiku" };
@@ -335,6 +566,7 @@ public partial class MainViewModel : ObservableObject
     {
         LlmModel = value ? "" : DefaultClaudeModel; // local needs an explicit model; Claude defaults
         RefreshModelOptions();
+        if (value) _ = RefreshInstalledModels();
     }
 
     // ---- profile form ----
@@ -465,8 +697,10 @@ public partial class MainViewModel : ObservableObject
     {
         CommitFormToProfile();
         SaveProfile(); // persist any edits to the saved profile
-        // Apify is paid — confirm before spending the user's credits.
-        if (_cfg.Apify.Enabled && !string.IsNullOrWhiteSpace(_cfg.Apify.Token) && ConfirmCostAsync is not null)
+        // Paid / quota-limited connectors — confirm before spending the user's credits or quota.
+        bool apifyOn = _cfg.Apify.Enabled && !string.IsNullOrWhiteSpace(_cfg.Apify.Token);
+        bool jsearchOn = _cfg.JSearch.Enabled && !string.IsNullOrWhiteSpace(_cfg.JSearch.ApiKey);
+        if ((apifyOn || jsearchOn) && ConfirmCostAsync is not null)
             if (!await ConfirmCostAsync()) return;
         await RunPipeline(useAi: UseAi, demo: false);
     }
@@ -493,6 +727,23 @@ public partial class MainViewModel : ObservableObject
         finally { IsScoring = false; Busy = false; }
     }
 
+    /// <summary>Set by the View: confirms before deleting all saved jobs. Returns true to proceed.</summary>
+    public Func<Task<bool>>? ConfirmDeleteJobsAsync;
+
+    /// <summary>Deletes every saved job (after confirmation) — clears the on-screen list and the SQLite cache,
+    /// so "View jobs" comes up empty until the next search.</summary>
+    [RelayCommand]
+    private async Task DeleteJobs()
+    {
+        if (_all.Count == 0 || Busy) return;
+        if (ConfirmDeleteJobsAsync is not null && !await ConfirmDeleteJobsAsync()) return;
+        try { Pipeline.ClearCache(_cfg, _root); }
+        catch (Exception ex) { Status = Loc.Instance.F("error.generic", ex.Message); }
+        _all = new(); Jobs.Clear(); HasJobs = false; TotalCount = 0; ExportMsg = "";
+        EmptyMessage = L("empty.noneToShow");
+        Status = L("results.deleted");
+    }
+
     /// <summary>Re-scores the cached jobs with the current model/engine (after changing it in Settings).</summary>
     [RelayCommand]
     private async Task Rescore()
@@ -516,8 +767,26 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void GoHome() => ShowOnly(welcome: true);
 
     // ---- settings ----
-    [RelayCommand]
     private void OpenSettings()
+    {
+        LoadSettingsFields();
+        ApifyStatus = "";
+        ApifyActorOptions.Clear();
+        if (!string.IsNullOrWhiteSpace(_cfg.Apify.ActorId)) ApifyActorOptions.Add(_cfg.Apify.ActorId);
+        ModelDownloadStatus = ""; PullProgress = 0;
+        UpdateStatus = ""; UpdatePageUrl = "";
+        InstalledModels.Clear(); OnPropertyChanged(nameof(HasInstalledModels));
+        // Fire-and-forget: the refresh only marks the active card, it doesn't touch any Save-backed field,
+        // so the snapshot below stays correct and the screen opens instantly.
+        if (UseLocalModel) _ = RefreshInstalledModels();
+        PopulateUsage();
+        Status = "";
+        _settingsSnapshot = SettingsSignature();
+        ShowOnly(settings: true);
+    }
+
+    /// <summary>Loads the Save-backed settings fields from the live config (used on open and on discard).</summary>
+    private void LoadSettingsFields()
     {
         UseLocalModel = string.Equals(_cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase);
         LlmBaseUrl = _cfg.Claude.BaseUrl;
@@ -530,12 +799,27 @@ public partial class MainViewModel : ObservableObject
         ApifyToken = _cfg.Apify.Token;
         ApifyActor = _cfg.Apify.ActorId;
         ApifyMax = _cfg.Apify.MaxItems > 0 ? _cfg.Apify.MaxItems.ToString() : "50";
-        ApifyStatus = "";
-        ApifyActorOptions.Clear();
-        if (!string.IsNullOrWhiteSpace(_cfg.Apify.ActorId)) ApifyActorOptions.Add(_cfg.Apify.ActorId);
-        Status = "";
-        ShowOnly(settings: true);
+        UseJSearch = _cfg.JSearch.Enabled;
+        JSearchProviderIndex = string.Equals(_cfg.JSearch.Provider, "rapidapi", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        JSearchKey = _cfg.JSearch.ApiKey;
+        JSearchCountry = string.IsNullOrWhiteSpace(_cfg.JSearch.Country) ? "pt" : _cfg.JSearch.Country;
+        JSearchMax = _cfg.JSearch.MaxItems > 0 ? _cfg.JSearch.MaxItems.ToString() : "20";
     }
+
+    /// <summary>A stable fingerprint of every Save-backed setting — used to detect unsaved edits.
+    /// Theme/text-size/language are excluded: they apply and persist live, not via Save.</summary>
+    private string SettingsSignature() => string.Join("",
+        UseLocalModel, LlmBaseUrl, LlmModel, LlmApiKey, ClaudeExe,
+        UseApify, ApifyToken, ApifyActor, ApifyMax,
+        UseJSearch, JSearchProviderIndex, JSearchKey, JSearchCountry, JSearchMax);
+
+    private string _settingsSnapshot = "";
+
+    /// <summary>True when the user changed a Save-backed setting without saving or discarding.</summary>
+    private bool SettingsDirty() => IsSettings && SettingsSignature() != _settingsSnapshot;
+
+    /// <summary>Set by the View: prompts to save/discard unsaved settings. Returns 1=save, 2=discard, 0=cancel.</summary>
+    public Func<Task<int>>? ConfirmLeaveSettingsAsync;
 
     [RelayCommand]
     private void SaveSettings()
@@ -551,7 +835,14 @@ public partial class MainViewModel : ObservableObject
         _cfg.Apify.ActorId = ApifyActor.Trim();
         _cfg.Apify.MaxItems = int.TryParse(ApifyMax, out var am) && am > 0 ? am : 50;
         SaveApifySettings();
-        Status = "Definições guardadas.";
+        _cfg.JSearch.Enabled = UseJSearch;
+        _cfg.JSearch.Provider = JSearchProviderIndex == 1 ? "rapidapi" : "openwebninja";
+        _cfg.JSearch.ApiKey = JSearchKey.Trim();
+        _cfg.JSearch.Country = string.IsNullOrWhiteSpace(JSearchCountry) ? "pt" : JSearchCountry.Trim().ToLowerInvariant();
+        _cfg.JSearch.MaxItems = int.TryParse(JSearchMax, out var jm) && jm > 0 ? jm : 20;
+        SaveJSearchSettings();
+        _settingsSnapshot = SettingsSignature();
+        Status = L("settings.saved");
         ShowOnly(welcome: true);
     }
 
@@ -679,10 +970,32 @@ public partial class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
+    /// <summary>Exports the current career plan to a styled PDF (reuses the CV/report HTML→PDF path).</summary>
+    [RelayCommand]
+    private async Task ExportPlan()
+    {
+        if (Plan is null || Busy) return;
+        Busy = true;
+        try
+        {
+            string outDir = Path.Combine(_root, "output");
+            string stamp = DateTime.Now.ToString("yyyy-MM-dd-HHmm");
+            string? path = await Task.Run(() => CareerPlanPdf.Export(Plan, _profile, outDir, stamp));
+            if (path is not null)
+            {
+                Status = Loc.Instance.F("plan.exported", path);
+                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true }); }
+                catch { /* opening is best-effort */ }
+            }
+            else Status = L("plan.exportFailed");
+        }
+        finally { Busy = false; }
+    }
+
     // ---- helpers ----
     /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
-    private Task<CompanyBrief?> ResearchCompanyAsync(JobEntity j)
-        => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location);
+    private Task<(CompanyBrief? brief, string? error)> ResearchCompanyAsync(JobEntity j, IProgress<string> progress)
+        => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location, progress);
 
     private void AddStreamed(JobEntity j)
     {
@@ -703,6 +1016,14 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Once the pipeline finishes, settle the final order (streaming already populated the list).</summary>
     private void FinalizeResults(PipelineResult result)
     {
+        // Capture the JSearch quota seen during this search (for the Usage & limits view).
+        var q = JSearchClient.LastQuota;
+        if (_cfg.JSearch.Enabled && (q.Remaining >= 0 || q.Limit >= 0))
+        {
+            _cfg.JSearch.LastRemaining = q.Remaining; _cfg.JSearch.LastLimit = q.Limit;
+            _cfg.JSearch.LastChecked = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+            SaveJSearchSettings();
+        }
         ResultsTitle = result.Demo ? L("title.demo") : L("title.jobs");
         _all = _all.Count == 0 && result.Jobs.Count > 0
             ? result.Jobs.Select(j => new JobVm(j, ResearchCompanyAsync)).ToList()
@@ -772,6 +1093,24 @@ public partial class MainViewModel : ObservableObject
     private void SaveApifySettings()
     {
         try { File.WriteAllText(_apifySettingsPath, JsonSerializer.Serialize(_cfg.Apify, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+    }
+
+    private void ApplyJSearchOverride()
+    {
+        try
+        {
+            if (!File.Exists(_jsearchSettingsPath)) return;
+            var c = JsonSerializer.Deserialize<JSearchConfig>(File.ReadAllText(_jsearchSettingsPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (c is not null) _cfg.JSearch = c;
+        }
+        catch { /* ignore */ }
+    }
+
+    private void SaveJSearchSettings()
+    {
+        try { File.WriteAllText(_jsearchSettingsPath, JsonSerializer.Serialize(_cfg.JSearch, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 

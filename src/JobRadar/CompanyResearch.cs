@@ -15,18 +15,19 @@ public static class CompanyResearch
 {
     private static readonly JsonSerializerOptions J = new() { PropertyNameCaseInsensitive = true };
 
-    public static async Task<CompanyBrief?> ResearchAsync(
-        ClaudeConfig llm, UserProfile profile, string company, string role, string? location, CancellationToken ct = default)
+    public static async Task<(CompanyBrief? brief, string? error)> ResearchAsync(
+        ClaudeConfig llm, UserProfile profile, string company, string role, string? location,
+        IProgress<string>? log = null, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(company)) return null;
+        if (string.IsNullOrWhiteSpace(company)) return (null, null);
 
-        // 1) Gather context from the web (key-free, best-effort).
-        var results = new List<WebResult>();
-        results.AddRange(await WebSearch.SearchAsync($"{company} employee reviews", 5, ct));
-        results.AddRange(await WebSearch.SearchAsync($"{company} {role} salary", 5, ct));
+        // 1) Gather context from the web (key-free, best-effort). One combined query — a second
+        // back-to-back query gets throttled by the search engine and just adds ~10s for nothing.
+        log?.Report(Loc.Instance.F("research.searching", company));
+        var raw = await WebSearch.SearchAsync($"{company} employee reviews salary", 8, ct);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        results = results.Where(r => !string.IsNullOrWhiteSpace(r.Url) && seen.Add(r.Url)).Take(8).ToList();
-        if (results.Count == 0) return null;
+        var results = raw.Where(r => !string.IsNullOrWhiteSpace(r.Url) && seen.Add(r.Url)).Take(8).ToList();
+        if (results.Count == 0) return (null, Loc.Instance.T("research.noWeb"));
 
         var snippets = new StringBuilder();
         for (int i = 0; i < results.Count; i++)
@@ -37,13 +38,16 @@ public static class CompanyResearch
                       (floor > 0 || target > 0 ? $", own salary floor €{floor:N0} / target €{target:N0}/yr" : "");
 
         // 2) Ask the model for ONE JSON object — using only the snippets, with a tailored salary expectation.
+        log?.Report(Loc.Instance.F("research.analyzing", results.Count));
         string prompt =
 $@"From the web search snippets below, build a SHORT, honest employer briefing for THIS candidate.
 Use ONLY the snippets (don't invent). Reply with ONLY one valid JSON object, double-quoted keys/values, shape:
 {{""pros"":[""short phrase""],""cons"":[""short phrase""],""context"":[""neutral fact""],""reputationNote"":""one sentence or empty"",""salaryFound"":""comparable figures with currency, or 'desconhecido'"",""salaryExpectation"":""a €/yr range to target at THIS company"",""salaryRationale"":""1 sentence: how you derived it"",""bottomLine"":""one sentence""}}
 - pros/cons: concrete, from reviews; cite sources inline like [2]. Keep each under ~12 words.
-- salaryExpectation: a realistic €/year range for THIS candidate's level, reasoning from the found figures
-  and their experience/seniority/target. If figures are thin, widen the range and say so in salaryRationale.
+- salaryExpectation: a realistic €/year range for THIS candidate's level and LOCATION ({location ?? "their local market"}),
+  reasoning from the found figures and their experience/seniority/target. The snippets are often US/global and
+  inflated — adjust DOWN to the local market and anchor to the candidate's own floor/target above; don't copy US
+  numbers or assume remote = global pay. If figures are thin, widen the range and say so in salaryRationale.
 - Be honest when data is thin (empty arrays are fine).
 - Write the text in {Loc.Instance.T("ai.lang")}.
 
@@ -54,14 +58,19 @@ Role: {role} · {cand} · location {location ?? "—"}
 {snippets}";
 
         string? text = await LlmClient.CompleteAsync(llm, prompt, ct);
-        if (string.IsNullOrWhiteSpace(text)) return null;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            string msg = Loc.Instance.T("research.noModel");
+            if (!string.IsNullOrWhiteSpace(LlmClient.LastError)) msg += ": " + LlmClient.LastError;
+            return (null, msg);
+        }
 
         var brief = Parse(text) ?? new CompanyBrief { RawFallback = text!.Trim() };
 
         // Attach sources from the search results (not from the model).
         for (int i = 0; i < results.Count; i++)
             brief.Sources.Add(new SourceRef { N = i + 1, Url = results[i].Url, Host = Host(results[i].Url) });
-        return brief;
+        return (brief, null);
     }
 
     private static CompanyBrief? Parse(string raw)

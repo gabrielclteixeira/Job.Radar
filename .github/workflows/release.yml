@@ -63,6 +63,7 @@ jobs:
         run: >
           dotnet publish ${{ env.PROJECT }} -c Release -r win-x64 --self-contained true
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ needs.version.outputs.version }}
           -p:DebugType=none -p:DebugSymbols=false -o publish/win
       - name: Stage bundled assets
         shell: pwsh
@@ -105,6 +106,7 @@ jobs:
         run: >
           dotnet publish ${{ env.PROJECT }} -c Release -r linux-x64 --self-contained true
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ needs.version.outputs.version }}
           -p:DebugType=none -p:DebugSymbols=false -o publish/linux
       - name: Stage bundled assets
         run: |
@@ -164,6 +166,7 @@ jobs:
         run: >
           dotnet publish ${{ env.PROJECT }} -c Release -r ${{ matrix.rid }} --self-contained true
           -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:Version=${{ needs.version.outputs.version }}
           -p:DebugType=none -p:DebugSymbols=false -o publish/mac
       - name: Build .app bundle
         run: |

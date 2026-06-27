@@ -57,11 +57,18 @@ the **Claude CLI** or point it at a local model in **Definições** (without one
 - 🚩 **Evoluir (career plan)** — **multi-step deep research** (the model picks angles to dig into, then
   searches them) turns your profile + the jobs already scored into a growth plan: strengths, skill gaps with
   actions, target roles, a **salary trajectory** (now → 12–24 months) and time-boxed next steps, with sources.
+  Salaries are anchored to your **local market in EUR** (not inflated US/remote figures), and an
+  **adversarial self-critique** then red-teams the plan — an independent reviewer flags weak or over-optimistic
+  claims so you don't trust it blindly. Pick how deep it goes (*Critique · Debate · Debate + revise*, the last
+  re-searches for real local data and rewrites the plan), and **export it to PDF**.
 - 🌐 **Bilingual (PT/EN)** — the whole UI and the AI-generated text are localized; auto-detects the OS
   language and switches live from **Definições / Settings**.
 - 📄 **CV PDF + export** — generate a styled one-page CV from your profile; export results to CSV / HTML / PDF.
-- 🔗 **LinkedIn** — open a pre-filled LinkedIn Jobs search, plus an optional (paid, opt-in) **Apify**
-  connector with one-click token validation, actor discovery and clear cost warnings.
+- 🔗 **More sources** — open a pre-filled LinkedIn Jobs search; an optional (paid, opt-in) **Apify** LinkedIn
+  connector with one-click token validation and cost warnings; and an optional free **JSearch** job source
+  (Google-for-Jobs aggregator) via **OpenWeb Ninja** or **RapidAPI**.
+- 🧭 **Reliable, key-free web search** — company research and the career plan search the web through
+  **Jina Reader** (renders the results server-side, so it isn't blocked like a raw scrape) — no key, no setup.
 
 ## Local-first & BYOK
 
@@ -127,7 +134,7 @@ keyword scoring and a manual profile.
   confirms before each Apify-backed search.
 
 Machine-local settings and secrets stay out of git (`appsettings.local.json`, `profile.json`,
-`llm-settings.json`, `ui-settings.json`, `apify-settings.json`).
+`llm-settings.json`, `ui-settings.json`, `apify-settings.json`, `jsearch-settings.json`, `career-plan.json`).
 
 ### Local models (no Claude subscription)
 Point `provider` at `openai` and a local runtime — e.g. **LM Studio** (`http://localhost:1234/v1`) or

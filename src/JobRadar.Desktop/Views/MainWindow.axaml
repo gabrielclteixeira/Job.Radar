@@ -258,6 +258,10 @@
                         <Button Classes="ghost" Command="{Binding OpenLinkedInCommand}" Margin="0,0,8,8" ToolTip.Tip="{l:T results.linkedin.tip}">
                             <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="LinkedIn"/></StackPanel>
                         </Button>
+                        <Button Classes="ghost" Command="{Binding DeleteJobsCommand}" IsEnabled="{Binding !Busy}" IsVisible="{Binding HasJobs}"
+                                Margin="0,0,8,8" Foreground="{DynamicResource Danger}" ToolTip.Tip="{l:T results.delete.tip}">
+                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Delete"/><TextBlock Text="{l:T results.delete}"/></StackPanel>
+                        </Button>
                     </WrapPanel>
 
                     <!-- Filter rows (added via "+ Filtro") -->
@@ -339,8 +343,11 @@
                                                 <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T job.research}"/></StackPanel>
                                             </Button>
                                         </StackPanel>
-                                        <TextBlock Text="{l:T job.researching}" FontSize="12" FontFamily="{DynamicResource MonoFont}"
-                                                   Foreground="{DynamicResource AccentText}" IsVisible="{Binding IsResearching}"/>
+                                        <StackPanel Orientation="Horizontal" Spacing="9" IsVisible="{Binding IsResearching}">
+                                            <ui:ProgressRing IsIndeterminate="True" Width="15" Height="15" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding ResearchStatus}" FontSize="12" FontFamily="{DynamicResource MonoFont}"
+                                                       Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        </StackPanel>
                                         <TextBlock Text="{Binding ResearchError}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"
                                                    IsVisible="{Binding ResearchError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
@@ -429,6 +436,18 @@
                     <TextBlock Classes="h1" Text="{l:T nav.improve}"/>
                     <TextBlock Classes="sub" Text="{l:T improve.sub}"/>
 
+                    <!-- Adversarial review: how hard the AI challenges its own plan after generating -->
+                    <Border Classes="card" Margin="0,8,0,0" Padding="13,11">
+                        <StackPanel Spacing="7">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <ui:SymbolIcon Symbol="Find" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{l:T improve.critiqueMode}" FontSize="12.5" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Text}"/>
+                                <ComboBox ItemsSource="{Binding CritiqueModes}" SelectedIndex="{Binding CritiqueModeIndex}" MinWidth="170"/>
+                            </StackPanel>
+                            <TextBlock Classes="sub" FontSize="11.5" TextWrapping="Wrap" Text="{l:T improve.critiqueMode.why}"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Generate (no plan yet) -->
                     <Border Classes="card" Margin="0,12,0,0" IsVisible="{Binding ShowGenerateIntro}">
                         <StackPanel Spacing="13">
@@ -454,18 +473,40 @@
 
                     <!-- The plan -->
                     <StackPanel IsVisible="{Binding HasPlan}" Spacing="12" Margin="0,12,0,0">
-                        <!-- Headline + regenerate -->
-                        <Grid ColumnDefinitions="*,Auto">
-                            <Border Grid.Column="0" Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="10" Padding="14">
-                                <StackPanel Spacing="3">
-                                    <TextBlock Text="{l:T improve.positioning}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
-                                    <TextBlock Text="{Binding Plan.Headline}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                        <!-- Positioning headline (full width) -->
+                        <Border Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="10" Padding="14">
+                            <StackPanel Spacing="3">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{l:T improve.positioning}" FontSize="10" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                    <Border Background="{DynamicResource Signal}" CornerRadius="6" Padding="7,1" VerticalAlignment="Center" IsVisible="{Binding PlanRevised}">
+                                        <TextBlock Text="{l:T improve.revised}" FontSize="9.5" FontWeight="Bold" Foreground="White"/>
+                                    </Border>
                                 </StackPanel>
-                            </Border>
-                            <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Top" Margin="10,0,0,0" Command="{Binding GeneratePlanCommand}" ToolTip.Tip="{l:T improve.regenerate.tip}">
+                                <TextBlock Text="{Binding Plan.Headline}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- AI caveat — temper trust right under the headline -->
+                        <TextBlock Text="{Binding PlanCaveat}" FontSize="11" FontStyle="Italic" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"
+                                   IsVisible="{Binding PlanCaveat, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                        <!-- Actions -->
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Classes="ghost" Command="{Binding ExportPlanCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T plan.exportPdf.tip}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T plan.exportPdf}"/></StackPanel>
+                            </Button>
+                            <Button Classes="ghost" Command="{Binding GeneratePlanCommand}" ToolTip.Tip="{l:T improve.regenerate.tip}">
                                 <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T improve.regenerate}"/></StackPanel>
                             </Button>
-                        </Grid>
+                        </StackPanel>
+
+                        <!-- Adversarial review still running (plan already visible) -->
+                        <Border IsVisible="{Binding IsCritiquing}" Background="{DynamicResource AccentSoft}" CornerRadius="8" Padding="11,8">
+                            <StackPanel Orientation="Horizontal" Spacing="10">
+                                <ui:ProgressRing IsIndeterminate="True" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding PlanStatus}" FontSize="11.5" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
 
                         <Border Classes="card">
                             <StackPanel Spacing="10">
@@ -601,6 +642,30 @@
                                 <md:MarkdownScrollViewer Markdown="{Binding Plan.RawFallback}" MaxHeight="440" MarkdownStyleName="FluentAvalonia" IsVisible="{Binding Plan.HasFallback}"/>
                             </StackPanel>
                         </Border>
+
+                        <!-- Revisão crítica: the plan red-teamed by an adversarial pass -->
+                        <Border IsVisible="{Binding HasPlanCritique}" Classes="card" BorderBrush="{DynamicResource Danger}" BorderThickness="1">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Danger}"/>
+                                    <TextBlock Text="{l:T improve.critique}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource Danger}"/>
+                                </StackPanel>
+                                <ItemsControl ItemsSource="{Binding PlanCritique}">
+                                    <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:CritiquePoint">
+                                        <Grid ColumnDefinitions="16,*" Margin="0,4,0,0">
+                                            <TextBlock Grid.Column="0" Text="⚠" FontSize="12" Foreground="{DynamicResource Danger}" VerticalAlignment="Top"/>
+                                            <StackPanel Grid.Column="1" Spacing="1">
+                                                <TextBlock Text="{Binding Claim}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                <TextBlock Text="{Binding Issue}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                                <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0" IsVisible="{Binding HasRebuttal}">
+                                                    <TextBlock Grid.Column="0" Text="{l:T improve.rebuttal}" FontSize="10.5" FontWeight="Bold" Margin="0,0,6,0" Foreground="{DynamicResource AccentText}"/>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Rebuttal}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </StackPanel>
 
@@ -638,8 +703,93 @@
                             <TextBlock Classes="sub" TextWrapping="Wrap"
                                        Text="{l:T settings.aiEngine.hint}"/>
 
+                            <!-- ===== Local model manager (Ollama) ===== -->
+                            <StackPanel IsVisible="{Binding UseLocalModel}" Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="fld" Text="{l:T models.section}" Margin="0,4,0,0" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Classes="link" Command="{Binding RefreshInstalledModelsCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="5"><ui:SymbolIcon Symbol="Refresh" FontSize="13"/><TextBlock Text="{l:T models.refresh}"/></StackPanel>
+                                    </Button>
+                                </Grid>
+
+                                <!-- installed models -->
+                                <ItemsControl ItemsSource="{Binding InstalledModels}" IsVisible="{Binding HasInstalledModels}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:OllamaModelVm">
+                                            <Border Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="9" Padding="12,9" Margin="0,0,0,6">
+                                                <Grid ColumnDefinitions="*,Auto,Auto">
+                                                    <Button Grid.Column="0" Classes="link" HorizontalAlignment="Left" Padding="0" HorizontalContentAlignment="Left"
+                                                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).SetActiveModelCommand}" CommandParameter="{Binding Name}"
+                                                            ToolTip.Tip="{l:T models.setActive.tip}">
+                                                        <StackPanel Spacing="1">
+                                                            <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="13.5" Foreground="{DynamicResource Text}"/>
+                                                            <TextBlock Text="{Binding Meta}" FontSize="11" Foreground="{DynamicResource Muted}" FontFamily="{DynamicResource MonoFont}"/>
+                                                        </StackPanel>
+                                                    </Button>
+                                                    <Border Grid.Column="1" Background="{DynamicResource SignalSoft}" CornerRadius="7" Padding="8,3" VerticalAlignment="Center" Margin="6,0,8,0" IsVisible="{Binding IsActive}">
+                                                        <TextBlock Text="{l:T models.active}" Foreground="{DynamicResource Signal}" FontSize="10.5" FontWeight="SemiBold"/>
+                                                    </Border>
+                                                    <Button Grid.Column="2" Classes="ghost" Padding="10,7" VerticalAlignment="Center" ToolTip.Tip="{l:T models.remove.tip}"
+                                                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveModelCommand}" CommandParameter="{Binding Name}">
+                                                        <TextBlock Text="✕"/>
+                                                    </Button>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <!-- empty / unreachable -->
+                                <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding !HasInstalledModels}" Text="{l:T models.none}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding !OllamaReachable}">
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" Text="{l:T models.unreachable}" VerticalAlignment="Center"/>
+                                    <Button Classes="link" Content="{l:T models.getOllama}" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/download"/>
+                                </StackPanel>
+
+                                <!-- install a model -->
+                                <TextBlock Classes="fld" Text="{l:T models.install}"/>
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBox Grid.Column="0" Text="{Binding ModelToPull}" Watermark="{l:T settings.downloadModel.wm}"/>
+                                    <Button Grid.Column="1" Classes="accent" Margin="8,0,0,0" Command="{Binding DownloadModelCommand}" IsEnabled="{Binding !IsPullingModel}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T settings.download}"/></StackPanel>
+                                    </Button>
+                                </Grid>
+                                <ProgressBar Minimum="0" Maximum="1" Value="{Binding PullProgress}" Height="6" CornerRadius="3"
+                                             Foreground="{DynamicResource Accent}" Background="{DynamicResource Panel2}" IsVisible="{Binding IsPullingModel}"/>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{Binding ModelDownloadStatus}"
+                                           IsVisible="{Binding ModelDownloadStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                                <!-- suggested -->
+                                <TextBlock Classes="sub" FontSize="11" Text="{l:T models.suggested}" Margin="0,2,0,0"/>
+                                <ItemsControl ItemsSource="{Binding SuggestedModels}">
+                                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="x:String">
+                                            <Button Classes="ghost" Padding="11,5" Margin="0,4,7,0" Content="{Binding}"
+                                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).PullSuggestedCommand}" CommandParameter="{Binding}"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <StackPanel Orientation="Horizontal" Spacing="14" Margin="0,4,0,0">
+                                    <Button Classes="link" Content="Ollama" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/download"/>
+                                    <Button Classes="link" Content="{l:T setup.library}" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/library"/>
+                                    <Button Classes="link" Content="LM Studio" Command="{Binding OpenUrlCommand}" CommandParameter="https://lmstudio.ai"/>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Claude executable (Claude CLI mode) -->
+                            <StackPanel IsVisible="{Binding !UseLocalModel}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.claudeExe}"/>
+                                <TextBox Text="{Binding ClaudeExe}" Watermark="claude"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.model}"/>
+                                <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding LlmModel}"/>
+                            </StackPanel>
+
+                            <!-- Advanced (local) — Base URL / API key / manual load, kept visible -->
                             <StackPanel IsVisible="{Binding UseLocalModel}" Spacing="4">
-                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,2">
+                                <TextBlock Classes="fld" Text="{l:T settings.advanced}" Margin="0,10,0,2"/>
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
                                     <TextBlock Classes="sub" VerticalAlignment="Center" Text="{l:T settings.presets}"/>
                                     <Button Classes="ghost" Content="LM Studio" Command="{Binding UseLmStudioPresetCommand}"/>
                                     <Button Classes="ghost" Content="Ollama" Command="{Binding UseOllamaPresetCommand}"/>
@@ -648,24 +798,12 @@
                                 <TextBox Text="{Binding LlmBaseUrl}" Watermark="http://localhost:1234/v1"/>
                                 <TextBlock Classes="fld" Text="{l:T settings.apiKey}"/>
                                 <TextBox Text="{Binding LlmApiKey}" PasswordChar="•"/>
-                            </StackPanel>
-
-                            <StackPanel IsVisible="{Binding !UseLocalModel}" Spacing="4">
-                                <TextBlock Classes="fld" Text="{l:T settings.claudeExe}"/>
-                                <TextBox Text="{Binding ClaudeExe}" Watermark="claude"/>
-                            </StackPanel>
-
-                            <StackPanel Spacing="4">
-                                <TextBlock Classes="fld" Text="{l:T settings.model}"/>
-                                <Grid ColumnDefinitions="*,Auto">
-                                    <ComboBox Grid.Column="0" HorizontalAlignment="Stretch"
-                                              ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding LlmModel}"/>
-                                    <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding LoadModelsCommand}" IsVisible="{Binding UseLocalModel}" IsEnabled="{Binding !Busy}">
+                                <Grid ColumnDefinitions="*,Auto" Margin="0,6,0,0">
+                                    <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding LlmModel}"/>
+                                    <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding LoadModelsCommand}" IsEnabled="{Binding !Busy}">
                                         <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T settings.load}"/></StackPanel>
                                     </Button>
                                 </Grid>
-                                <TextBlock Classes="sub" FontSize="11" IsVisible="{Binding UseLocalModel}"
-                                           Text="{l:T settings.model.hint}"/>
                             </StackPanel>
 
                         </StackPanel>
@@ -674,7 +812,12 @@
                     <!-- LinkedIn via Apify (paid connector) -->
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel Spacing="10">
-                            <TextBlock Classes="fld" Text="LINKEDIN (APIFY)" Margin="0,0,0,2"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                <TextBlock Classes="fld" Text="LINKEDIN (APIFY)" Margin="0" VerticalAlignment="Center"/>
+                                <Border Background="{DynamicResource Panel2}" CornerRadius="7" Padding="7,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{l:T connector.paid}" Foreground="{DynamicResource Amber}" FontSize="10.5" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
                             <ToggleSwitch IsChecked="{Binding UseApify}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
                             <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" Background="{DynamicResource Panel2}" CornerRadius="8" Padding="11">
                                 <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Amber}">
@@ -690,6 +833,8 @@
                                         <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T settings.apify.test}"/></StackPanel>
                                     </Button>
                                 </Grid>
+                                <Button Classes="link" Content="{l:T connector.getKey}" HorizontalAlignment="Left"
+                                        Command="{Binding OpenUrlCommand}" CommandParameter="https://console.apify.com/settings/integrations"/>
                                 <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{Binding ApifyStatus}"
                                            IsVisible="{Binding ApifyStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                                 <TextBlock Classes="fld" Text="ACTOR"/>
@@ -699,6 +844,79 @@
                                 <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap"
                                            Text="{l:T settings.apify.hint}"/>
                             </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- JSearch (RapidAPI) connector -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch}" Margin="0" VerticalAlignment="Center"/>
+                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="7" Padding="7,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{l:T connector.free}" Foreground="{DynamicResource Signal}" FontSize="10.5" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding UseJSearch}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
+                            <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" Background="{DynamicResource Panel2}" CornerRadius="8" Padding="11">
+                                <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Amber}">
+                                    <Run Text="{l:T settings.apify.warnBold}" FontWeight="Bold"/><Run Text="{l:T settings.jsearch.warn}"/>
+                                </TextBlock>
+                            </Border>
+                            <StackPanel IsVisible="{Binding UseJSearch}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.provider}"/>
+                                <ComboBox ItemsSource="{Binding JSearchProviders}" SelectedIndex="{Binding JSearchProviderIndex}" HorizontalAlignment="Left" MinWidth="200"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.key}" Margin="0,4,0,0"/>
+                                <TextBox Text="{Binding JSearchKey}" PasswordChar="•" Watermark="API key…"/>
+                                <Button Classes="link" Content="{l:T connector.getKey}" HorizontalAlignment="Left"
+                                        Command="{Binding OpenUrlCommand}" CommandParameter="{Binding JSearchKeyUrl}"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.country}"/>
+                                <TextBox Text="{Binding JSearchCountry}" Watermark="pt" MaxLength="2" Width="80" HorizontalAlignment="Left"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.max}"/>
+                                <TextBox Text="{Binding JSearchMax}" Watermark="20"/>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.jsearch.hint}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Usage & limits -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Classes="fld" Text="{l:T usage.section}" Margin="0" VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Classes="link" Command="{Binding CheckUsageCommand}" IsEnabled="{Binding !CheckingUsage}">
+                                    <StackPanel Orientation="Horizontal" Spacing="5"><ui:SymbolIcon Symbol="Refresh" FontSize="13"/><TextBlock Text="{l:T usage.refresh}"/></StackPanel>
+                                </Button>
+                            </Grid>
+                            <Grid ColumnDefinitions="96,*" Margin="0,2,0,0">
+                                <TextBlock Grid.Column="0" Text="Apify" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextSoft}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding ApifyUsage}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" FontFamily="{DynamicResource MonoFont}"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="96,*">
+                                <TextBlock Grid.Column="0" Text="JSearch" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextSoft}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding JSearchUsage}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="96,*">
+                                <TextBlock Grid.Column="0" Text="{l:T settings.aiEngine}" FontWeight="SemiBold" FontSize="12" Foreground="{DynamicResource TextSoft}" TextWrapping="Wrap"/>
+                                <TextBlock Grid.Column="1" Text="{Binding LlmUsage}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"/>
+                            </Grid>
+                            <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T usage.hint}" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- About / update -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="8">
+                            <TextBlock Classes="fld" Text="{l:T settings.about}" Margin="0,0,0,2"/>
+                            <TextBlock Classes="sub" Text="{Binding AppVersion, StringFormat='Job Radar · v{0}'}" FontFamily="{DynamicResource MonoFont}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <Button Classes="ghost" Command="{Binding CheckForUpdateCommand}" IsEnabled="{Binding !Busy}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T settings.checkUpdate}"/></StackPanel>
+                                </Button>
+                                <Button Classes="link" Content="{l:T update.openPage}" IsVisible="{Binding HasUpdatePage}"
+                                        Command="{Binding OpenUrlCommand}" CommandParameter="{Binding UpdatePageUrl}"/>
+                            </StackPanel>
+                            <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{Binding UpdateStatus}"
+                                       IsVisible="{Binding UpdateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                         </StackPanel>
                     </Border>
 

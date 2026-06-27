@@ -66,6 +66,7 @@ public class AppConfig
     public ClaudeConfig Claude { get; set; } = new();
     public SalaryConfig Salary { get; set; } = new();
     public ApifyConfig Apify { get; set; } = new();
+    public JSearchConfig JSearch { get; set; } = new();
 }
 
 /// <summary>Optional LinkedIn-via-Apify connector. PAID — uses the user's Apify credits.</summary>
@@ -75,6 +76,38 @@ public class ApifyConfig
     public string Token { get; set; } = "";     // Apify API token (secret)
     public string ActorId { get; set; } = "";    // e.g. "username/linkedin-jobs-scraper"
     public int MaxItems { get; set; } = 50;       // cap results → cap cost
+}
+
+/// <summary>Optional JSearch (RapidAPI) job source. Has a free tier with a monthly request quota.</summary>
+public class JSearchConfig
+{
+    public bool Enabled { get; set; }
+    public string Provider { get; set; } = "openwebninja";      // "openwebninja" (direct) | "rapidapi"
+    public string ApiKey { get; set; } = "";                    // API key (secret)
+    public string ApiHost { get; set; } = "jsearch.p.rapidapi.com"; // RapidAPI host (only used in rapidapi mode)
+    public string Country { get; set; } = "pt";                 // 2-letter country code (JSearch needs it; "us" is its default)
+    public int MaxItems { get; set; } = 20;                     // cap results → cap quota use
+    // Last RapidAPI rate-limit headers seen (for the Usage & limits view); -1 = unknown.
+    public int LastRemaining { get; set; } = -1;
+    public int LastLimit { get; set; } = -1;
+    public string LastChecked { get; set; } = "";
+}
+
+/// <summary>A locally installed Ollama model with display metadata (from /api/tags).</summary>
+public record OllamaModel(string Name, string ParamSize, string Quant, double SizeGb, string Family)
+{
+    /// <summary>"3.2B · 2.0 GB · Q4_K_M" (skips empty parts).</summary>
+    public string Meta
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrWhiteSpace(ParamSize)) parts.Add(ParamSize);
+            if (SizeGb > 0) parts.Add($"{SizeGb:0.0} GB");
+            if (!string.IsNullOrWhiteSpace(Quant)) parts.Add(Quant);
+            return string.Join(" · ", parts);
+        }
+    }
 }
 
 public class SalaryConfig

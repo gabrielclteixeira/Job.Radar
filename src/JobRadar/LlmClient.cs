@@ -16,6 +16,17 @@ public static class LlmClient
 {
     private static readonly HttpClient Http = new();
 
+    /// <summary>Reason for the last failed completion (CLI stderr, HTTP status, timeout…). Null on success.
+    /// Surfaced in the UI so the user can tell e.g. a Claude usage-limit from a local-model-down.</summary>
+    public static string? LastError { get; private set; }
+
+    private static string? Trim(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return null;
+        s = s.Trim();
+        return s.Length > 200 ? s[..200] + "…" : s;
+    }
+
     public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, CancellationToken ct = default)
         => (cfg.Provider?.Trim().ToLowerInvariant()) switch
         {
@@ -52,7 +63,7 @@ public static class LlmClient
             }
 
             using var p = Process.Start(psi);
-            if (p is null) return null;
+            if (p is null) { LastError = "could not start the Claude CLI"; return null; }
             p.StandardInput.Close(); // signal EOF so the CLI doesn't wait for piped stdin
 
             var stdout = p.StandardOutput.ReadToEndAsync();
@@ -60,21 +71,23 @@ public static class LlmClient
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(cfg.TimeoutSeconds * 1000);
             try { await p.WaitForExitAsync(cts.Token); }
-            catch (OperationCanceledException) { try { p.Kill(true); } catch { } return null; }
+            catch (OperationCanceledException) { try { p.Kill(true); } catch { } LastError = $"timeout ({cfg.TimeoutSeconds}s)"; return null; }
 
             string raw = await stdout;
-            _ = await stderr;
+            string err = await stderr;
             try
             {
                 using var env = JsonDocument.Parse(raw);
                 if (env.RootElement.ValueKind == JsonValueKind.Object &&
                     env.RootElement.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.String)
-                    return r.GetString();
+                { LastError = null; return r.GetString(); }
             }
             catch { /* not an envelope — return raw text */ }
+            if (string.IsNullOrWhiteSpace(raw)) { LastError = Trim(err) ?? $"exit {p.ExitCode}"; return null; }
+            LastError = null;
             return raw;
         }
-        catch { return null; }
+        catch (Exception ex) { LastError = Trim(ex.Message); return null; }
     }
 
     /// <summary>Lists model ids from an OpenAI-compatible endpoint (`GET {baseUrl}/models`).
@@ -104,12 +117,125 @@ public static class LlmClient
         return models;
     }
 
+    /// <summary>
+    /// Downloads a model via Ollama's native API (`POST {root}/api/pull`, streamed progress).
+    /// `baseUrl` is the OpenAI-compatible URL (…/v1); we strip `/v1` to reach the Ollama root.
+    /// Ollama-only (LM Studio has no pull API). Reports (status, 0–1 fraction); returns true on success.
+    /// </summary>
+    public static async Task<bool> PullModelAsync(string baseUrl, string model,
+        IProgress<(string status, double frac)>? progress = null, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model)) return false;
+        try
+        {
+            string url = OllamaRoot(baseUrl) + "/api/pull";
+
+            var payload = new { name = model.Trim(), stream = true };
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"),
+            };
+            // ResponseHeadersRead so HttpClient.Timeout doesn't bound the (long) streamed download.
+            using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!resp.IsSuccessStatusCode) { progress?.Report(($"HTTP {(int)resp.StatusCode}", 0)); return false; }
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(ct);
+            using var reader = new StreamReader(stream);
+            bool success = false;
+            string? line;
+            while ((line = await reader.ReadLineAsync(ct)) is not null)
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var el = doc.RootElement;
+                    if (el.TryGetProperty("error", out var err) && err.ValueKind == JsonValueKind.String)
+                    { progress?.Report((err.GetString() ?? "error", 0)); return false; }
+                    string status = el.TryGetProperty("status", out var s) && s.ValueKind == JsonValueKind.String ? s.GetString() ?? "" : "";
+                    double frac = 0;
+                    if (el.TryGetProperty("completed", out var c) && c.ValueKind == JsonValueKind.Number &&
+                        el.TryGetProperty("total", out var t) && t.ValueKind == JsonValueKind.Number && t.GetDouble() > 0)
+                        frac = c.GetDouble() / t.GetDouble();
+                    if (status.Equals("success", StringComparison.OrdinalIgnoreCase)) success = true;
+                    progress?.Report((status, frac));
+                }
+                catch { /* ignore a partial / non-JSON line */ }
+            }
+            return success;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Ollama's native API root (strip the OpenAI-compatible "/v1" suffix from the base URL).</summary>
+    private static string OllamaRoot(string baseUrl)
+    {
+        string root = (baseUrl ?? "").Trim().TrimEnd('/');
+        if (root.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)) root = root[..^3].TrimEnd('/');
+        return root;
+    }
+
+    /// <summary>Lists locally installed Ollama models with metadata (`GET {root}/api/tags`). Ollama-only.</summary>
+    public static async Task<List<OllamaModel>> ListOllamaModelsAsync(string baseUrl, CancellationToken ct = default)
+    {
+        var list = new List<OllamaModel>();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl)) return list;
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(8_000);
+            using var resp = await Http.GetAsync(OllamaRoot(baseUrl) + "/api/tags", cts.Token);
+            if (!resp.IsSuccessStatusCode) return list;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+            if (!doc.RootElement.TryGetProperty("models", out var models) || models.ValueKind != JsonValueKind.Array)
+                return list;
+            foreach (var m in models.EnumerateArray())
+            {
+                string name = Get(m, "name");
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                double gb = m.TryGetProperty("size", out var sz) && sz.ValueKind == JsonValueKind.Number
+                    ? Math.Round(sz.GetDouble() / 1_000_000_000d, 1) : 0;
+                string param = "", quant = "", family = "";
+                if (m.TryGetProperty("details", out var d) && d.ValueKind == JsonValueKind.Object)
+                {
+                    param = Get(d, "parameter_size");
+                    quant = Get(d, "quantization_level");
+                    family = Get(d, "family");
+                }
+                list.Add(new OllamaModel(name, param, quant, gb, family));
+            }
+        }
+        catch { /* runtime down — return what we have */ }
+        return list;
+
+        static string Get(JsonElement e, string k) => e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+    }
+
+    /// <summary>Removes a locally installed Ollama model (`DELETE {root}/api/delete`). Ollama-only.</summary>
+    public static async Task<bool> DeleteOllamaModelAsync(string baseUrl, string name, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(name)) return false;
+            using var req = new HttpRequestMessage(HttpMethod.Delete, OllamaRoot(baseUrl) + "/api/delete")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { name = name.Trim() }), Encoding.UTF8, "application/json"),
+            };
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(15_000);
+            using var resp = await Http.SendAsync(req, cts.Token);
+            return resp.IsSuccessStatusCode;
+        }
+        catch { return false; }
+    }
+
     /// <summary>POSTs to an OpenAI-compatible chat-completions endpoint and returns the message content.</summary>
     private static async Task<string?> OpenAiAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(cfg.BaseUrl) || string.IsNullOrWhiteSpace(cfg.Model)) return null;
+            if (string.IsNullOrWhiteSpace(cfg.BaseUrl) || string.IsNullOrWhiteSpace(cfg.Model))
+            { LastError = "no base URL / model set"; return null; }
             string url = cfg.BaseUrl.TrimEnd('/') + "/chat/completions";
 
             var body = new
@@ -129,7 +255,7 @@ public static class LlmClient
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(cfg.TimeoutSeconds * 1000);
             using var resp = await Http.SendAsync(req, cts.Token);
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode) { LastError = $"HTTP {(int)resp.StatusCode}"; return null; }
 
             string json = await resp.Content.ReadAsStringAsync(cts.Token);
             using var doc = JsonDocument.Parse(json);
@@ -137,9 +263,10 @@ public static class LlmClient
                 choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0 &&
                 choices[0].TryGetProperty("message", out var msg) &&
                 msg.TryGetProperty("content", out var content) && content.ValueKind == JsonValueKind.String)
-                return content.GetString();
+            { LastError = null; return content.GetString(); }
+            LastError = "empty response from the model";
             return null;
         }
-        catch { return null; }
+        catch (Exception ex) { LastError = Trim(ex.Message); return null; }
     }
 }
