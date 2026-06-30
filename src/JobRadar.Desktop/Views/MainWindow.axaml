@@ -1104,9 +1104,17 @@
 
                                 <!-- empty / unreachable -->
                                 <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding !HasInstalledModels}" Text="{l:T models.none}"/>
-                                <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding ShowOllamaWarning}">
-                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" Text="{l:T models.unreachable}" VerticalAlignment="Center"/>
-                                    <Button Classes="link" Content="{l:T models.getOllama}" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/download"/>
+                                <StackPanel Spacing="9" IsVisible="{Binding ShowOllamaWarning}">
+                                    <TextBlock Classes="sub" FontSize="12" TextWrapping="Wrap" Text="{l:T models.unreachable}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Button Classes="accent" Content="{l:T models.installOllama}" Command="{Binding InstallOllamaCommand}" IsEnabled="{Binding !IsInstallingOllama}"/>
+                                        <Button Classes="link" Content="{l:T models.getOllama}" Command="{Binding OpenUrlCommand}" CommandParameter="https://ollama.com/download"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <!-- Ollama runtime install progress -->
+                                <StackPanel Spacing="6" Margin="0,2,0,0" IsVisible="{Binding IsInstallingOllama}">
+                                    <TextBlock Text="{Binding OllamaInstallStatus}" Classes="sub" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource AccentText}"/>
+                                    <ProgressBar Minimum="0" Maximum="1" Value="{Binding OllamaInstallProgress}" Height="6"/>
                                 </StackPanel>
 
                                 <!-- live model browser: discover & one-click install from Ollama -->

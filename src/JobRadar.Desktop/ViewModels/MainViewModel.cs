@@ -487,6 +487,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _modelDownloadStatus = "";
     [ObservableProperty] private double _pullProgress;
     [ObservableProperty] private bool _ollamaReachable = true;
+    [ObservableProperty] private bool _isInstallingOllama;
+    [ObservableProperty] private string _ollamaInstallStatus = "";
+    [ObservableProperty] private double _ollamaInstallProgress;
     public ObservableCollection<OllamaModelVm> InstalledModels { get; } = new();
     public bool HasInstalledModels => InstalledModels.Count > 0;
     public string[] SuggestedModels { get; } = { "llama3.2", "qwen2.5", "phi3.5", "gemma2", "mistral", "llama3.1", "llama3.2-vision" };
@@ -511,6 +514,84 @@ public partial class MainViewModel : ObservableObject
         if (IsPullingModel) return;
         ModelToPull = RecommendedTag;
         await DownloadModel();
+    }
+
+    /// <summary>One-click install of the Ollama runtime (Windows): download the official setup, run it
+    /// silently, wait for the local server, then pull the machine-recommended model if none is installed.
+    /// On macOS/Linux it opens the download page (manual install). Key-free; our own installer stays small.</summary>
+    [RelayCommand]
+    private async Task InstallOllama()
+    {
+        if (IsInstallingOllama || IsPullingModel) return;
+
+        if (!OperatingSystem.IsWindows())   // macOS / Linux: official page, manual install
+        {
+            OpenUrl(OllamaInstaller.WindowsSetupUrl.Replace("/OllamaSetup.exe", ""));
+            OllamaInstallStatus = L("ollama.manual");
+            return;
+        }
+
+        IsInstallingOllama = true; OllamaInstallProgress = 0; OllamaInstallStatus = "";
+        try
+        {
+            // Already running? Skip the download.
+            if (await PingOllama())
+            {
+                OllamaReachable = true; OllamaInstallStatus = L("ollama.already");
+                await RefreshInstalledModels();
+            }
+            else
+            {
+                OllamaInstallStatus = L("ollama.downloading");
+                string dest = Path.Combine(Path.GetTempPath(), "OllamaSetup.exe");
+                var progress = new Progress<double>(f => Dispatcher.UIThread.Post(() =>
+                {
+                    OllamaInstallProgress = f;
+                    OllamaInstallStatus = Loc.Instance.F("ollama.downloadingPct", $"{f * 100:0}%");
+                }));
+                if (!await OllamaInstaller.DownloadWindowsSetupAsync(dest, progress))
+                {
+                    OllamaInstallStatus = L("ollama.failed");
+                    OpenUrl(OllamaInstaller.WindowsSetupUrl.Replace("/OllamaSetup.exe", ""));
+                    return;
+                }
+
+                OllamaInstallStatus = L("ollama.installing");
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo { FileName = dest, UseShellExecute = true };
+                    psi.ArgumentList.Add("/VERYSILENT");
+                    psi.ArgumentList.Add("/SUPPRESSMSGBOXES");
+                    psi.ArgumentList.Add("/NORESTART");
+                    System.Diagnostics.Process.Start(psi);
+                }
+                catch
+                {
+                    OllamaInstallStatus = L("ollama.failed");
+                    OpenUrl(OllamaInstaller.WindowsSetupUrl.Replace("/OllamaSetup.exe", ""));
+                    return;
+                }
+
+                // The installer starts `ollama serve`; wait (≈2 min) for it to answer on localhost:11434.
+                OllamaInstallStatus = L("ollama.waiting");
+                bool up = false;
+                for (int i = 0; i < 60 && !up; i++) { await Task.Delay(2000); up = await PingOllama(); }
+                OllamaReachable = up;
+                if (!up) { OllamaInstallStatus = L("ollama.startManual"); return; }
+                OllamaInstallStatus = L("ollama.ready");
+                await RefreshInstalledModels();
+            }
+
+            // Zero-touch: a running engine with no model can't score — pull the machine-recommended one.
+            if (OllamaReachable && InstalledModels.Count == 0)
+            {
+                UseLocalModel = true;
+                OllamaInstallStatus = Loc.Instance.F("ollama.pullModel", RecommendedTag);
+                await InstallRecommended();
+            }
+        }
+        catch (Exception ex) { OllamaInstallStatus = Loc.Instance.F("error.generic", ex.Message); }
+        finally { IsInstallingOllama = false; OllamaInstallProgress = 0; }
     }
 
     /// <summary>True when the active engine is a local OpenAI-compatible model — drives the "smaller models are
