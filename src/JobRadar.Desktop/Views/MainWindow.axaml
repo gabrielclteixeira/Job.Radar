@@ -94,6 +94,9 @@
                     <Button Classes="nav" Classes.active="{Binding IsNavResults}" Command="{Binding NavigateCommand}" CommandParameter="results">
                         <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="{l:T nav.jobs}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
+                    <Button Classes="nav" Classes.active="{Binding IsNavResearcher}" Command="{Binding NavigateCommand}" CommandParameter="researcher">
+                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="People"/><TextBlock Text="{l:T nav.researcher}" VerticalAlignment="Center"/></StackPanel>
+                    </Button>
                     <Button Classes="nav" Classes.active="{Binding IsNavImprove}" Command="{Binding NavigateCommand}" CommandParameter="improve">
                         <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Flag"/><TextBlock Text="{l:T nav.improve}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
@@ -459,6 +462,272 @@
                                                 </StackPanel>
 
                                                 <md:MarkdownScrollViewer Markdown="{Binding Brief.RawFallback}" MaxHeight="440" MarkdownStyleName="FluentAvalonia" IsVisible="{Binding Brief.HasFallback}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Expander>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+
+                <!-- ============ COMPANY RESEARCHER ============ -->
+                <StackPanel IsVisible="{Binding IsResearcher}" Spacing="6" MaxWidth="760">
+                    <TextBlock Classes="h1" Text="{l:T nav.researcher}"/>
+                    <TextBlock Classes="sub" Text="{l:T researcher.sub}"/>
+
+                    <!-- Controls: research a specific company · sort · research all -->
+                    <Border Classes="card" Margin="0,12,0,0" Padding="14,12">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox Width="280" Watermark="{l:T researcher.manual.wm}" Text="{Binding CompanyQuery}"/>
+                                <Button Classes="accent" Command="{Binding ResearchManualCompanyCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T researcher.manual.go}"/></StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="10" IsVisible="{Binding HasCompanies}">
+                                <TextBlock Text="{l:T researcher.sortBy}" VerticalAlignment="Center" FontSize="12" Foreground="{DynamicResource Muted}"/>
+                                <ComboBox ItemsSource="{Binding CompanySorts}" SelectedIndex="{Binding CompanySortIndex}" MinWidth="150"/>
+                                <Button Classes="ghost" Command="{Binding ResearchAllCompaniesCommand}" ToolTip.Tip="{l:T researcher.researchAll.tip}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T researcher.researchAll}"/></StackPanel>
+                                </Button>
+                                <Button Classes="ghost" Command="{Binding ExportCompaniesCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T researcher.export.tip}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T researcher.export}"/></StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T researcher.byok}"/>
+                            <TextBlock Classes="sub" Text="{Binding ExportMsg}" IsVisible="{Binding ExportMsg, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Filter the already-listed companies by name (shown only when there are companies) -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="2,12,0,0" IsVisible="{Binding HasCompanies}">
+                        <ui:SymbolIcon Symbol="Find" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/>
+                        <TextBox Width="320" Watermark="{l:T researcher.filter.wm}" Text="{Binding CompanyFilter}"/>
+                    </StackPanel>
+
+                    <!-- Empty state: no matched jobs yet -->
+                    <Border Classes="card" Margin="0,12,0,0" IsVisible="{Binding ResearcherEmpty}">
+                        <StackPanel Spacing="11" HorizontalAlignment="Center">
+                            <TextBlock Text="{l:T researcher.empty.title}" FontWeight="SemiBold" FontSize="14" HorizontalAlignment="Center" Foreground="{DynamicResource Text}"/>
+                            <TextBlock Text="{l:T researcher.empty.body}" Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="440"/>
+                            <Button Classes="accent" HorizontalAlignment="Center" Command="{Binding NavigateCommand}" CommandParameter="results">
+                                <TextBlock Text="{l:T researcher.empty.cta}"/>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Companies -->
+                    <ItemsControl ItemsSource="{Binding Companies}" Margin="0,12,0,0" IsVisible="{Binding HasCompanies}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CompanyVm">
+                                <Expander Margin="0,0,0,8" HorizontalAlignment="Stretch" IsExpanded="{Binding Expanded}">
+                                    <Expander.Header>
+                                        <Grid ColumnDefinitions="*,Auto" HorizontalAlignment="Stretch" Margin="2,8,8,8">
+                                            <StackPanel Grid.Column="0" Spacing="5">
+                                                <TextBlock Text="{Binding Name}" FontWeight="Bold" FontSize="14" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                <WrapPanel>
+                                                    <TextBlock Text="{Binding JobCountLabel}" Foreground="{DynamicResource Muted}" FontSize="11" Margin="0,0,10,2" VerticalAlignment="Center"/>
+                                                    <Border Background="{DynamicResource SignalSoft}" CornerRadius="7" Padding="7,2" Margin="0,0,6,2" IsVisible="{Binding HasRatingChip}">
+                                                        <TextBlock Text="{Binding RatingChip}" Foreground="{DynamicResource Signal}" FontSize="10.5" FontWeight="SemiBold"/>
+                                                    </Border>
+                                                    <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" CornerRadius="7" Padding="7,1" Margin="0,0,6,2" IsVisible="{Binding HasLayoffChip}">
+                                                        <TextBlock Text="{Binding LayoffChip}" Foreground="{DynamicResource Amber}" FontSize="10.5" FontWeight="SemiBold"/>
+                                                    </Border>
+                                                    <Border Classes="chip" Margin="0,0,6,2" IsVisible="{Binding HasPayChip}"><TextBlock Text="{Binding PayChip}"/></Border>
+                                                    <Border Background="{DynamicResource Panel2}" CornerRadius="7" Padding="7,2" Margin="0,0,6,2" IsVisible="{Binding HasConfidenceChip}">
+                                                        <TextBlock Text="{Binding ConfidenceChip}" Foreground="{DynamicResource Muted}" FontSize="10.5"/>
+                                                    </Border>
+                                                </WrapPanel>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Center" Command="{Binding ResearchCommand}" ToolTip.Tip="{l:T researcher.research.tip}">
+                                                <Panel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding !IsResearching}"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T researcher.research}"/></StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding IsResearching}"><TextBlock Text="✕" VerticalAlignment="Center"/><TextBlock Text="{l:T job.research.cancel}"/></StackPanel>
+                                                </Panel>
+                                            </Button>
+                                        </Grid>
+                                    </Expander.Header>
+
+                                    <StackPanel Spacing="9" Margin="6,2,6,8">
+                                        <!-- live status / error -->
+                                        <StackPanel Orientation="Horizontal" Spacing="9" IsVisible="{Binding IsResearching}">
+                                            <ui:ProgressRing IsIndeterminate="True" Width="15" Height="15" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding Status}" FontSize="12" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Error}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" IsVisible="{Binding HasError}"/>
+
+                                        <Border IsVisible="{Binding HasReport}" Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="10" Padding="14">
+                                            <StackPanel Spacing="9">
+                                                <!-- as of + best-effort caveat -->
+                                                <TextBlock Text="{Binding AsOf}" FontSize="10.5" Foreground="{DynamicResource Muted}" IsVisible="{Binding HasAsOf}"/>
+
+                                                <!-- thin-data honest note -->
+                                                <TextBlock Text="{l:T researcher.thin}" FontSize="12" FontStyle="Italic" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" IsVisible="{Binding Report.IsThin}"/>
+
+                                                <!-- Satisfaction -->
+                                                <StackPanel IsVisible="{Binding Report.HasSatisfaction}" Spacing="5">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Signal}"/>
+                                                        <TextBlock Text="{l:T researcher.satisfaction}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                    </StackPanel>
+                                                    <!-- aggregate star average -->
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding Report.HasRating}">
+                                                        <TextBlock Text="★" FontSize="16" Foreground="{DynamicResource Signal}" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding Report.RatingText}" FontSize="16" FontWeight="Bold" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding Report.ReviewsText}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" IsVisible="{Binding Report.HasReviewCount}"/>
+                                                        <TextBlock Text="{l:T researcher.reviewsWord}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" Margin="-3,0,0,0" IsVisible="{Binding Report.HasReviewCount}"/>
+                                                        <TextBlock Text="{Binding Report.RatingSource}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource Muted}" Margin="2,0,0,0" IsVisible="{Binding Report.HasRatingSource}"/>
+                                                    </StackPanel>
+                                                    <!-- review count without an aggregate average -->
+                                                    <WrapPanel IsVisible="{Binding Report.ShowReviewsOnly}">
+                                                        <TextBlock Text="{Binding Report.ReviewsText}" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource Text}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{l:T researcher.reviewsWord}" FontSize="12" Foreground="{DynamicResource Muted}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                                        <TextBlock Text="{Binding Report.RatingSource}" FontSize="12" Foreground="{DynamicResource Muted}" VerticalAlignment="Center" IsVisible="{Binding Report.HasRatingSource}"/>
+                                                        <TextBlock Text="{l:T researcher.noAverage}" FontSize="11" FontStyle="Italic" Foreground="{DynamicResource Muted}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                    </WrapPanel>
+                                                    <!-- recommend / CEO approval -->
+                                                    <WrapPanel>
+                                                        <Border Background="{DynamicResource SignalSoft}" CornerRadius="7" Padding="8,3" Margin="0,0,6,2" IsVisible="{Binding Report.HasRecommend}">
+                                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                                <TextBlock Text="{Binding Report.RecommendText}" FontWeight="Bold" FontSize="11.5" Foreground="{DynamicResource Signal}"/>
+                                                                <TextBlock Text="{l:T researcher.recommend}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource Signal}"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <Border Background="{DynamicResource AccentSoft}" CornerRadius="7" Padding="8,3" Margin="0,0,6,2" IsVisible="{Binding Report.HasCeoApproval}">
+                                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                                <TextBlock Text="{Binding Report.CeoApprovalText}" FontWeight="Bold" FontSize="11.5" Foreground="{DynamicResource AccentText}"/>
+                                                                <TextBlock Text="{l:T researcher.ceo}" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </WrapPanel>
+                                                    <!-- sub-ratings (Glassdoor/Comparably) -->
+                                                    <WrapPanel IsVisible="{Binding Report.HasSubRatings}">
+                                                        <Border Classes="chip" Margin="0,0,6,3" IsVisible="{Binding Report.HasWorkLife}"><StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="{l:T researcher.sub.worklife}"/><TextBlock Text="{Binding Report.WorkLifeText}" FontWeight="Bold"/></StackPanel></Border>
+                                                        <Border Classes="chip" Margin="0,0,6,3" IsVisible="{Binding Report.HasCulture}"><StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="{l:T researcher.sub.culture}"/><TextBlock Text="{Binding Report.CultureText}" FontWeight="Bold"/></StackPanel></Border>
+                                                        <Border Classes="chip" Margin="0,0,6,3" IsVisible="{Binding Report.HasCareer}"><StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="{l:T researcher.sub.career}"/><TextBlock Text="{Binding Report.CareerText}" FontWeight="Bold"/></StackPanel></Border>
+                                                        <Border Classes="chip" Margin="0,0,6,3" IsVisible="{Binding Report.HasManagement}"><StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="{l:T researcher.sub.management}"/><TextBlock Text="{Binding Report.ManagementText}" FontWeight="Bold"/></StackPanel></Border>
+                                                        <Border Classes="chip" Margin="0,0,6,3" IsVisible="{Binding Report.HasCompensation}"><StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="{l:T researcher.sub.comp}"/><TextBlock Text="{Binding Report.CompensationText}" FontWeight="Bold"/></StackPanel></Border>
+                                                        <Border Classes="chip" Margin="0,0,6,3" IsVisible="{Binding Report.HasDiversity}"><StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="{l:T researcher.sub.diversity}"/><TextBlock Text="{Binding Report.DiversityText}" FontWeight="Bold"/></StackPanel></Border>
+                                                    </WrapPanel>
+                                                    <WrapPanel>
+                                                        <Border Background="{DynamicResource SignalSoft}" CornerRadius="7" Padding="8,3" Margin="0,0,6,2" IsVisible="{Binding Report.HasENps}"><StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="eNPS" FontSize="11" VerticalAlignment="Center" Foreground="{DynamicResource Signal}"/><TextBlock Text="{Binding Report.ENpsText}" FontWeight="Bold" FontSize="11.5" Foreground="{DynamicResource Signal}"/></StackPanel></Border>
+                                                        <Border Classes="chip" Margin="0,0,6,2" IsVisible="{Binding Report.HasInterviewDifficulty}"><StackPanel Orientation="Horizontal" Spacing="5"><TextBlock Text="{l:T researcher.interview}"/><TextBlock Text="{Binding Report.InterviewDifficulty}" FontWeight="SemiBold"/></StackPanel></Border>
+                                                    </WrapPanel>
+                                                </StackPanel>
+
+                                                <!-- Layoffs -->
+                                                <StackPanel IsVisible="{Binding Report.HasLayoffs}" Spacing="4">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Amber}"/>
+                                                        <TextBlock Text="{l:T researcher.layoffs}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                    </StackPanel>
+                                                    <ItemsControl ItemsSource="{Binding Report.Layoffs}">
+                                                        <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:LayoffEvent">
+                                                            <Grid ColumnDefinitions="18,*" Margin="0,2,0,0">
+                                                                <TextBlock Grid.Column="0" Text="⚠" Foreground="{DynamicResource Amber}"/>
+                                                                <StackPanel Grid.Column="1" Spacing="0">
+                                                                    <TextBlock Text="{Binding Display}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                                    <Button Classes="link" Content="{Binding Url}" FontSize="10.5" IsVisible="{Binding HasUrl}"
+                                                                            Command="{Binding $parent[ItemsControl].((vm:CompanyVm)DataContext).OpenUrlCommand}" CommandParameter="{Binding Url}"/>
+                                                                </StackPanel>
+                                                            </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
+                                                <!-- Recent signals -->
+                                                <StackPanel IsVisible="{Binding Report.HasSignals}" Spacing="4">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}"/>
+                                                        <TextBlock Text="{l:T researcher.signals}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                    </StackPanel>
+                                                    <ItemsControl ItemsSource="{Binding Report.Signals}">
+                                                        <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                                                            <Grid ColumnDefinitions="18,*" Margin="0,2,0,0">
+                                                                <TextBlock Grid.Column="0" Text="•" Foreground="{DynamicResource AccentText}"/>
+                                                                <TextBlock Grid.Column="1" Text="{Binding}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                            </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
+                                                <!-- Pay band -->
+                                                <StackPanel IsVisible="{Binding Report.HasPayBand}" Spacing="4">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}"/>
+                                                        <TextBlock Text="{l:T researcher.pay}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding Report.PayBand}" FontSize="15" FontWeight="Bold" FontFamily="{DynamicResource MonoFont}" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                    <TextBlock Text="{Binding Report.PayRole}" FontSize="11" Foreground="{DynamicResource Muted}" IsVisible="{Binding Report.HasPayRole}"/>
+                                                </StackPanel>
+
+                                                <!-- Tenure -->
+                                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Report.HasTenure}">
+                                                    <TextBlock Text="{l:T researcher.tenure}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/>
+                                                    <TextBlock Text="{Binding Report.Tenure}" FontSize="12" Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                                                </StackPanel>
+
+                                                <!-- About / firmographics (Wikidata-grounded) -->
+                                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Report.HasFirmographics}">
+                                                    <TextBlock Text="{l:T researcher.about}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Top" Margin="0,1,0,0" Foreground="{DynamicResource Muted}"/>
+                                                    <TextBlock Text="{Binding Report.Firmographics}" FontSize="12" Foreground="{DynamicResource Text}" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                                </StackPanel>
+                                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding Report.HasCeo}">
+                                                    <TextBlock Text="{l:T researcher.ceoName}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/>
+                                                    <TextBlock Text="{Binding Report.Ceo}" FontSize="12" Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <Button Classes="link" Content="{Binding Report.Website}" FontSize="11.5" HorizontalAlignment="Left" Padding="0" IsVisible="{Binding Report.HasWebsite}"
+                                                        Command="{Binding OpenUrlCommand}" CommandParameter="{Binding Report.Website}"/>
+
+                                                <!-- Tech stack seen in their own postings -->
+                                                <StackPanel IsVisible="{Binding Report.HasTechStack}" Spacing="4">
+                                                    <TextBlock Text="{l:T researcher.stack}" FontSize="11" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
+                                                    <ItemsControl ItemsSource="{Binding Report.TechStack}">
+                                                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                        <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                                                            <Border Classes="chip" Margin="0,0,6,4"><TextBlock Text="{Binding}"/></Border>
+                                                        </DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
+                                                <!-- Pros / Cons / Red flags -->
+                                                <ItemsControl ItemsSource="{Binding Report.Pros}" IsVisible="{Binding Report.HasPros}">
+                                                    <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                                                        <Grid ColumnDefinitions="18,*" Margin="0,2,0,0">
+                                                            <TextBlock Grid.Column="0" Text="✓" FontWeight="Bold" Foreground="{DynamicResource Signal}"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                        </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <ItemsControl ItemsSource="{Binding Report.Cons}" IsVisible="{Binding Report.HasCons}">
+                                                    <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                                                        <Grid ColumnDefinitions="18,*" Margin="0,2,0,0">
+                                                            <TextBlock Grid.Column="0" Text="✕" FontWeight="Bold" Foreground="{DynamicResource Danger}"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                        </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                <ItemsControl ItemsSource="{Binding Report.RedFlags}" IsVisible="{Binding Report.HasRedFlags}">
+                                                    <ItemsControl.ItemTemplate><DataTemplate x:DataType="x:String">
+                                                        <Grid ColumnDefinitions="18,*" Margin="0,2,0,0">
+                                                            <TextBlock Grid.Column="0" Text="⚠" Foreground="{DynamicResource Amber}"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Amber}"/>
+                                                        </Grid></DataTemplate></ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <TextBlock Text="{Binding Report.BottomLine}" FontSize="12" FontStyle="Italic" Opacity="0.9" TextWrapping="Wrap" Margin="0,4,0,0" Foreground="{DynamicResource Text}" IsVisible="{Binding Report.HasBottomLine}"/>
+
+                                                <!-- Sources -->
+                                                <StackPanel IsVisible="{Binding Report.HasSources}" Spacing="1" Margin="0,4,0,0">
+                                                    <TextBlock Text="{l:T common.sources}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
+                                                    <ItemsControl ItemsSource="{Binding Report.Sources}">
+                                                        <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:SourceRef">
+                                                            <Button Classes="link" Content="{Binding Label}" FontSize="11"
+                                                                    Command="{Binding $parent[ItemsControl].((vm:CompanyVm)DataContext).OpenUrlCommand}" CommandParameter="{Binding Url}"/>
+                                                        </DataTemplate></ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+
+                                                <md:MarkdownScrollViewer Markdown="{Binding Report.RawFallback}" MaxHeight="440" MarkdownStyleName="FluentAvalonia" IsVisible="{Binding Report.HasFallback}"/>
+
+                                                <TextBlock Text="{l:T researcher.disclaimer}" FontSize="10.5" FontStyle="Italic" TextWrapping="Wrap" Margin="0,4,0,0" Foreground="{DynamicResource Muted}"/>
                                             </StackPanel>
                                         </Border>
                                     </StackPanel>
@@ -1034,6 +1303,44 @@
                                 <TextBlock Classes="fld" Text="{l:T settings.jsearch.max}"/>
                                 <TextBox Text="{Binding JSearchMax}" Watermark="20"/>
                                 <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.jsearch.hint}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Jobicy (keyless, free) — remote jobs -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                <TextBlock Classes="fld" Text="{l:T settings.jobicy}" Margin="0" VerticalAlignment="Center"/>
+                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="7" Padding="7,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{l:T connector.keyless}" Foreground="{DynamicResource Signal}" FontSize="10.5" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding UseJobicy}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
+                            <StackPanel IsVisible="{Binding UseJobicy}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.region}"/>
+                                <ComboBox ItemsSource="{Binding JobicyRegions}" SelectedIndex="{Binding JobicyRegionIndex}" HorizontalAlignment="Left" MinWidth="160"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.max}"/>
+                                <TextBox Text="{Binding JobicyMax}" Watermark="50" Width="100" HorizontalAlignment="Left"/>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.jobicy.hint}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Himalayas (keyless, free) — remote jobs -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                <TextBlock Classes="fld" Text="{l:T settings.himalayas}" Margin="0" VerticalAlignment="Center"/>
+                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="7" Padding="7,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{l:T connector.keyless}" Foreground="{DynamicResource Signal}" FontSize="10.5" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding UseHimalayas}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
+                            <StackPanel IsVisible="{Binding UseHimalayas}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.max}"/>
+                                <TextBox Text="{Binding HimalayasMax}" Watermark="40" Width="100" HorizontalAlignment="Left"/>
+                                <TextBlock Classes="sub" FontSize="11" TextWrapping="Wrap" Text="{l:T settings.himalayas.hint}"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>

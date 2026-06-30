@@ -17,9 +17,12 @@ public partial class MainViewModel : ObservableObject
     private readonly string _uiSettingsPath;
     private readonly string _apifySettingsPath;
     private readonly string _jsearchSettingsPath;
+    private readonly string _jobicySettingsPath;
+    private readonly string _himalayasSettingsPath;
     private readonly string _planPath;
     private readonly string _planReasoningPath;
     private readonly string _careerResearchPath;
+    private readonly string _companyCachePath;
     private AppConfig _cfg;
 
     /// <summary>Set by the view: shows a cost-confirmation dialog before a paid (Apify) search.</summary>
@@ -36,18 +39,24 @@ public partial class MainViewModel : ObservableObject
         _uiSettingsPath = Path.Combine(_root, "ui-settings.json");
         _apifySettingsPath = Path.Combine(_root, "apify-settings.json");
         _jsearchSettingsPath = Path.Combine(_root, "jsearch-settings.json");
+        _jobicySettingsPath = Path.Combine(_root, "jobicy-settings.json");
+        _himalayasSettingsPath = Path.Combine(_root, "himalayas-settings.json");
         _planPath = Path.Combine(_root, "career-plan.json");
         _planReasoningPath = Path.Combine(_root, "career-plan.reasoning.txt");
         _careerResearchPath = Path.Combine(_root, "career-research.json");
+        _companyCachePath = Path.Combine(_root, "company-reports.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
         ApplyApifyOverride();
         ApplyJSearchOverride();
+        ApplyJobicyOverride();
+        ApplyHimalayasOverride();
         LoadUiSettings();
         Loc.Instance.SetPreference(LangModes[Math.Clamp(_languageIndex, 0, 2)]);
         ApplyTheme();
         LoadSavedProfile();
         LoadPlan();
+        _companyCache = CompanyCache.Load(_companyCachePath);
         _langInitialised = true;
     }
 
@@ -56,13 +65,14 @@ public partial class MainViewModel : ObservableObject
     public bool IsNavHome => Nav == "home";
     public bool IsNavProfile => Nav == "profile";
     public bool IsNavResults => Nav == "results";
+    public bool IsNavResearcher => Nav == "researcher";
     public bool IsNavImprove => Nav == "improve";
     public bool IsNavSettings => Nav == "settings";
     partial void OnNavChanged(string value)
     {
         OnPropertyChanged(nameof(IsNavHome)); OnPropertyChanged(nameof(IsNavProfile));
-        OnPropertyChanged(nameof(IsNavResults)); OnPropertyChanged(nameof(IsNavImprove));
-        OnPropertyChanged(nameof(IsNavSettings));
+        OnPropertyChanged(nameof(IsNavResults)); OnPropertyChanged(nameof(IsNavResearcher));
+        OnPropertyChanged(nameof(IsNavImprove)); OnPropertyChanged(nameof(IsNavSettings));
     }
 
     [RelayCommand]
@@ -85,6 +95,7 @@ public partial class MainViewModel : ObservableObject
                 else ShowOnly(results: true);
                 break;
             case "improve": ShowOnly(improve: true); break;  // career-growth area
+            case "researcher": OpenResearcher(); break;       // employer-health signals across matched jobs
             case "settings": OpenSettings(); break;            // loads settings fields + shows
             default: ShowOnly(welcome: true); break;          // home
         }
@@ -254,6 +265,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _hasJobs;
     [ObservableProperty] private bool _isSettings;
     [ObservableProperty] private bool _isImprove;
+    [ObservableProperty] private bool _isResearcher;
 
     // ---- improve (career plan) ----
     [ObservableProperty] private CareerPlanResult? _plan;
@@ -459,6 +471,15 @@ public partial class MainViewModel : ObservableObject
         ? "https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch"
         : "https://app.openwebninja.com/";
     partial void OnJSearchProviderIndexChanged(int value) => OnPropertyChanged(nameof(JSearchKeyUrl));
+
+    // Keyless remote-jobs sources (free, no key) — Jobicy + Himalayas.
+    [ObservableProperty] private bool _useJobicy;
+    [ObservableProperty] private int _jobicyRegionIndex;   // 0 Europe, 1 Portugal, 2 Any
+    [ObservableProperty] private string _jobicyMax = "50";
+    [ObservableProperty] private bool _useHimalayas;
+    [ObservableProperty] private string _himalayasMax = "40";
+    public string[] JobicyRegions => new[] { L("region.europe"), L("region.portugal"), L("region.any") };
+    private static readonly string[] JobicyGeoValues = { "europe", "portugal", "" };
 
     // local model manager (Ollama)
     [ObservableProperty] private string _modelToPull = "";
@@ -1073,6 +1094,11 @@ public partial class MainViewModel : ObservableObject
         JSearchKey = _cfg.JSearch.ApiKey;
         JSearchCountry = string.IsNullOrWhiteSpace(_cfg.JSearch.Country) ? "pt" : _cfg.JSearch.Country;
         JSearchMax = _cfg.JSearch.MaxItems > 0 ? _cfg.JSearch.MaxItems.ToString() : "20";
+        UseJobicy = _cfg.Jobicy.Enabled;
+        JobicyRegionIndex = Math.Max(0, Array.IndexOf(JobicyGeoValues, (_cfg.Jobicy.Geo ?? "europe").Trim().ToLowerInvariant()));
+        JobicyMax = _cfg.Jobicy.MaxItems > 0 ? _cfg.Jobicy.MaxItems.ToString() : "50";
+        UseHimalayas = _cfg.Himalayas.Enabled;
+        HimalayasMax = _cfg.Himalayas.MaxItems > 0 ? _cfg.Himalayas.MaxItems.ToString() : "40";
     }
 
     /// <summary>A stable fingerprint of every Save-backed setting — used to detect unsaved edits.
@@ -1080,7 +1106,8 @@ public partial class MainViewModel : ObservableObject
     private string SettingsSignature() => string.Join("",
         UseLocalModel, LlmBaseUrl, LlmModel, LlmApiKey, LlmMaxTokens, LlmTimeoutSeconds, ClaudeExe,
         UseApify, ApifyToken, ApifyActor, ApifyMax,
-        UseJSearch, JSearchProviderIndex, JSearchKey, JSearchCountry, JSearchMax);
+        UseJSearch, JSearchProviderIndex, JSearchKey, JSearchCountry, JSearchMax,
+        UseJobicy, JobicyRegionIndex, JobicyMax, UseHimalayas, HimalayasMax);
 
     private string _settingsSnapshot = "";
 
@@ -1112,6 +1139,13 @@ public partial class MainViewModel : ObservableObject
         _cfg.JSearch.Country = string.IsNullOrWhiteSpace(JSearchCountry) ? "pt" : JSearchCountry.Trim().ToLowerInvariant();
         _cfg.JSearch.MaxItems = int.TryParse(JSearchMax, out var jm) && jm > 0 ? jm : 20;
         SaveJSearchSettings();
+        _cfg.Jobicy.Enabled = UseJobicy;
+        _cfg.Jobicy.Geo = JobicyGeoValues[Math.Clamp(JobicyRegionIndex, 0, JobicyGeoValues.Length - 1)];
+        _cfg.Jobicy.MaxItems = int.TryParse(JobicyMax, out var gm) && gm > 0 ? gm : 50;
+        SaveJobicySettings();
+        _cfg.Himalayas.Enabled = UseHimalayas;
+        _cfg.Himalayas.MaxItems = int.TryParse(HimalayasMax, out var hm) && hm > 0 ? hm : 40;
+        SaveHimalayasSettings();
         _settingsSnapshot = SettingsSignature();
         OnPropertyChanged(nameof(UsingLocalEngine));
         Status = L("settings.saved");
@@ -1324,6 +1358,8 @@ public partial class MainViewModel : ObservableObject
         sb.AppendLine("Connectors:");
         sb.AppendLine($"  Apify:     {(_cfg.Apify.Enabled ? "on" : "off")}");
         sb.AppendLine($"  JSearch:   {(_cfg.JSearch.Enabled ? "on" : "off")} provider={_cfg.JSearch.Provider} country={_cfg.JSearch.Country}");
+        sb.AppendLine($"  Jobicy:    {(_cfg.Jobicy.Enabled ? "on" : "off")} geo={_cfg.Jobicy.Geo}");
+        sb.AppendLine($"  Himalayas: {(_cfg.Himalayas.Enabled ? "on" : "off")}");
         sb.AppendLine();
         sb.AppendLine("Last errors:");
         sb.AppendLine($"  llm:       {(string.IsNullOrWhiteSpace(LlmClient.LastError) ? "(none)" : LlmClient.LastError)}");
@@ -1455,10 +1491,185 @@ public partial class MainViewModel : ObservableObject
         EmptyMessage = _all.Count > 0 ? L("empty.noMatch") : L("empty.noneToShow");
     }
 
-    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false, bool improve = false)
+    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false, bool improve = false, bool researcher = false)
     {
-        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings; IsImprove = improve;
-        Nav = settings ? "settings" : improve ? "improve" : results ? "results" : profile ? "profile" : "home";
+        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings; IsImprove = improve; IsResearcher = researcher;
+        Nav = settings ? "settings" : improve ? "improve" : researcher ? "researcher" : results ? "results" : profile ? "profile" : "home";
+    }
+
+    // ---- Company Researcher (employer-health signals across the matched jobs) ----
+    /// <summary>Set by the view: confirms a batch research (N model calls) before "Research all".</summary>
+    public Func<int, Task<bool>>? ConfirmResearchAllAsync;
+    private Dictionary<string, CompanyReport> _companyCache = new();
+    public ObservableCollection<CompanyVm> Companies { get; } = new();   // filtered view shown in the UI
+    private readonly List<CompanyVm> _companyMaster = new();             // every company (unfiltered, ordered)
+    [ObservableProperty] private string _companyQuery = "";             // box that RESEARCHES a new company
+    [ObservableProperty] private string _companyFilter = "";            // box that FILTERS the listed companies by name
+    [ObservableProperty] private int _companySortIndex;   // 0 jobs · 1 rating · 2 layoff-risk · 3 name
+    // Computed (not a field) so it re-reads the active language when the window is rebuilt.
+    public string[] CompanySorts => new[]
+        { L("researcher.sort.jobs"), L("researcher.sort.rating"), L("researcher.sort.layoffs"), L("researcher.sort.name") };
+    public bool HasCompanies => _companyMaster.Count > 0;
+    public bool ResearcherEmpty => _companyMaster.Count == 0;
+
+    private void OpenResearcher()
+    {
+        BuildCompanies();
+        ShowOnly(researcher: true);
+    }
+
+    /// <summary>Rebuilds the company list from the matched jobs (distinct employers + counts), reusing any
+    /// fresh cached report. Manually-added companies (not in the job set) are preserved.</summary>
+    private void BuildCompanies()
+    {
+        var grouped = _all
+            .Select(v => v.Company)
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .GroupBy(c => c.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => (Name: g.Key, Count: g.Count()))
+            .ToList();
+
+        var manual = _companyMaster
+            .Where(c => c.JobCount == 0 && !grouped.Any(g => string.Equals(g.Name, c.Name, StringComparison.OrdinalIgnoreCase)))
+            .Select(c => c.Name).ToList();
+
+        var vms = new List<CompanyVm>();
+        foreach (var (name, count) in grouped) vms.Add(MakeCompanyVm(name, count));
+        foreach (var name in manual) vms.Add(MakeCompanyVm(name, 0));
+
+        _companyMaster.Clear();
+        _companyMaster.AddRange(OrderCompanies(vms));
+        ApplyCompanyFilter();
+    }
+
+    /// <summary>Refills the shown collection from the master list, honouring the name filter.</summary>
+    private void ApplyCompanyFilter()
+    {
+        string f = (CompanyFilter ?? "").Trim();
+        Companies.Clear();
+        foreach (var vm in _companyMaster)
+            if (f.Length == 0 || vm.Name.Contains(f, StringComparison.OrdinalIgnoreCase)) Companies.Add(vm);
+        OnPropertyChanged(nameof(HasCompanies));
+        OnPropertyChanged(nameof(ResearcherEmpty));
+    }
+
+    partial void OnCompanyFilterChanged(string value) => ApplyCompanyFilter();
+
+    private CompanyVm MakeCompanyVm(string name, int count)
+    {
+        _companyCache.TryGetValue(CompanyCache.Key(name), out var cached);
+        var vm = new CompanyVm(name, count, cached, ResearchCompanyReportAsync);
+        vm.Researched += OnCompanyResearched;
+        return vm;
+    }
+
+    private IEnumerable<CompanyVm> OrderCompanies(IEnumerable<CompanyVm> src) => CompanySortIndex switch
+    {
+        1 => src.OrderByDescending(c => c.Report?.Rating ?? -1).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
+        2 => src.OrderByDescending(c => c.Report?.HasLayoffs == true).ThenByDescending(c => c.JobCount).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
+        3 => src.OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
+        _ => src.OrderByDescending(c => c.JobCount).ThenBy(c => c.Name, StringComparer.OrdinalIgnoreCase),
+    };
+
+    partial void OnCompanySortIndexChanged(int value)
+    {
+        if (_companyMaster.Count == 0) return;
+        var ordered = OrderCompanies(_companyMaster.ToList()).ToList();
+        _companyMaster.Clear();
+        _companyMaster.AddRange(ordered);
+        ApplyCompanyFilter();
+    }
+
+    private async Task<(CompanyReport? report, string? error)> ResearchCompanyReportAsync(string company, IProgress<string> progress, CancellationToken ct)
+    {
+        var (report, err) = await CompanyResearch.ResearchReportAsync(
+            _cfg.Claude, _profile, company, _profile.JobTitles.FirstOrDefault() ?? _profile.Field, progress, ct);
+        if (report is not null)
+        {
+            var stack = TechStackFor(company);
+            if (stack.Count > 0) report.TechStack = stack;
+        }
+        return (report, err);
+    }
+
+    /// <summary>Tech keywords seen in THIS employer's own postings the radar scored — grounded + candidate-relevant.</summary>
+    private List<string> TechStackFor(string company)
+    {
+        var skills = _profile.CoreSkills.Concat(_profile.Skills)
+            .Where(s => !string.IsNullOrWhiteSpace(s)).Select(s => s.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (skills.Count == 0) return new();
+        string hay = string.Join("  ", _all
+            .Where(v => string.Equals(v.Company, company, StringComparison.OrdinalIgnoreCase))
+            .Select(v => $"{v.Entity.Title} {v.Entity.Description}")).ToLowerInvariant();
+        if (hay.Length == 0) return new();
+        return skills.Where(s => hay.Contains(s.ToLowerInvariant())).Take(12).ToList();
+    }
+
+    /// <summary>Persist a freshly-researched report to the per-company cache (machine-local, gitignored).</summary>
+    private void OnCompanyResearched(CompanyVm vm)
+    {
+        if (vm.Report is null) return;
+        _companyCache[CompanyCache.Key(vm.Name)] = vm.Report;
+        CompanyCache.Save(_companyCachePath, _companyCache);
+    }
+
+    /// <summary>Research a company typed into the box (e.g. before applying), even if it's not in the job set.</summary>
+    [RelayCommand]
+    private async Task ResearchManualCompany()
+    {
+        string name = (CompanyQuery ?? "").Trim();
+        if (name.Length == 0) return;
+        CompanyQuery = "";
+        var vm = _companyMaster.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (vm is null)
+        {
+            vm = MakeCompanyVm(name, 0);
+            _companyMaster.Insert(0, vm);
+        }
+        CompanyFilter = "";       // clear any name filter so the target is visible…
+        ApplyCompanyFilter();     // …and refresh the shown list (no-op event if filter was already empty)
+        if (!vm.HasReport && !vm.IsResearching) await vm.ResearchCommand.ExecuteAsync(null);
+    }
+
+    /// <summary>Research every not-yet-researched company. Each is one model call (metered on Claude CLI),
+    /// so confirm the batch first. Sequential — a single local model serializes requests anyway.</summary>
+    [RelayCommand]
+    private async Task ResearchAllCompanies()
+    {
+        var todo = _companyMaster.Where(c => !c.HasReport && !c.IsResearching).ToList();
+        if (todo.Count == 0) return;
+        if (ConfirmResearchAllAsync is not null && !await ConfirmResearchAllAsync(todo.Count)) return;
+        foreach (var c in todo)
+        {
+            if (c.HasReport || c.IsResearching) continue;
+            await c.ResearchCommand.ExecuteAsync(null);
+        }
+    }
+
+    /// <summary>Exports the researched companies to CSV + HTML + PDF (mirrors the jobs export).</summary>
+    [RelayCommand]
+    private async Task ExportCompanies()
+    {
+        var reports = _companyMaster.Where(c => c.Report is not null).Select(c => c.Report!).ToList();
+        if (reports.Count == 0) { ExportMsg = L("researcher.export.none"); return; }
+        Busy = true;
+        try
+        {
+            string outDir = Path.Combine(_root, "output");
+            Directory.CreateDirectory(outDir);
+            string day = DateTime.Now.ToString("yyyy-MM-dd-HHmm");
+            string csv = Path.Combine(outDir, $"companies-{day}.csv");
+            string html = Path.Combine(outDir, $"companies-{day}.html");
+            string pdf = Path.Combine(outDir, $"companies-{day}.pdf");
+            CompanyExport.WriteCsv(csv, reports);
+            CompanyExport.WriteHtml(html, reports, day);
+            string? edge = Reports.FindEdge();
+            bool ok = edge is not null && await Task.Run(() => Reports.WritePdf(html, pdf, edge));
+            ExportMsg = ok ? Loc.Instance.F("export.done", pdf) : Loc.Instance.F("export.doneNoPdf", outDir);
+        }
+        catch (Exception ex) { ExportMsg = Loc.Instance.F("export.failed", ex.Message); }
+        finally { Busy = false; }
     }
 
     /// <summary>Loads the LLM backend override saved from the Settings screen (machine-local, gitignored).</summary>
@@ -1514,6 +1725,42 @@ public partial class MainViewModel : ObservableObject
     private void SaveJSearchSettings()
     {
         try { File.WriteAllText(_jsearchSettingsPath, JsonSerializer.Serialize(_cfg.JSearch, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+    }
+
+    private void ApplyJobicyOverride()
+    {
+        try
+        {
+            if (!File.Exists(_jobicySettingsPath)) return;
+            var c = JsonSerializer.Deserialize<JobicyConfig>(File.ReadAllText(_jobicySettingsPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (c is not null) _cfg.Jobicy = c;
+        }
+        catch { /* ignore */ }
+    }
+
+    private void SaveJobicySettings()
+    {
+        try { File.WriteAllText(_jobicySettingsPath, JsonSerializer.Serialize(_cfg.Jobicy, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+    }
+
+    private void ApplyHimalayasOverride()
+    {
+        try
+        {
+            if (!File.Exists(_himalayasSettingsPath)) return;
+            var c = JsonSerializer.Deserialize<HimalayasConfig>(File.ReadAllText(_himalayasSettingsPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (c is not null) _cfg.Himalayas = c;
+        }
+        catch { /* ignore */ }
+    }
+
+    private void SaveHimalayasSettings()
+    {
+        try { File.WriteAllText(_himalayasSettingsPath, JsonSerializer.Serialize(_cfg.Himalayas, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 

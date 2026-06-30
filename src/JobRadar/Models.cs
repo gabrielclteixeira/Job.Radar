@@ -67,6 +67,25 @@ public class AppConfig
     public SalaryConfig Salary { get; set; } = new();
     public ApifyConfig Apify { get; set; } = new();
     public JSearchConfig JSearch { get; set; } = new();
+    public JobicyConfig Jobicy { get; set; } = new();
+    public HimalayasConfig Himalayas { get; set; } = new();
+}
+
+/// <summary>Optional Jobicy source (jobicy.com) — keyless, free, JSON. Remote jobs only, filterable by region.
+/// ToS: credit Jobicy and link application buttons to the job's source URL (we use it as the job link).</summary>
+public class JobicyConfig
+{
+    public bool Enabled { get; set; }
+    public string Geo { get; set; } = "europe";   // "europe" | "portugal" | "" (anywhere)
+    public int MaxItems { get; set; } = 50;        // 1–100 per the API
+}
+
+/// <summary>Optional Himalayas source (himalayas.app) — keyless, free, JSON. Remote jobs only; we keep just
+/// listings open to Portugal/Europe/worldwide. ToS: attribution + don't resubmit to other boards; 20/request.</summary>
+public class HimalayasConfig
+{
+    public bool Enabled { get; set; }
+    public int MaxItems { get; set; } = 40;        // fetched in pages of 20
 }
 
 /// <summary>Optional LinkedIn-via-Apify connector. PAID — uses the user's Apify credits.</summary>

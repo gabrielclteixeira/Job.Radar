@@ -40,16 +40,33 @@ public static class ProfileFilter
 
         if (tokens.Count == 0) return (false, 0, "", ""); // no profile yet
 
-        // Relevance gate: a keyword must appear in the TITLE (word boundary), not buried in the
-        // noisy description — otherwise short tokens like "go" match "good"/"category" everywhere.
+        // Relevance gate — TITLE *or* DESCRIPTION. A profile word in the title, OR the candidate's CORE STACK
+        // clearly present in the description (>=2 distinct skills — enough to spot a dev role with an unusual
+        // title, while ignoring a non-dev role that just mentions one tech in passing). Honours descriptions,
+        // where the real requirements often live. Ambiguous short skills (e.g. "go" — also the English verb)
+        // count only in the title; longer/symbol skills (".net", "c#", "docker") count in the description too.
         var matched = tokens.Where(t => WordIn(title, t)).ToList();
-        if (matched.Count == 0) return (false, 0, "", "");
+        var stackHits = core.Where(s => s.Length >= 3 || s.Contains('#') || s.Contains('.') ? WordIn(hay, s) : WordIn(title, s)).ToList();
+        if (matched.Count == 0 && stackHits.Count < 2) return (false, 0, "", "");
 
-        // Location gate honouring the user's prefs.
-        bool isRemote = j.Remote == "remote" || hay.Contains("remote") || hay.Contains("remoto");
-        bool isHybrid = j.Remote == "hybrid" || hay.Contains("hybrid") || hay.Contains("híbrido");
+        // Role-specificity: a shared GENERIC word ("engineer"/"developer") with NO core stack anywhere is an
+        // off-stack role, not a fit. A distinctive title term, or any stack hit (incl. from the description), keeps it.
+        if (core.Count > 0 && !matched.Any(t => !GenericRole.Contains(t)) && stackHits.Count == 0)
+            return (false, 0, "", "");
+
+        // Location gate honouring the user's prefs. Read remote/hybrid from the STRUCTURED signal + title/location
+        // only — NOT the description: boilerplate like "remote-friendly team" was falsely flagging onsite foreign
+        // jobs (e.g. Berlin) as remote, slipping them past the gate when the user accepts remote.
+        bool isRemote = j.Remote == "remote" || titleLoc.Contains("remote") || titleLoc.Contains("remoto");
+        bool isHybrid = j.Remote == "hybrid" || titleLoc.Contains("hybrid") || titleLoc.Contains("híbrido");
         bool locMatch = locations.Any(l => l.Length > 1 && titleLoc.Contains(l));
-        bool locOk = (profile.Remote && isRemote) || (profile.Hybrid && isHybrid) || locMatch || (profile.Onsite && locMatch);
+        // A remote job only counts if its location is flexible for this candidate — our location, a region-wide
+        // marker (Europe/EMEA/Worldwide), or unknown. A specific foreign city (e.g. "Remote — Berlin") is dropped.
+        bool remoteGeoOk = locMatch || RemoteFlexible(j);
+        bool locOk = (profile.Remote && isRemote && remoteGeoOk)   // remote: PT / region-wide / unknown only
+                  || (profile.Hybrid && isHybrid && locMatch)       // hybrid: must be commutable → our location
+                  || (profile.Onsite && locMatch)                   // onsite: our location
+                  || locMatch;                                       // any explicit match to our location → keep
         if (!locOk) return (false, 0, "", "");
 
         // Weighted pre-score with a breakdown.
@@ -91,10 +108,36 @@ public static class ProfileFilter
         return (true, final, explanation, baseVerdict);
     }
 
+    /// <summary>Region-wide / "open to anyone" location markers a Portugal-based candidate can take remotely.</summary>
+    private static readonly string[] RegionWide =
+        { "portugal", "europe", "european", "emea", "eea", "worldwide", "anywhere", "global" };
+
+    /// <summary>True when a remote job's location is geographically flexible for this candidate: unknown, just
+    /// "Remote", or a region-wide marker — NOT a specific foreign place. Strips the word "remote" first so
+    /// "Remote — Berlin" is judged on "Berlin" (dropped), while "Remote · Portugal"/"EMEA"/"" are kept.</summary>
+    private static bool RemoteFlexible(JobEntity j)
+    {
+        string loc = (j.Location ?? "").ToLowerInvariant()
+            .Replace("remote", " ").Replace("remoto", " ")
+            .Trim(' ', ',', '·', '-', '/', '(', ')', '|');
+        if (loc.Length == 0) return true;                 // just "Remote" / unknown → flexible
+        return RegionWide.Any(loc.Contains);              // region-wide → keep; a specific foreign place → drop
+    }
+
     /// <summary>Over-generic words that shouldn't gate relevance on their own.</summary>
     private static readonly HashSet<string> Generic = new()
     {
         "and", "or", "the", "of", "for", "with", "in", "to", "a", "an",
+    };
+
+    /// <summary>Role words too generic to pin a role on their own — a title matching ONLY these (with no core
+    /// skill present) is treated as off-stack. Distinctive skills like c#/.net/go are deliberately NOT here.</summary>
+    private static readonly HashSet<string> GenericRole = new()
+    {
+        "engineer", "engineering", "developer", "development", "programmer", "coder", "software", "analyst",
+        "specialist", "consultant", "manager", "management", "lead", "architect", "data", "cloud", "web",
+        "fullstack", "full", "stack", "systems", "system", "it", "technology", "tech",
+        "senior", "junior", "mid", "principal", "staff", "officer",
     };
 
     /// <summary>

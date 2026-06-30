@@ -43,6 +43,14 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   guard so edits aren't lost on navigation.
 - **Rebranding** — settled product identity: the **Job Radar** name, the concentric-ring radar mark used as
   logo + app icon, and the "mission control" palette.
+- **Company Researcher** — a dedicated **Companies** view that aggregates employer-health signals across the
+  matched jobs (and any company you type in): **satisfaction** (Glassdoor/kununu ★, review count, recommend %,
+  CEO approval, sub-ratings, eNPS, interview difficulty), **recent layoffs** (date + scale + source), **recent
+  signals** (funding/acquisition/hiring-freeze/leadership), **typical pay** (local-market band), **tenure**, and
+  **firmographics** grounded by **Wikidata** (founded, HQ, industry, CEO, size) plus the **tech stack** seen in
+  the employer's own postings. Every field is **source-linked, confidence-tagged, and "unknown" when thin** (no
+  fabricated numbers). Per-company cache with an "as of" date + TTL, name filter, sortable, and **export** to
+  CSV/HTML/PDF. Key-free (search snippets + a Jina page-fetch + Wikidata + your own AI engine).
 
 ---
 
@@ -78,6 +86,15 @@ without losing what's already done. Useful for long scans or to stop spending to
 jobs are persisted, so resuming should pick up where it left off; the work is a cancellation/pause control in
 the UI wired through the streaming pipeline (and the per-company research).
 
+### 4. Company Researcher — deepen it
+
+The **Company Researcher** shipped (see above). Remaining ideas: **company chips on the job card** (★3.9 · ⚠
+layoffs 2025 · ~€48k) that jump to the company; an optional **"company-health" factor** fed into scoring /
+red-flags (transparently); **trend over time** (re-research and surface what changed); **Portugal registry**
+enrichment (nif.pt / Racius — legal name, CAE sector, share capital) for local SMEs that have no Glassdoor /
+Wikidata presence; and an optional **BYOK slot** for an official reviews/firmographics API (Coresignal / People
+Data Labs / Crunchbase) for users who want hard data instead of best-effort snippets.
+
 ---
 
 ## 💡 Backlog / ideas
@@ -88,8 +105,8 @@ the UI wired through the streaming pipeline (and the per-company research).
   LinkedIn Jobs in the browser pre-filled from the profile, plus the optional `linkedin-jobs.json` merge.
   Explore a ToS-respecting way to pull results into the app (e.g. a user-run browser snippet/export, or a
   Playwright-assisted pass where the **user logs in** — best-effort, opt-in, given LinkedIn's bot defenses).
-- **Deeper company research** — build on the shipped company-research step: more/structured sources,
-  optional use of the Claude CLI's native web search, and caching results per company.
+- **Deeper company research** — *(promoted to "Company Researcher", Planned #4)*. Remaining sub-idea: optional
+  use of the **Claude CLI's native web search** to ground the extracted signals more richly.
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.
 - A non-tech sample dataset to showcase the field-agnostic scoring.
 - Saved searches and change alerts (new strong-fit jobs since last run).

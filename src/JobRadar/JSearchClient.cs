@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 
 namespace JobRadar;
@@ -91,7 +92,7 @@ public static class JSearchClient
                     loc,
                     remote ? "remote" : "",
                     Str(it, "job_apply_link"),
-                    Str(it, "job_description"),
+                    FrontLoad(it, Str(it, "job_description")),
                     "jsearch",
                     Str(it, "job_posting_date", "job_posted_at_datetime_utc"),
                     Num(it, "job_min_salary"),
@@ -103,6 +104,32 @@ public static class JSearchClient
         catch (Exception ex) { log?.Report(Loc.Instance.F("jsearch.error", ex.Message)); }
         return jobs;
     }
+
+    /// <summary>Prepends JSearch's structured requirements (required skills, qualifications, responsibilities)
+    /// to the free-text description, so the relevance gate and the (trimmed) scorer see the real requirements
+    /// up front instead of only the intro blurb.</summary>
+    private static string FrontLoad(JsonElement it, string description)
+    {
+        var sb = new StringBuilder();
+        if (it.TryGetProperty("job_required_skills", out var sk) && sk.ValueKind == JsonValueKind.Array && sk.GetArrayLength() > 0)
+            sb.Append("Required skills: ").Append(JoinArr(sk)).Append('\n');
+        if (it.TryGetProperty("job_highlights", out var h) && h.ValueKind == JsonValueKind.Object)
+        {
+            AppendArr(sb, h, "Qualifications");
+            AppendArr(sb, h, "Responsibilities");
+        }
+        string front = sb.ToString().Trim();
+        return front.Length == 0 ? description : front + "\n\n" + description;
+    }
+
+    private static void AppendArr(StringBuilder sb, JsonElement obj, string key)
+    {
+        if (obj.TryGetProperty(key, out var a) && a.ValueKind == JsonValueKind.Array && a.GetArrayLength() > 0)
+            sb.Append(key).Append(": ").Append(JoinArr(a)).Append('\n');
+    }
+
+    private static string JoinArr(JsonElement a)
+        => string.Join("; ", a.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()));
 
     private static bool HasSalary(JsonElement e) => Num(e, "job_min_salary") > 0 || Num(e, "job_max_salary") > 0;
 

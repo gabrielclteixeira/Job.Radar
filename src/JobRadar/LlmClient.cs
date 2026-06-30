@@ -14,7 +14,10 @@ namespace JobRadar;
 /// </summary>
 public static class LlmClient
 {
-    private static readonly HttpClient Http = new();
+    // Infinite client-level timeout: the real per-call deadline is enforced per request via
+    // CancellationTokenSource.CancelAfter(cfg.TimeoutSeconds). Without this, HttpClient's DEFAULT 100s timeout
+    // silently overrides the configured timeout — killing any scoring/plan call that needs >100s at 100s.
+    private static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
     /// <summary>Reason for the last failed completion (CLI stderr, HTTP status, timeout…). Null on success.
     /// Surfaced in the UI so the user can tell e.g. a Claude usage-limit from a local-model-down.</summary>

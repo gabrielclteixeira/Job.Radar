@@ -19,6 +19,43 @@ public static class Pipeline
     /// <summary>Bump when JobEntity columns change (or cached data must be discarded) so the DB is recreated.</summary>
     private const string SchemaVersion = "6"; // 6: add deterministic keyword base verdict
 
+    /// <summary>Jobs scored per model call. Batching amortizes the profile+rubric input and the model's
+    /// per-call "thinking" across several jobs — far faster than one call per job on local reasoning models.
+    /// On a small context (Ollama's default num_ctx=4096) a big batch can overflow and truncate the output —
+    /// the partial-tolerant parse falls those jobs back to the pre-score. Raise the model's context
+    /// (OLLAMA_CONTEXT_LENGTH / a Modelfile num_ctx) so larger batches complete cleanly.</summary>
+    private const int ScoreBatchSize = 5;
+
+    /// <summary>Scores <paramref name="toScore"/> in batches, persisting + streaming each result as its batch
+    /// lands. Shared by RunAsync / RescoreAsync / ScoreRemainingAsync. A job the model omits falls back to its
+    /// pre-score. Cancellation is honoured between batches (a batch in flight finishes first).</summary>
+    private static async Task ScoreLoopAsync(RadarDb db, ClaudeScorer scorer, List<JobEntity> toScore,
+        IProgress<string>? log, IProgress<JobEntity>? onJob, CancellationToken ct)
+    {
+        int done = 0;
+        for (int start = 0; start < toScore.Count; start += ScoreBatchSize)
+        {
+            ct.ThrowIfCancellationRequested();
+            var batch = toScore.GetRange(start, Math.Min(ScoreBatchSize, toScore.Count - start));
+            var results = await scorer.ScoreBatchAsync(batch, ct);
+            for (int k = 0; k < batch.Count; k++)
+            {
+                var j = batch[k];
+                var res = k < results.Count ? results[k] : null;
+                if (res is not null)
+                {
+                    j.AiScore = res.Score; j.AiVerdict = res.Verdict;
+                    j.AiReasons = JsonSerializer.Serialize(res.Reasons);
+                    j.AiRedFlags = JsonSerializer.Serialize(res.RedFlags);
+                }
+                else j.AiScore = j.PreScore;
+                log?.Report($"  [{j.AiScore,3}] {j.Title} @ {j.Company}  ({++done}/{toScore.Count})");
+            }
+            await db.SaveChangesAsync(ct);
+            foreach (var j in batch) onJob?.Report(j);
+        }
+    }
+
     public static async Task<PipelineResult> RunAsync(
         UserProfile profile, AppConfig cfg, string root, bool useAi,
         IProgress<string>? log = null, bool demo = false,
@@ -80,7 +117,7 @@ public static class Pipeline
         if (cfg.Apify.Enabled)
         {
             var apify = await ApifyClient.FetchLinkedInJobsAsync(
-                cfg.Apify, profile.SearchQueries(), profile.Locations.FirstOrDefault() ?? "", log, ct);
+                cfg.Apify, profile.RoleQueries(), profile.Locations.FirstOrDefault() ?? "", log, ct);
             raw.AddRange(apify);
         }
 
@@ -88,9 +125,15 @@ public static class Pipeline
         if (cfg.JSearch.Enabled)
         {
             var jsearch = await JSearchClient.FetchJobsAsync(
-                cfg.JSearch, profile.SearchQueries(), profile.Locations.FirstOrDefault() ?? "", log, ct);
+                cfg.JSearch, profile.RoleQueries(), profile.Locations.FirstOrDefault() ?? "", log, ct);
             raw.AddRange(jsearch);
         }
+
+        // Optional keyless remote-jobs sources (free, no key) — Jobicy and Himalayas.
+        if (cfg.Jobicy.Enabled)
+            raw.AddRange(await JobicyClient.FetchJobsAsync(cfg.Jobicy, log, ct));
+        if (cfg.Himalayas.Enabled)
+            raw.AddRange(await HimalayasClient.FetchJobsAsync(cfg.Himalayas, log, ct));
 
         // The SQLite cache has no migrations; if the entity schema changed, recreate it.
         string dbPath = R(cfg.DbPath);
@@ -104,11 +147,17 @@ public static class Pipeline
         try { File.WriteAllText(marker, SchemaVersion); } catch { }
 
         int added = 0;
+        // Dedupe within THIS batch too: AnyAsync only sees rows already in the DB, but SaveChanges runs once
+        // at the end — so two raw jobs sharing a key (same URL across sources, or Himalayas pagination overlap)
+        // would both be added and then violate the unique Key index. Track keys added this run.
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var r in raw)
         {
             ct.ThrowIfCancellationRequested();
             string key = (string.IsNullOrWhiteSpace(r.Url) ? $"{r.Title}|{r.Company}" : r.Url).Trim().ToLowerInvariant();
-            if (await db.Jobs.AnyAsync(x => x.Key == key, ct)) continue;
+            if (string.IsNullOrWhiteSpace(key) || key == "|") continue;   // nothing to dedupe/identify on
+            if (!seenKeys.Add(key)) continue;                              // duplicate within this batch
+            if (await db.Jobs.AnyAsync(x => x.Key == key, ct)) continue;   // already persisted from a prior run
 
             var e = new JobEntity
             {
@@ -166,22 +215,7 @@ public static class Pipeline
                 ? Loc.Instance.F("engine.local", string.IsNullOrWhiteSpace(cfg.Claude.Model) ? "OpenAI-compatible" : cfg.Claude.Model)
                 : Loc.Instance.T("engine.claude");
             L(Loc.Instance.F("scoring.with", toScore.Count, engine));
-            int i = 0;
-            foreach (var j in toScore)
-            {
-                ct.ThrowIfCancellationRequested();
-                var res = await scorer.ScoreAsync(j);
-                if (res is not null)
-                {
-                    j.AiScore = res.Score; j.AiVerdict = res.Verdict;
-                    j.AiReasons = JsonSerializer.Serialize(res.Reasons);
-                    j.AiRedFlags = JsonSerializer.Serialize(res.RedFlags);
-                }
-                else j.AiScore = j.PreScore;
-                await db.SaveChangesAsync(ct);
-                L($"  [{j.AiScore,3}] {j.Title} @ {j.Company}  ({++i}/{toScore.Count})");
-                onJob?.Report(j); // stream the freshly-scored job
-            }
+            await ScoreLoopAsync(db, scorer, toScore, log, onJob, ct);
         }
 
         // allRelevant holds the same tracked entities, so Ai scores set above are reflected here.
@@ -255,22 +289,7 @@ public static class Pipeline
         int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
         var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
         L(Loc.Instance.F("pipe.rescoring", toScore.Count));
-        int i = 0;
-        foreach (var j in toScore)
-        {
-            ct.ThrowIfCancellationRequested();
-            var res = await scorer.ScoreAsync(j);
-            if (res is not null)
-            {
-                j.AiScore = res.Score; j.AiVerdict = res.Verdict;
-                j.AiReasons = JsonSerializer.Serialize(res.Reasons);
-                j.AiRedFlags = JsonSerializer.Serialize(res.RedFlags);
-            }
-            else j.AiScore = j.PreScore;
-            await db.SaveChangesAsync(ct);
-            L($"  [{j.AiScore,3}] {j.Title} @ {j.Company}  ({++i}/{toScore.Count})");
-            onJob?.Report(j);
-        }
+        await ScoreLoopAsync(db, scorer, toScore, log, onJob, ct);
 
         var ranked = allRelevant.OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt).ToList();
         return new PipelineResult(ranked, ranked.Count, false);
@@ -307,22 +326,7 @@ public static class Pipeline
             int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
             var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
             L(Loc.Instance.F("pipe.rescoring", toScore.Count));
-            int i = 0;
-            foreach (var j in toScore)
-            {
-                ct.ThrowIfCancellationRequested();
-                var res = await scorer.ScoreAsync(j);
-                if (res is not null)
-                {
-                    j.AiScore = res.Score; j.AiVerdict = res.Verdict;
-                    j.AiReasons = JsonSerializer.Serialize(res.Reasons);
-                    j.AiRedFlags = JsonSerializer.Serialize(res.RedFlags);
-                }
-                else j.AiScore = j.PreScore;
-                await db.SaveChangesAsync(ct);
-                L($"  [{j.AiScore,3}] {j.Title} @ {j.Company}  ({++i}/{toScore.Count})");
-                onJob?.Report(j);
-            }
+            await ScoreLoopAsync(db, scorer, toScore, log, onJob, ct);
         }
 
         var ranked = allRelevant.OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt).ToList();
@@ -338,7 +342,7 @@ public static class Pipeline
                 ? (JsonNode.Parse(File.ReadAllText(cfgPath)) as JsonObject ?? new JsonObject())
                 : new JsonObject();
 
-            root["queries"] = new JsonArray(profile.SearchQueries().Select(q => JsonValue.Create(q)).ToArray());
+            root["queries"] = new JsonArray(profile.RoleQueries().Select(q => JsonValue.Create(q)).ToArray());
             root["location"] = profile.Locations.FirstOrDefault() ?? "";
 
             // Tech-only boards only make sense for tech profiles.
@@ -349,7 +353,7 @@ public static class Pipeline
             if (root["adzuna"] is null) root["adzuna"] = new JsonObject { ["appId"] = "", ["appKey"] = "", ["country"] = "pt" };
 
             File.WriteAllText(cfgPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            log?.Report($"Pesquisa: {string.Join(", ", profile.SearchQueries())}");
+            log?.Report($"Pesquisa: {string.Join(", ", profile.RoleQueries())}");
         }
         catch (Exception ex) { log?.Report($"(aviso) não consegui gerar a config do fetcher: {ex.Message}"); }
     }

@@ -27,12 +27,17 @@ ui-settings.json
 apify-settings.json
 # JSearch connector settings — contains a secret RapidAPI key (machine-local)
 jsearch-settings.json
+# Keyless connector toggles (machine-local)
+jobicy-settings.json
+himalayas-settings.json
 # saved career plan (built from the personal profile, machine-local)
 career-plan.json
 # persisted reasoning transcript for the saved plan (machine-local)
 career-plan.reasoning.txt
 # short-lived career-research cache (machine-local)
 career-research.json
+# per-company employer-health cache (machine-local)
+company-reports.json
 
 # app / dev scratch
 app-err.log

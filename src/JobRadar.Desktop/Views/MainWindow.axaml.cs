@@ -19,6 +19,7 @@ public partial class MainWindow : Window
             if (DataContext is MainViewModel vm)
             {
                 vm.ConfirmCostAsync = ConfirmApifyCostAsync;
+                vm.ConfirmResearchAllAsync = ConfirmResearchAllAsync;
                 vm.ConfirmRemoveAsync = ConfirmRemoveModelAsync;
                 vm.ConfirmLeaveSettingsAsync = ConfirmLeaveSettingsAsync;
                 vm.ConfirmDeleteJobsAsync = ConfirmDeleteJobsAsync;
@@ -124,6 +125,20 @@ public partial class MainWindow : Window
         {
             Title = JobRadar.Loc.Instance.T("dlg.cost.title"),
             Content = JobRadar.Loc.Instance.T("dlg.cost.body"),
+            PrimaryButtonText = JobRadar.Loc.Instance.T("dlg.continue"),
+            CloseButtonText = JobRadar.Loc.Instance.T("dlg.cancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        return await dlg.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    /// <summary>Confirmation before researching a batch of companies (N model calls).</summary>
+    private async Task<bool> ConfirmResearchAllAsync(int count)
+    {
+        var dlg = new ContentDialog
+        {
+            Title = JobRadar.Loc.Instance.T("dlg.researchAll.title"),
+            Content = JobRadar.Loc.Instance.F("dlg.researchAll.body", count),
             PrimaryButtonText = JobRadar.Loc.Instance.T("dlg.continue"),
             CloseButtonText = JobRadar.Loc.Instance.T("dlg.cancel"),
             DefaultButton = ContentDialogButton.Close,

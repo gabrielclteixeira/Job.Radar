@@ -71,6 +71,17 @@ public class UserProfile
         return cleaned.Count > 0 ? cleaned : new List<string> { "software developer" };
     }
 
+    /// <summary>Role-focused queries for the job FETCHERS — the candidate's job TITLES only (not loose skills or
+    /// the broad field), so sources return the target role rather than anything that merely mentions a skill.
+    /// Falls back to <see cref="SearchQueries"/> when no titles are set. (CareerPlan research still uses the
+    /// broader SearchQueries on purpose.)</summary>
+    public List<string> RoleQueries()
+    {
+        var titles = JobTitles.Select(s => s.Trim()).Where(s => s.Length > 1)
+                              .Distinct(StringComparer.OrdinalIgnoreCase).Take(4).ToList();
+        return titles.Count > 0 ? titles : SearchQueries();
+    }
+
     private static readonly string[] TechHints =
         { "software", "developer", "engineer", "programmer", ".net", "c#", "golang", " go", "java", "python",
           "javascript", "typescript", "data", "devops", "frontend", "backend", "full stack", "cloud", "qa", "sre" };
