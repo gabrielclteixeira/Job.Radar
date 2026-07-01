@@ -30,10 +30,10 @@ public static class LlmClient
         return s.Length > 200 ? s[..200] + "…" : s;
     }
 
-    public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, CancellationToken ct = default)
+    public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, CancellationToken ct = default, bool json = false)
         => (cfg.Provider?.Trim().ToLowerInvariant()) switch
         {
-            "openai" or "local" or "http" => OpenAiAsync(cfg, prompt, ct),
+            "openai" or "local" or "http" => OpenAiAsync(cfg, prompt, json, ct),
             _ => ClaudeCliAsync(cfg, prompt, ct),
         };
 
@@ -44,10 +44,10 @@ public static class LlmClient
     /// what the model is reasoning instead of a bare spinner. The return value is still the final answer text.
     /// For the Claude CLI (no token stream in JSON mode) it falls back to the non-streaming call.
     /// </summary>
-    public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, IProgress<string>? onReasoning, CancellationToken ct = default)
+    public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, IProgress<string>? onReasoning, CancellationToken ct = default, bool json = false)
         => (onReasoning is not null && (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http")
-            ? OpenAiStreamingAsync(cfg, prompt, onReasoning, ct)
-            : CompleteAsync(cfg, prompt, ct);
+            ? OpenAiStreamingAsync(cfg, prompt, onReasoning, json, ct)
+            : CompleteAsync(cfg, prompt, ct, json);
 
     /// <summary>Runs `claude -p &lt;prompt&gt; --output-format json` and unwraps the "result" envelope.</summary>
     private static async Task<string?> ClaudeCliAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
@@ -267,7 +267,7 @@ public static class LlmClient
     }
 
     /// <summary>POSTs to an OpenAI-compatible chat-completions endpoint and returns the message content.</summary>
-    private static async Task<string?> OpenAiAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
+    private static async Task<string?> OpenAiAsync(ClaudeConfig cfg, string prompt, bool jsonMode, CancellationToken ct)
     {
         int cap = cfg.MaxTokens > 0 ? cfg.MaxTokens : 4096;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -277,16 +277,20 @@ public static class LlmClient
             { LastError = "no base URL / model set"; return null; }
             string url = cfg.BaseUrl.TrimEnd('/') + "/chat/completions";
 
-            var body = new
+            var body = new Dictionary<string, object?>
             {
-                model = cfg.Model,
-                messages = new[] { new { role = "user", content = prompt } },
-                stream = false,
-                temperature = 0,
+                ["model"] = cfg.Model,
+                ["messages"] = new[] { new { role = "user", content = prompt } },
+                ["stream"] = false,
+                ["temperature"] = 0,
                 // Give reasoning models (Gemma 4, Qwen3, DeepSeek-R1) room to emit the answer AFTER thinking —
                 // without a cap they often spend the budget reasoning and return empty/truncated content. User-tunable.
-                max_tokens = cap,
+                ["max_tokens"] = cap,
             };
+            // Constrain output to a syntactically-valid JSON object (standard OpenAI field, honoured by Ollama,
+            // LM Studio and llama.cpp) so weak local models can't reply with prose/markdown instead of the object
+            // we parse. Opt-in — only JSON-expecting callers set it.
+            if (jsonMode) body["response_format"] = new { type = "json_object" };
             using var req = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
@@ -353,7 +357,7 @@ public static class LlmClient
 
     /// <summary>Streamed sibling of <see cref="OpenAiAsync"/>: sets <c>stream:true</c>, parses the SSE deltas,
     /// forwards reasoning chunks to <paramref name="onReasoning"/>, and returns the assembled answer.</summary>
-    private static async Task<string?> OpenAiStreamingAsync(ClaudeConfig cfg, string prompt, IProgress<string> onReasoning, CancellationToken ct)
+    private static async Task<string?> OpenAiStreamingAsync(ClaudeConfig cfg, string prompt, IProgress<string> onReasoning, bool json, CancellationToken ct)
     {
         int cap = cfg.MaxTokens > 0 ? cfg.MaxTokens : 4096;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -363,14 +367,15 @@ public static class LlmClient
             { LastError = "no base URL / model set"; return null; }
             string url = cfg.BaseUrl.TrimEnd('/') + "/chat/completions";
 
-            var body = new
+            var body = new Dictionary<string, object?>
             {
-                model = cfg.Model,
-                messages = new[] { new { role = "user", content = prompt } },
-                stream = true,
-                temperature = 0,
-                max_tokens = cap,
+                ["model"] = cfg.Model,
+                ["messages"] = new[] { new { role = "user", content = prompt } },
+                ["stream"] = true,
+                ["temperature"] = 0,
+                ["max_tokens"] = cap,
             };
+            if (json) body["response_format"] = new { type = "json_object" };
             using var req = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),

@@ -62,7 +62,7 @@ Role: {role} · {cand} · location {location ?? "—"}
 == SEARCH RESULTS ==
 {snippets}";
 
-        string? text = await LlmClient.CompleteAsync(llm, prompt, ct);
+        string? text = await LlmClient.CompleteAsync(llm, prompt, ct, json: true);
         if (string.IsNullOrWhiteSpace(text))
         {
             string msg = Loc.Instance.T("research.noModel");
@@ -187,7 +187,7 @@ Role: {role} · {cand}
 == SEARCH RESULTS ==
 {snippets}";
 
-        string? text = await LlmClient.CompleteAsync(llm, prompt, ct);
+        string? text = await LlmClient.CompleteAsync(llm, prompt, ct, json: true);
         if (string.IsNullOrWhiteSpace(text))
         {
             string msg = Loc.Instance.T("research.noModel");
