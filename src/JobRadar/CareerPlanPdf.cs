@@ -11,8 +11,10 @@ namespace JobRadar;
 /// </summary>
 public static class CareerPlanPdf
 {
-    /// <summary>Builds the plan as a self-contained HTML document in the app's violet style.</summary>
-    public static string BuildHtml(CareerPlanResult plan, UserProfile p)
+    /// <summary>Builds the plan as a self-contained HTML document in the app's violet style.
+    /// <paramref name="withProgress"/> adds the user's checklist progress bar (opt-in — the PDF is normally the
+    /// shareable, recruiter-facing snapshot; personal progress is included only when the user asks).</summary>
+    public static string BuildHtml(CareerPlanResult plan, UserProfile p, bool withProgress = false)
     {
         string E(string? s) => WebUtility.HtmlEncode(s ?? "");
         string name = string.IsNullOrWhiteSpace(p.Name) ? "Career Plan" : p.Name;
@@ -48,9 +50,11 @@ ul{{margin:0;padding-left:18px;}}li{{margin-bottom:3px;color:#3c3a4b;}}
 .step .h{{flex:none;width:78px;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);padding-top:1px;}}
 .step .t{{font-weight:600;}}.step .d{{font-size:12px;color:#4a4956;}}
 .foot{{margin-top:26px;padding-top:10px;border-top:1px solid var(--line);font-family:var(--mono);font-size:9.5px;color:var(--muted);}}
-.src{{font-family:var(--mono);font-size:10px;color:var(--muted);}}.src li{{margin-bottom:2px;}}
+.src{{font-family:var(--mono);font-size:10px;color:var(--muted);}}.src li{{margin-bottom:2px;word-break:break-all;}}.src a{{color:var(--muted);text-decoration:none;}}
 .revised{{display:inline-block;background:var(--signal);color:#fff;border-radius:6px;padding:1px 8px;font-size:10px;font-weight:700;font-family:var(--mono);margin-left:9px;vertical-align:middle;}}
 .caveat{{font-size:11px;color:var(--muted);font-style:italic;margin:9px 0 0;}}
+.prog{{margin:14px 0 0;}}.prog .lbl{{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}}
+.prog .track{{height:7px;background:var(--accent2);border-radius:4px;overflow:hidden;}}.prog .fill{{height:100%;background:var(--accent);border-radius:4px;}}
 .crit{{border:1px solid #C2410C;border-radius:9px;padding:12px 15px;margin-top:18px;break-inside:avoid;}}
 .crit h2{{color:#C2410C;margin-top:0;}}
 .crititem{{margin-bottom:9px;}}.crititem .c{{font-weight:700;color:var(--ink);}}
@@ -70,6 +74,9 @@ ul{{margin:0;padding-left:18px;}}li{{margin-bottom:3px;color:#3c3a4b;}}
 
         if (plan.HasCaveat)
             sb.Append($@"<div class=""caveat"">{E(plan.CritiqueCaveat)}</div>");
+
+        if (withProgress && plan.HasTrackable)
+            sb.Append($@"<div class=""prog""><div class=""lbl""><span>{E(Loc.Instance.T("improve.progress"))}</span><span>{plan.DoneCount}/{plan.TrackableCount} · {plan.ProgressPercent}%</span></div><div class=""track""><div class=""fill"" style=""width:{plan.ProgressPercent}%;""></div></div></div>");
 
         if (plan.HasStrengths)
         {
@@ -151,7 +158,7 @@ ul{{margin:0;padding-left:18px;}}li{{margin-bottom:3px;color:#3c3a4b;}}
         if (plan.HasSources)
         {
             sb.Append(@"<section><h2>Sources</h2><ul class=""src"">");
-            foreach (var src in plan.Sources) sb.Append($"<li>[{src.N}] {E(src.Host)} — {E(src.Url)}</li>");
+            foreach (var src in plan.Sources) sb.Append($@"<li>[{src.N}] {E(src.Host)} — <a href=""{E(src.Url)}"">{E(src.Url)}</a></li>");
             sb.Append("</ul></section>");
         }
 
@@ -162,7 +169,7 @@ ul{{margin:0;padding-left:18px;}}li{{margin-bottom:3px;color:#3c3a4b;}}
 
     /// <summary>Writes the plan to <paramref name="outDir"/> as HTML and (if Edge is available) PDF.
     /// Returns the path to open (PDF when produced, otherwise the HTML), or null on failure.</summary>
-    public static string? Export(CareerPlanResult plan, UserProfile p, string outDir, string stamp)
+    public static string? Export(CareerPlanResult plan, UserProfile p, string outDir, string stamp, bool withProgress = false)
     {
         try
         {
@@ -171,7 +178,7 @@ ul{{margin:0;padding-left:18px;}}li{{margin-bottom:3px;color:#3c3a4b;}}
                 .Split(Path.GetInvalidFileNameChars())).Replace(' ', '_');
             string html = Path.Combine(outDir, $"{safeName}-CareerPlan-{stamp}.html");
             string pdf = Path.Combine(outDir, $"{safeName}-CareerPlan-{stamp}.pdf");
-            File.WriteAllText(html, BuildHtml(plan, p), new UTF8Encoding(false));
+            File.WriteAllText(html, BuildHtml(plan, p, withProgress), new UTF8Encoding(false));
 
             string? edge = Reports.FindEdge();
             if (edge is not null && Reports.WritePdf(html, pdf, edge) && File.Exists(pdf))

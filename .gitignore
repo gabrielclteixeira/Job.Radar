@@ -32,6 +32,10 @@ jobicy-settings.json
 himalayas-settings.json
 # saved career plan (built from the personal profile, machine-local)
 career-plan.json
+# growth history — archived past plans (machine-local)
+career-plan-history.json
+# resume cache — completed synthesis parts of an interrupted run (machine-local)
+career-plan-parts.json
 # persisted reasoning transcript for the saved plan (machine-local)
 career-plan.reasoning.txt
 # short-lived career-research cache (machine-local)

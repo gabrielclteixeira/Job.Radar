@@ -20,6 +20,8 @@ public partial class MainViewModel : ObservableObject
     private readonly string _jobicySettingsPath;
     private readonly string _himalayasSettingsPath;
     private readonly string _planPath;
+    private readonly string _planHistoryPath;
+    private readonly string _planPartsPath;
     private readonly string _planReasoningPath;
     private readonly string _careerResearchPath;
     private readonly string _companyCachePath;
@@ -42,6 +44,8 @@ public partial class MainViewModel : ObservableObject
         _jobicySettingsPath = Path.Combine(_root, "jobicy-settings.json");
         _himalayasSettingsPath = Path.Combine(_root, "himalayas-settings.json");
         _planPath = Path.Combine(_root, "career-plan.json");
+        _planHistoryPath = Path.Combine(_root, "career-plan-history.json");
+        _planPartsPath = Path.Combine(_root, "career-plan-parts.json");
         _planReasoningPath = Path.Combine(_root, "career-plan.reasoning.txt");
         _careerResearchPath = Path.Combine(_root, "career-research.json");
         _companyCachePath = Path.Combine(_root, "company-reports.json");
@@ -56,6 +60,7 @@ public partial class MainViewModel : ObservableObject
         ApplyTheme();
         LoadSavedProfile();
         LoadPlan();
+        LoadPlanHistory();
         _companyCache = CompanyCache.Load(_companyCachePath);
         _langInitialised = true;
     }
@@ -94,7 +99,7 @@ public partial class MainViewModel : ObservableObject
                 if (_all.Count == 0 && !IsScoring) _ = ViewJobs();
                 else ShowOnly(results: true);
                 break;
-            case "improve": ShowOnly(improve: true); break;  // career-growth area
+            case "improve": ShowOnly(improve: true); _ = RefreshPlanGroundingAsync(); break;  // career-growth area
             case "researcher": OpenResearcher(); break;       // employer-health signals across matched jobs
             case "settings": OpenSettings(); break;            // loads settings fields + shows
             default: ShowOnly(welcome: true); break;          // home
@@ -204,6 +209,8 @@ public partial class MainViewModel : ObservableObject
             }
             if (doc.RootElement.TryGetProperty("critique", out var cm) && cm.TryGetInt32(out var cmv))
                 _critiqueModeIndex = Math.Clamp(cmv, 0, 2);
+            if (doc.RootElement.TryGetProperty("pdfProgress", out var pp) && pp.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                _includeProgressInPdf = pp.GetBoolean();
         }
         catch { /* ignore */ }
     }
@@ -213,7 +220,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(
-                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)], critique = CritiqueModeIndex },
+                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)], critique = CritiqueModeIndex, pdfProgress = IncludeProgressInPdf },
                 new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* best-effort */ }
@@ -313,25 +320,114 @@ public partial class MainViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(HasPlan)); OnPropertyChanged(nameof(ShowGenerateIntro));
         NotifyCritique();
+        SubscribePlanItems(value);   // keep progress live + persist as the user ticks items off
+        NotifyProgress();
     }
-    partial void OnIsPlanningChanged(bool value) => OnPropertyChanged(nameof(ShowGenerateIntro));
+    partial void OnIsPlanningChanged(bool value)
+    { OnPropertyChanged(nameof(ShowGenerateIntro)); OnPropertyChanged(nameof(CanPausePlan)); OnPropertyChanged(nameof(CanResumePlan)); }
+    partial void OnIsCritiquingChanged(bool value) => OnPropertyChanged(nameof(CanPausePlan));
     partial void OnCritiqueModeIndexChanged(int value) => SaveUiSettings();
 
-    [RelayCommand]
-    private async Task GeneratePlan()
+    // ---- living document: checklist progress, plan-to-plan diff, growth history ----
+    public bool HasPlanProgress => Plan?.HasTrackable == true;
+    public string PlanProgressText => Plan is { HasTrackable: true } p ? $"{p.DoneCount}/{p.TrackableCount}" : "";
+    public int PlanProgressPercent => Plan?.ProgressPercent ?? 0;
+    public bool PlanComplete => Plan?.IsComplete == true;
+    private void NotifyProgress()
     {
-        if (IsPlanning) return;
-        IsPlanning = true; PlanError = ""; Plan = null;
-        PlanStatus = L("plan.preparing");
+        OnPropertyChanged(nameof(HasPlanProgress)); OnPropertyChanged(nameof(PlanProgressText));
+        OnPropertyChanged(nameof(PlanProgressPercent)); OnPropertyChanged(nameof(PlanComplete));
+    }
+
+    // The "what changed since last time" strip — recomputed on every regenerate, empty on a first plan.
+    [ObservableProperty] private PlanDiff? _planChanges;
+    public bool HasPlanChanges => PlanChanges?.HasChanges == true && HasPlan;
+    partial void OnPlanChangesChanged(PlanDiff? value) => OnPropertyChanged(nameof(HasPlanChanges));
+
+    // Export choice: whether the shared PDF carries the user's personal checklist progress (default off).
+    [ObservableProperty] private bool _includeProgressInPdf;
+    partial void OnIncludeProgressInPdfChanged(bool value) => SaveUiSettings();
+
+    public ObservableCollection<PlanSnapshot> PlanHistory { get; } = new();
+    public bool HasPlanHistory => PlanHistory.Count > 0;
+    private readonly List<PlanSnapshot> _planHistoryStore = new();
+    private const int PlanHistoryCap = 24;
+
+    /// <summary>Wire each checklist item so ticking it persists the plan and refreshes the progress bar.</summary>
+    private void SubscribePlanItems(CareerPlanResult? plan)
+    {
+        if (plan is null) return;
+        foreach (var g in plan.SkillGaps) { g.PropertyChanged -= OnPlanItemChanged; g.PropertyChanged += OnPlanItemChanged; }
+        foreach (var s in plan.Steps) { s.PropertyChanged -= OnPlanItemChanged; s.PropertyChanged += OnPlanItemChanged; }
+    }
+    private void OnPlanItemChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(SkillGap.Done)) return;
+        NotifyProgress();
+        SavePlan();
+    }
+
+    // ---- generation + pause/resume ----
+    private CancellationTokenSource? _planCts;
+    [ObservableProperty] private bool _planPaused;   // a generation was paused (cancelled mid-run; parts persisted)
+    public bool CanPausePlan => IsPlanning || IsCritiquing;
+    public bool CanResumePlan => PlanPaused && !IsPlanning && !IsCritiquing;
+    partial void OnPlanPausedChanged(bool value) => OnPropertyChanged(nameof(CanResumePlan));
+
+    // Run context preserved across a pause so resume feeds the model the SAME inputs → the parts cache matches
+    // and the living-document diff still works.
+    private PlanSnapshot? _pendingPrevSnap;
+    private HashSet<string> _pendingPrevDoneKeys = new(StringComparer.Ordinal);
+    private string? _pendingCompletedContext;
+    private bool _pendingActive;
+
+    [RelayCommand] private void PausePlan() => _planCts?.Cancel();
+    [RelayCommand] private Task GeneratePlan() => RunPlanAsync(resume: false);
+    [RelayCommand] private Task ResumePlan() => RunPlanAsync(resume: true);
+
+    private async Task RunPlanAsync(bool resume)
+    {
+        if (IsPlanning || IsCritiquing) return;
+
+        // Ground the plan in the user's own scored jobs (strong-fit only — poisoning-aware) and refresh the panel.
+        var signal = await BuildMarketSignalAsync();
+
+        if (resume && _pendingActive)
+        {
+            // keep the captured context so the parts cache + diff line up with the interrupted run
+        }
+        else
+        {
+            // Fresh start: capture the plan being replaced (for carry-over of ticks, feed-forward, and the diff).
+            var prevPlan = Plan;
+            _pendingPrevSnap = prevPlan is not null ? PlanSnapshot.From(prevPlan) : null;
+            _pendingPrevDoneKeys = new HashSet<string>(
+                (prevPlan?.DoneLabels ?? Enumerable.Empty<string>()).Select(PlanDiff.Key), StringComparer.Ordinal);
+            _pendingCompletedContext = prevPlan is not null && prevPlan.DoneLabels.Any()
+                ? string.Join("\n", prevPlan.DoneLabels.Select(x => "- " + x)) : null;
+            _pendingActive = true;
+        }
+        var prevSnap = _pendingPrevSnap;
+        var prevDoneKeys = _pendingPrevDoneKeys;
+        string? completedContext = _pendingCompletedContext;
+        void CarryOverDone(CareerPlanResult target)
+        {
+            if (prevDoneKeys.Count == 0) return;
+            foreach (var g in target.SkillGaps) if (prevDoneKeys.Contains(PlanDiff.Key(g.Skill))) g.Done = true;
+            foreach (var s in target.Steps) if (prevDoneKeys.Contains(PlanDiff.Key(s.Title))) s.Done = true;
+        }
+
+        IsPlanning = true; PlanError = ""; Plan = null; PlanChanges = null; PlanPaused = false;
+        PlanStatus = L(resume ? "plan.resuming" : "plan.preparing");
         PlanReasoning = "";
-        Diag.Info($"plan: generate start (engine={_cfg.Claude.Provider} model={_cfg.Claude.Model} max_tokens={_cfg.Claude.MaxTokens} critique={(CritiqueMode)CritiqueModeIndex})");
-        // `progress` drives the status line AND seeds the transcript with a phase header; `reasoning` appends the
-        // model's streamed thinking. Both marshalled to the UI thread. `progress` also mirrors phases to the log.
+        _planCts = new CancellationTokenSource();
+        string market = signal.HasData ? signal.ToMarketContext() : MarketContext();
+        Diag.Info($"plan: {(resume ? "resume" : "generate")} start (engine={_cfg.Claude.Provider} model={_cfg.Claude.Model} critique={(CritiqueMode)CritiqueModeIndex} done_carried={prevDoneKeys.Count} strongJobs={signal.StrongCount})");
         var progress = new Progress<string>(m => { Diag.Info("plan: " + m); Dispatcher.UIThread.Post(() => { PlanStatus = m; PlanReasoning += $"\n▸ {m}\n"; }); });
         var reasoning = new Progress<string>(d => Dispatcher.UIThread.Post(() => PlanReasoning += d));
         try
         {
-            var (result, error) = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, MarketContext(), _careerResearchPath, progress, reasoning);
+            var (result, error) = await CareerPlan.GenerateAsync(_cfg.Claude, _profile, market, _careerResearchPath, progress, reasoning, completedContext, _planPartsPath, _planCts.Token);
             if (result is null)
             {
                 PlanError = string.IsNullOrWhiteSpace(error) ? L("plan.error.insufficient") : error;
@@ -339,18 +435,107 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
-            Plan = result; SavePlan();
+            CarryOverDone(result); AnnotateGaps(result, signal);
+            Plan = result; SavePlan(); BuildGrounding(result, signal);
             // Show the plan immediately, then red-team it (the plan stays visible with a slim indicator).
             IsPlanning = false; IsCritiquing = true;
-            var critiqued = await CareerPlan.CritiqueAsync(_cfg.Claude, _profile, result, (CritiqueMode)CritiqueModeIndex, progress, reasoning);
-            Plan = critiqued;   // new instance in Revise mode; same instance otherwise
-            NotifyCritique();   // covers the same-instance case (critique attached in place)
-            SavePlan();
-            Diag.Info("plan: done" + (critiqued.Revised ? " (revised)" : ""));
+            var critiqued = await CareerPlan.CritiqueAsync(_cfg.Claude, _profile, result, (CritiqueMode)CritiqueModeIndex, progress, reasoning, _planCts.Token);
+            CarryOverDone(critiqued); AnnotateGaps(critiqued, signal);   // Revise may return a fresh instance
+            Plan = critiqued; NotifyCritique(); SavePlan(); BuildGrounding(critiqued, signal);
+
+            // Archive the previous plan, surface what changed, and finish the run (clear resume state + parts cache).
+            PlanChanges = PlanDiff.Between(prevSnap, critiqued);
+            if (prevSnap is not null) ArchiveSnapshot(prevSnap);
+            _pendingActive = false; _pendingPrevSnap = null; _pendingCompletedContext = null;
+            _pendingPrevDoneKeys = new HashSet<string>(StringComparer.Ordinal);
+            CareerPlan.ClearParts(_planPartsPath);
+            Diag.Info("plan: done" + (critiqued.Revised ? " (revised)" : "") + (PlanChanges?.HasChanges == true ? " (changed)" : ""));
+        }
+        catch (OperationCanceledException)
+        {
+            PlanPaused = true; PlanStatus = L("plan.paused"); Diag.Info("plan: paused (resumable — completed parts kept)");
         }
         catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); Diag.Error("plan: generate threw", ex); }
         finally { IsPlanning = false; IsCritiquing = false; SaveReasoningRecord(); }
     }
+
+    // ---- grounding in the user's own jobs (Part B) + skills radar (Part C) ----
+    [ObservableProperty] private JobMarketSignal? _planMarket;
+    public bool HasDemand => PlanMarket?.HasData == true;
+    public bool DemandThin => PlanMarket?.Thin == true;
+    public string DemandHeader => PlanMarket is { HasData: true } m ? Loc.Instance.F("improve.demand.header", m.StrongCount, m.TotalCount) : "";
+    partial void OnPlanMarketChanged(JobMarketSignal? value)
+    { OnPropertyChanged(nameof(HasDemand)); OnPropertyChanged(nameof(DemandThin)); OnPropertyChanged(nameof(DemandHeader)); }
+
+    [ObservableProperty] private IReadOnlyList<Controls.SkillAxis>? _radarAxes;
+    public bool HasRadar => RadarAxes is { Count: >= 3 };
+    partial void OnRadarAxesChanged(IReadOnlyList<Controls.SkillAxis>? value) => OnPropertyChanged(nameof(HasRadar));
+
+    [ObservableProperty] private SkillGap? _focusGap;
+    public bool HasFocusGap => FocusGap is not null;
+    partial void OnFocusGapChanged(SkillGap? value) => OnPropertyChanged(nameof(HasFocusGap));
+
+    /// <summary>Analyse the scored-job corpus into a demand signal and publish it to the panel. Uses the loaded
+    /// jobs (`_all`) when present, else pulls the scored jobs straight from the cache DB — so Grow's grounding
+    /// works even when opened without first visiting Results. No cached jobs → empty signal → panel/radar hide.</summary>
+    private async Task<JobMarketSignal> BuildMarketSignalAsync(CancellationToken ct = default)
+    {
+        List<JobPosting> jobs;
+        if (_all.Count > 0)
+            jobs = _all.Select(v => new JobPosting(
+                v.Entity.Title ?? "", v.Entity.Description ?? "", v.Score, v.Company ?? "", v.Entity.Url ?? "")).ToList();
+        else
+        {
+            try
+            {
+                var res = await Pipeline.LoadCachedAsync(_cfg, _root, null, ct);
+                jobs = res.Jobs.Select(j => new JobPosting(
+                    j.Title ?? "", j.Description ?? "", j.FinalScore, j.Company ?? "", j.Url ?? "")).ToList();
+            }
+            catch { jobs = new(); }
+        }
+        var signal = JobMarket.Analyze(jobs, _profile);
+        PlanMarket = signal;
+        return signal;
+    }
+
+    /// <summary>Rebuild the demand panel + (if a plan is loaded) its grounding chips, radar and focus — e.g. when
+    /// the Grow view is opened after a restart.</summary>
+    private async Task RefreshPlanGroundingAsync()
+    {
+        var signal = await BuildMarketSignalAsync();
+        if (Plan is not null) { AnnotateGaps(Plan, signal); BuildGrounding(Plan, signal); }
+        else { RadarAxes = null; FocusGap = null; }
+    }
+
+    private static void AnnotateGaps(CareerPlanResult plan, JobMarketSignal signal)
+    {
+        foreach (var g in plan.SkillGaps) g.CorpusHits = signal.FitDelta(g.Skill);
+    }
+
+    /// <summary>Build the radar (top demanded skills you have + the plan's gaps you lack) and the "do one thing"
+    /// focus (the highest-grounded gap).</summary>
+    private void BuildGrounding(CareerPlanResult plan, JobMarketSignal signal)
+    {
+        // Skills you HAVE that recur in your matched jobs — these carry real demand data (both polygons non-zero).
+        var have = new List<Controls.SkillAxis>();
+        foreach (var d in signal.SkillDemand.Take(6))
+            have.Add(new Controls.SkillAxis(Shorten(d.Skill), d.Pct, d.IsCore ? 1.0 : 0.6));
+        // The plan's gaps you LACK — grounded demand from the corpus (0 for a web-only gap).
+        var gaps = new List<Controls.SkillAxis>();
+        foreach (var g in plan.SkillGaps.Take(3).Where(g => !string.IsNullOrWhiteSpace(g.Skill)))
+        {
+            double demand = signal.StrongCount > 0 ? (double)g.CorpusHits / signal.StrongCount : 0;
+            gaps.Add(new Controls.SkillAxis(Shorten(g.Skill), demand, 0.0));
+        }
+        var axes = have.Concat(gaps).ToList();
+        // Only render the radar when there's real demand to plot: at least a couple of skills you have that
+        // appear in your matched jobs. A gap-only radar (no strong-fit corpus) is all-zero and meaningless.
+        RadarAxes = (signal.HasData && have.Count >= 2 && axes.Count >= 3) ? axes : null;
+        FocusGap = plan.HasSkillGaps ? plan.SkillGaps.OrderByDescending(g => g.CorpusHits).First() : null;
+    }
+
+    private static string Shorten(string s) => s.Length > 16 ? s[..15] + "…" : s;
 
     [RelayCommand]
     private void OpenUrl(string? url)
@@ -390,6 +575,48 @@ public partial class MainViewModel : ObservableObject
         try { File.WriteAllText(_planPath, JsonSerializer.Serialize(Plan, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
         try { if (!string.IsNullOrWhiteSpace(PlanReasoning)) File.WriteAllText(_planReasoningPath, PlanReasoning); }
+        catch { /* best-effort */ }
+    }
+
+    // ---- growth history (each regenerate archives the plan it replaced) ----
+    private void LoadPlanHistory()
+    {
+        try
+        {
+            if (!File.Exists(_planHistoryPath)) return;
+            var list = JsonSerializer.Deserialize<List<PlanSnapshot>>(File.ReadAllText(_planHistoryPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (list is null) return;
+            _planHistoryStore.Clear();
+            _planHistoryStore.AddRange(list);
+            RefreshPlanHistory();
+        }
+        catch { /* ignore a bad history file */ }
+    }
+
+    private void ArchiveSnapshot(PlanSnapshot snap)
+    {
+        if (_isDemoProfile) return;
+        _planHistoryStore.Insert(0, snap);   // newest first
+        if (_planHistoryStore.Count > PlanHistoryCap) _planHistoryStore.RemoveRange(PlanHistoryCap, _planHistoryStore.Count - PlanHistoryCap);
+        RefreshPlanHistory();
+        try { File.WriteAllText(_planHistoryPath, JsonSerializer.Serialize(_planHistoryStore, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+    }
+
+    private void RefreshPlanHistory()
+    {
+        PlanHistory.Clear();
+        foreach (var s in _planHistoryStore) PlanHistory.Add(s);
+        OnPropertyChanged(nameof(HasPlanHistory));
+    }
+
+    [RelayCommand]
+    private void ClearPlanHistory()
+    {
+        _planHistoryStore.Clear();
+        RefreshPlanHistory();
+        try { if (File.Exists(_planHistoryPath)) File.Delete(_planHistoryPath); }
         catch { /* best-effort */ }
     }
 
@@ -1369,7 +1596,8 @@ public partial class MainViewModel : ObservableObject
         {
             string outDir = Path.Combine(_root, "output");
             string stamp = DateTime.Now.ToString("yyyy-MM-dd-HHmm");
-            string? path = await Task.Run(() => CareerPlanPdf.Export(Plan, _profile, outDir, stamp));
+            bool withProgress = IncludeProgressInPdf;
+            string? path = await Task.Run(() => CareerPlanPdf.Export(Plan, _profile, outDir, stamp, withProgress));
             if (path is not null)
             {
                 Status = Loc.Instance.F("plan.exported", path);

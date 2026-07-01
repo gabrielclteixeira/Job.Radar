@@ -27,11 +27,31 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   critiquing a rival tool, so it's honest) red-teams the plan for inflated salaries, over-optimism and
   contradictions, so the user calibrates trust. Three user-selectable depths: **Critique** (flag weak points),
   **Debate** (the author rebuts), **Debate + revise** (re-searches for real local data and rewrites the plan).
+- **Living document (Grow)** — the career plan is no longer a one-shot: skill gaps and next steps are a
+  **tickable checklist** with a progress bar, each regenerate **archives** the plan it replaces into a growth
+  **history** and shows a **"what changed"** strip (gaps closed/added, target roles added/dropped, which way the
+  salary bands moved), and completed items are **fed back** into the next generation so plans build forward
+  instead of repeating. Done-state and history persist across restarts (machine-local).
+- **Grounded Grow + skills radar + pause/resume** — the plan is now grounded in the user's **own scored jobs**:
+  a **demand panel** (strong-fit jobs only, ≥70) shows which skills recur across them with counts + the jobs
+  matching the target roles, each skill gap carries a **grounding chip** ("in N of your jobs" vs. a muted
+  "web-only" flag) so noisy/off-target jobs stay *visible* rather than silently baked in, and a **skills radar**
+  (custom-drawn, on-brand) plots the candidate's stack vs. that demand with a **"if you do one thing"** focus on
+  the highest-grounded gap. Generation is also **pausable and resumable**: cancel mid-run and resume without
+  losing work — completed synthesis parts are cached (keyed on the exact inputs) so resume reuses them and the
+  research, redoing only what's left.
 - **Reliable key-free web search** — search runs through **Jina Reader** (renders the SERP server-side, so it
   isn't blocked like a raw scrape), with the keyless Mojeek/DuckDuckGo scrape kept as a fallback; pages can be
   fetched and read in full to ground figures the snippets omit. Still no key, no setup.
 - **Local-model manager** — pick/manage the local model from the UI: detect the running OpenAI-compatible
-  runtime, list installed models, select the active one, and an in-app Ollama installer (streamed `/api/pull`).
+  runtime, list installed models, select the active one, and an in-app model installer (streamed Ollama
+  `/api/pull`). When no AI engine is reachable at all, a **one-click Ollama runtime install** downloads the
+  official `OllamaSetup.exe`, runs it silently (per-user, no admin), waits for the local server, then pulls a
+  machine-recommended model — closing the zero-touch loop without bloating our own installer.
+- **Reliable structured output on local models** — JSON-expecting calls (company research, etc.) request the
+  OpenAI-standard `response_format: json_object`, so weak local models can't reply with prose/markdown instead
+  of the object we parse; the split-synthesis career plan and salary-band cleanup keep local reasoning models
+  from truncating or leaking rationale into number fields.
 - **Live model browser** — search **Ollama** (scrapes ollama.com) and **LM Studio**'s catalog (the
   `lmstudio-community` Hugging Face org) live, with capability badges, sizes/quants and one-click install
   (Ollama pull · direct GGUF download into `~/.lmstudio/models`) with per-row progress. The installed list
@@ -75,16 +95,16 @@ A dedicated area to **create and improve a CV**, not just consume one.
 
 ### 2. Improvement — deepen it
 
-The career-plan area shipped (see above), now with adversarial self-critique. Next for it: **track progress
-over time** — save successive plans and surface what changed as the profile and market move, so the plan
-becomes a living document.
+The career-plan area shipped (see above): adversarial self-critique, a living-document loop, **corpus grounding
+and a skills radar** (all shipped). Remaining ideas: **real learning links per gap** (course/cert via search,
+with rough time/cost) and a couple of **generation constraints** (IC vs. management track, hours/week) that
+personalise the plan.
 
 ### 3. Pause / resume classification
 
-Let the user **pause an in-progress run** — scoring jobs or researching companies — and resume it later,
-without losing what's already done. Useful for long scans or to stop spending tokens mid-run. Already-scored
-jobs are persisted, so resuming should pick up where it left off; the work is a cancellation/pause control in
-the UI wired through the streaming pipeline (and the per-company research).
+Shipped for **scoring** and now for the **Grow plan** (cancel mid-run + resume reusing research and cached
+synthesis parts). Remaining: a **batch-level** pause for *company research* — today the per-company research is
+individually cancellable, but "Research all" has no single pause/resume across the batch.
 
 ### 4. Company Researcher — deepen it
 
@@ -110,8 +130,8 @@ Data Labs / Crunchbase) for users who want hard data instead of best-effort snip
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.
 - A non-tech sample dataset to showcase the field-agnostic scoring.
 - Saved searches and change alerts (new strong-fit jobs since last run).
-- **One-click installer for all platforms** — *(in place — needs a first tagged run to validate)*. A
-  `release` GitHub Actions workflow builds self-contained packages on each OS runner: Inno Setup `.exe`
-  (Windows), `.dmg` for Apple Silicon + Intel (macOS) and an `.AppImage` (Linux), and attaches them to the
-  GitHub Release on a `v*` tag. App state moved to a per-user data dir so installed (read-only) builds work.
-  Still unsigned (SmartScreen/Gatekeeper warnings); code signing + auto-update are the next polish.
+- **One-click installer for all platforms** — *(validated by tagged releases v0.5.0 → v0.6.1)*. A `release`
+  GitHub Actions workflow builds self-contained packages on each OS runner: Inno Setup `.exe` (Windows), `.dmg`
+  for Apple Silicon + Intel (macOS) and an `.AppImage` (Linux), and attaches them to the GitHub Release on a
+  `v*` tag. App state moved to a per-user data dir so installed (read-only) builds work. Still unsigned
+  (SmartScreen/Gatekeeper warnings); **code signing + auto-update** are the next polish.

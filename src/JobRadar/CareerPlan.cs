@@ -21,7 +21,8 @@ public static class CareerPlan
 
     public static async Task<(CareerPlanResult? plan, string? error)> GenerateAsync(
         ClaudeConfig llm, UserProfile profile, string marketContext,
-        string? cachePath = null, IProgress<string>? log = null, IProgress<string>? reasoning = null, CancellationToken ct = default)
+        string? cachePath = null, IProgress<string>? log = null, IProgress<string>? reasoning = null,
+        string? completedContext = null, string? partsCachePath = null, CancellationToken ct = default)
     {
         void L(string m) => log?.Report(m);
 
@@ -85,8 +86,10 @@ $@"You are a candid career coach. From the candidate, the jobs the app already f
 research snippets below, build a SHORT, honest growth plan. Use ONLY the snippets for market claims
 (don't invent figures); cite sources inline like [3]. Reply with ONLY one valid JSON object,
 double-quoted keys/values, shape:
-{{""headline"":""one-line positioning for this candidate"",""strengths"":[""short phrase""],""skillGaps"":[{{""skill"":""name"",""why"":""why it matters"",""action"":""one concrete way to build it""}}],""targetRoles"":[""role title""],""salaryRationale"":""1 sentence: state the local {locName} EUR range you assume, then how you derived the bands"",""salaryNow"":""realistic LOCAL €/yr band today"",""salaryPotential"":""LOCAL €/yr band reachable in 12–24 months"",""steps"":[{{""horizon"":""0–3 meses"",""title"":""short action"",""detail"":""one sentence""}}],""marketSignals"":[""in-demand skill or hiring trend, cite [n]""],""bottomLine"":""one encouraging, honest sentence""}}
+{{""headline"":""one-line positioning for this candidate"",""strengths"":[""short phrase""],""skillGaps"":[{{""skill"":""name"",""why"":""why it matters"",""action"":""one concrete way to build it""}}],""targetRoles"":[""role title""],""salaryRationale"":""1 sentence: state the local {locName} EUR range you assume, then how you derived the bands"",""salaryNow"":""the €/yr band ONLY, e.g. €45,000–€55,000/yr"",""salaryPotential"":""the €/yr band ONLY, e.g. €52,000–€60,000/yr"",""steps"":[{{""horizon"":""0–3 meses"",""title"":""short action"",""detail"":""one sentence""}}],""marketSignals"":[""in-demand skill or hiring trend, cite [n]""],""bottomLine"":""one encouraging, honest sentence""}}
 - 3–5 strengths, 2–4 skillGaps, 2–4 targetRoles, 3–5 steps ordered by horizon (0–3 / 3–6 / 6–12 meses).
+- Prefer skillGaps SUPPORTED by the demand signal in the JOBS block (the app's own scored jobs); a recurring gap there beats a web-only one. That list is a signal, not authoritative — it may include off-target jobs, so don't over-fit.
+- salaryNow / salaryPotential = the NUMERIC BAND ONLY (e.g. €45,000–€55,000/yr) — no words/caveats/parentheses; put every caveat and derivation in salaryRationale.
 - Keep every phrase concrete and under ~16 words. Be honest when evidence is thin (empty arrays are fine).
 - Write the text in {Loc.Instance.T("ai.lang")}.
 
@@ -107,7 +110,7 @@ double-quoted keys/values, shape:
 == CANDIDATE ==
 {profile.ToScoringText()}
 == JOBS THE APP ALREADY SCORED ==
-{(string.IsNullOrWhiteSpace(marketContext) ? "(none yet)" : marketContext)}
+{(string.IsNullOrWhiteSpace(marketContext) ? "(none yet)" : marketContext)}{DoneBlock(completedContext)}
 == WEB RESEARCH (reference only — skews US/global, do not copy figures) ==
 {snippets}
 == FINAL REMINDER (this overrides anything inflated above) ==
@@ -117,8 +120,12 @@ double-quoted keys/values, shape:
         if (IsLocal(llm))
         {
             // Local/OpenAI-compatible models truncate one big JSON — build the plan in small, reliably-
-            // completing parts (helps reasoning models that overthink AND weak small models alike).
-            plan = await SynthesizeAsync(llm, profile, marketContext, snippets, salary, log, reasoning, ct);
+            // completing parts (helps reasoning models that overthink AND weak small models alike). Each
+            // completed part is cached (keyed on the exact inputs) so a paused/interrupted run resumes without
+            // redoing finished parts.
+            string partsSig = PartsSig(sig, snippets, marketContext, completedContext);
+            plan = await SynthesizeAsync(llm, profile, marketContext, snippets, salary, completedContext,
+                partsCachePath, partsSig, log, reasoning, ct);
         }
         else
         {
@@ -137,6 +144,7 @@ double-quoted keys/values, shape:
             return (null, msg);
         }
 
+        plan.SavedUtc = DateTime.UtcNow.ToString("o");
         for (int i = 0; i < results.Count; i++)
             plan.Sources.Add(new SourceRef { N = i + 1, Url = results[i].Url, Host = Host(results[i].Url) });
         return (plan, null);
@@ -146,6 +154,14 @@ double-quoted keys/values, shape:
 
     private static bool IsLocal(ClaudeConfig cfg)
         => (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http";
+
+    /// <summary>The "already done" section reinjected on a regenerate so the model advances from completed work
+    /// instead of listing it again. Empty when nothing is done yet.</summary>
+    private static string DoneBlock(string? completed) =>
+        string.IsNullOrWhiteSpace(completed) ? "" :
+$@"
+== ALREADY DONE (the candidate has COMPLETED these — build FORWARD from here; do NOT repeat them as gaps or steps) ==
+{completed.Trim()}";
 
     /// <summary>Salary-prompt anchors, computed once and shared by the one-shot prompt, the split Salary part,
     /// and the surgical revise — so "what counts as a sane local band" is defined in exactly one place.</summary>
@@ -194,49 +210,128 @@ $@"== CANDIDATE ==
     /// <summary>Builds the plan as 4 small, sequential calls (each a tiny JSON that finishes inside the cap),
     /// then assembles them. Positioning runs first and feeds the others for coherence.</summary>
     private static async Task<CareerPlanResult> SynthesizeAsync(ClaudeConfig llm, UserProfile profile,
-        string marketContext, string snippets, SalaryCtx salary, IProgress<string>? log, IProgress<string>? reasoning, CancellationToken ct)
+        string marketContext, string snippets, SalaryCtx salary, string? completedContext,
+        string? partsCachePath, string partsSig, IProgress<string>? log, IProgress<string>? reasoning, CancellationToken ct)
     {
         string lang = Loc.Instance.T("ai.lang");
-        string ctx = CandidateBlock(profile, marketContext, snippets);
+        string ctx = CandidateBlock(profile, marketContext, snippets) + DoneBlock(completedContext);
+
+        // Resume support: reuse any parts a prior (paused/crashed) run of THIS exact generation already produced,
+        // and persist each part as it completes so a pause loses at most the part in flight.
+        var cache = LoadParts(partsCachePath, partsSig);
+        cache.Sig = partsSig;
+        async Task<string?> Part(string? cached, string prompt)
+        {
+            if (!string.IsNullOrWhiteSpace(cached)) return cached;
+            return await LlmClient.CompleteAsync(llm, prompt, reasoning, ct);
+        }
 
         log?.Report(Loc.Instance.T("plan.synth.positioning"));
-        var pos = ParsePart<PositioningDto>(await LlmClient.CompleteAsync(llm,
+        cache.Positioning = await Part(cache.Positioning,
 $@"You are a candid career coach. Using the candidate, the jobs already scored, and the research below, output
 ONLY one JSON object: {{""headline"":""one-line positioning for this candidate"",""strengths"":[""short phrase""],""targetRoles"":[""role title""]}}
 - 3–5 strengths, 2–4 targetRoles. Every phrase concrete, under ~16 words. Write in {lang}.
-{ctx}", reasoning, ct));
+{ctx}");
+        SaveParts(partsCachePath, cache);
+        var pos = ParsePart<PositioningDto>(cache.Positioning);
         if (pos is null || string.IsNullOrWhiteSpace(pos.Headline)) return new CareerPlanResult();  // hard-fail upstream
         string coherence = Coherence(pos.Headline, pos.TargetRoles);
 
         log?.Report(Loc.Instance.T("plan.synth.gaps"));
-        var gs = ParsePart<GapsStepsDto>(await LlmClient.CompleteAsync(llm,
+        cache.GapsSteps = await Part(cache.GapsSteps,
 $@"You are a candid career coach. {coherence}Output ONLY one JSON object:
 {{""skillGaps"":[{{""skill"":""name"",""why"":""why it matters"",""action"":""one concrete way to build it""}}],""steps"":[{{""horizon"":""0–3 meses"",""title"":""short action"",""detail"":""one sentence""}}]}}
 - 2–4 skillGaps, 3–5 steps ordered by horizon (0–3 / 3–6 / 6–12 meses). Cite sources [n] where relevant.
+- PREFER skill gaps SUPPORTED by the demand signal in the jobs the app already scored (the JOBS block): a gap
+  seen recurring there is stronger than a web-only one. But that job list is a SIGNAL, not exhaustive or
+  authoritative — it may contain off-target jobs, so don't over-fit to it or invent a gap just because one job mentions it.
 - BUILD ON THE CANDIDATE'S CORE STACK ({salary.Core}); deepen/specialise within it plus adjacent in-demand areas.
   Do NOT make ""learn Python"" (or switching primary language) a step; express AI/data work THROUGH their stack.
 - Every phrase concrete, under ~16 words. Write in {lang}.
-{ctx}", reasoning, ct));
+{ctx}");
+        SaveParts(partsCachePath, cache);
+        var gs = ParsePart<GapsStepsDto>(cache.GapsSteps);
 
         log?.Report(Loc.Instance.T("plan.synth.salary"));
-        var sal = ParsePart<SalaryDto>(await LlmClient.CompleteAsync(llm,
-            BuildSalaryPrompt(profile, marketContext, snippets, salary, coherence), reasoning, ct));
+        cache.Salary = await Part(cache.Salary, BuildSalaryPrompt(profile, marketContext, snippets, salary, coherence));
+        SaveParts(partsCachePath, cache);
+        var sal = ParsePart<SalaryDto>(cache.Salary);
 
         log?.Report(Loc.Instance.T("plan.synth.signals"));
-        var sig = ParsePart<SignalsDto>(await LlmClient.CompleteAsync(llm,
+        cache.Signals = await Part(cache.Signals,
 $@"You are a candid career coach. {coherence}From the research snippets, output ONLY one JSON object:
 {{""marketSignals"":[""in-demand skill or hiring trend, cite [n]""],""bottomLine"":""one encouraging, honest sentence""}}
 - 2–5 marketSignals, each citing [n]. Use ONLY the snippets for market claims. Write in {lang}.
-{ctx}", reasoning, ct));
+{ctx}");
+        SaveParts(partsCachePath, cache);
+        var sig = ParsePart<SignalsDto>(cache.Signals);
 
         return Assemble(pos, gs, sal, sig);
+    }
+
+    // ===== Part-level resume cache (mirrors the research cache: SavedUtc + Sig + TTL) =====
+
+    private const int PartsTtlMinutes = 90;
+
+    /// <summary>Keys the parts cache on the EXACT generation inputs (profile + research + market + already-done),
+    /// so cached parts are reused only for a genuinely-identical interrupted run — never for a real regenerate
+    /// (e.g. after ticking items off, which changes the completed-context). Stable across restarts (SHA-256).</summary>
+    private static string PartsSig(string profileSig, string snippets, string marketContext, string? completed)
+    {
+        string blob = string.Join("", profileSig, snippets ?? "", marketContext ?? "", completed ?? "");
+        byte[] h = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(blob));
+        return profileSig + "#" + Convert.ToHexString(h, 0, 6);
+    }
+
+    private sealed class PlanPartsCache
+    {
+        public string SavedUtc { get; set; } = "";
+        public string Sig { get; set; } = "";
+        // Raw LLM text per part (re-parsed on load) — plain strings avoid serializing the custom-converter DTOs.
+        public string? Positioning { get; set; }
+        public string? GapsSteps { get; set; }
+        public string? Salary { get; set; }
+        public string? Signals { get; set; }
+    }
+
+    private static PlanPartsCache LoadParts(string? path, string sig)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path)) return new();
+            var c = JsonSerializer.Deserialize<PlanPartsCache>(File.ReadAllText(path), J);
+            if (c is null || c.Sig != sig) return new();
+            if (!DateTime.TryParse(c.SavedUtc, null, System.Globalization.DateTimeStyles.RoundtripKind, out var saved)) return new();
+            if (DateTime.UtcNow - saved.ToUniversalTime() > TimeSpan.FromMinutes(PartsTtlMinutes)) return new();
+            return c;
+        }
+        catch { return new(); }
+    }
+
+    private static void SaveParts(string? path, PlanPartsCache c)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        try
+        {
+            c.SavedUtc = DateTime.UtcNow.ToString("o");
+            File.WriteAllText(path, JsonSerializer.Serialize(c, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { /* best-effort */ }
+    }
+
+    /// <summary>Deletes the parts cache once a whole run (synthesis + critique) has completed, so the next fresh
+    /// regenerate starts clean. Called by the ViewModel after the full GeneratePlan flow succeeds.</summary>
+    public static void ClearParts(string? path)
+    {
+        try { if (!string.IsNullOrWhiteSpace(path) && File.Exists(path)) File.Delete(path); }
+        catch { /* best-effort */ }
     }
 
     /// <summary>The Salary sub-prompt — the anti-inflation hard rules live ONLY here, so they don't bloat (and
     /// truncate) the other parts. Shared by synthesis and surgical revise.</summary>
     private static string BuildSalaryPrompt(UserProfile profile, string marketContext, string snippets, SalaryCtx s, string coherence) =>
 $@"You are a candid career coach setting REALISTIC LOCAL salary expectations. {coherence}Output ONLY one JSON object:
-{{""salaryRationale"":""1 sentence: the local {s.LocName} EUR range you assume, then how you derived the bands"",""salaryNow"":""realistic LOCAL €/yr band today"",""salaryPotential"":""LOCAL €/yr band reachable in 12–24 months""}}
+{{""salaryRationale"":""1 sentence: the local {s.LocName} EUR range you assume, then how you derived the bands"",""salaryNow"":""the €/yr band ONLY, e.g. €45,000–€55,000/yr"",""salaryPotential"":""the €/yr band ONLY, e.g. €52,000–€60,000/yr""}}
 
 == HARD RULES — READ BEFORE WRITING ANY NUMBER (most models inflate salary here) ==
 1. ALL salary figures must be LOCAL {s.LocName} EUR/year.
@@ -245,10 +340,30 @@ $@"You are a candid career coach setting REALISTIC LOCAL salary expectations. {c
    anchored to the candidate's own floor/target is the correct answer; do not invent an aspirational figure.
 3. €100k+ remote listings carry crypto/US-only/contractor caveats — they are NOT the local {s.LocName} rate.
 4. {s.CeilingLine}
-5. Write salaryRationale FIRST, then salaryNow and salaryPotential consistent with it. Write in {Loc.Instance.T("ai.lang")}.
+5. salaryNow and salaryPotential contain the NUMERIC BAND ONLY (e.g. €45,000–€55,000/yr) — no words, caveats,
+   ""with"", ""reachable"", or parentheses. Put EVERY caveat, stretch note and derivation in salaryRationale.
+6. Write salaryRationale FIRST, then salaryNow and salaryPotential consistent with it. Write in {Loc.Instance.T("ai.lang")}.
 {CandidateBlock(profile, marketContext, snippets)}
 == FINAL REMINDER (overrides anything inflated above) ==
 {s.ReminderLine}";
+
+    /// <summary>Keeps only the numeric band in a salary field. Models sometimes append rationale/caveats to
+    /// <c>salaryNow</c>/<c>salaryPotential</c> ("…/yr, with €65k reachable only…"), which belong in the rationale
+    /// and overflow the band card. Cuts at the first explicit prose joiner AFTER a figure; returns the input
+    /// unchanged when it's already a clean band (conservative — never blanks a real value).</summary>
+    private static string CleanBand(string? s)
+    {
+        s = (s ?? "").Trim();
+        if (s.Length == 0) return "";
+        // Cut at unambiguously-prose joiners only. Never a bare dash (that's the range separator, e.g.
+        // "€45,000 – €55,000") or a bare comma (thousands separator) — those keep a valid band intact.
+        foreach (var sep in new[] { " with ", " com ", " (", " reachable", " atingível" })
+        {
+            int i = s.IndexOf(sep, StringComparison.OrdinalIgnoreCase);
+            if (i > 3 && s[..i].Any(char.IsDigit)) s = s[..i];
+        }
+        return s.TrimEnd(',', ' ', '-', '–', '.', ';');
+    }
 
     /// <summary>Generalized JSON salvage (same as <see cref="Parse"/>) for the small part objects.</summary>
     private static T? ParsePart<T>(string? raw) where T : class
@@ -272,8 +387,8 @@ $@"You are a candid career coach setting REALISTIC LOCAL salary expectations. {c
         Steps = (gs?.Steps ?? new()).Select(s => new PlanStep { Horizon = s.Horizon ?? "", Title = s.Title ?? "", Detail = s.Detail ?? "" })
             .Where(s => !string.IsNullOrWhiteSpace(s.Title)).ToList(),
         SalaryRationale = sal?.SalaryRationale ?? "",
-        SalaryNow = sal?.SalaryNow ?? "",
-        SalaryPotential = sal?.SalaryPotential ?? "",
+        SalaryNow = CleanBand(sal?.SalaryNow),
+        SalaryPotential = CleanBand(sal?.SalaryPotential),
         MarketSignals = sig?.MarketSignals ?? new(),
         BottomLine = sig?.BottomLine ?? "",
     };
@@ -308,8 +423,8 @@ $@"You are a candid career coach setting REALISTIC LOCAL salary expectations. {c
         if (sal is not null)
         {
             if (!string.IsNullOrWhiteSpace(sal.SalaryRationale)) plan.SalaryRationale = sal.SalaryRationale!;
-            if (!string.IsNullOrWhiteSpace(sal.SalaryNow)) plan.SalaryNow = sal.SalaryNow!;
-            if (!string.IsNullOrWhiteSpace(sal.SalaryPotential)) plan.SalaryPotential = sal.SalaryPotential!;
+            if (!string.IsNullOrWhiteSpace(sal.SalaryNow)) plan.SalaryNow = CleanBand(sal.SalaryNow);
+            if (!string.IsNullOrWhiteSpace(sal.SalaryPotential)) plan.SalaryPotential = CleanBand(sal.SalaryPotential);
         }
 
         // Append any freshly-cited sources so inline [n] resolve.
@@ -324,12 +439,13 @@ $@"You are a candid career coach setting REALISTIC LOCAL salary expectations. {c
 $@"A reviewer flagged salary problems in a career plan for a candidate in {s.LocName}. Re-state ONLY the salary,
 corrected. {coherence}Salary corrections here are almost always DOWNWARD: if a band looks high, LOWER it toward
 local reality; do NOT raise unless the FRESH RESEARCH cites a local figure that supports it.
-Output ONLY one JSON object: {{""salaryRationale"":""whether you found a cited local figure, then the bands"",""salaryNow"":""local €/yr band"",""salaryPotential"":""local €/yr band""}}
+Output ONLY one JSON object: {{""salaryRationale"":""whether you found a cited local figure, then the bands"",""salaryNow"":""the €/yr band ONLY, e.g. €45,000–€55,000/yr"",""salaryPotential"":""the €/yr band ONLY, e.g. €52,000–€60,000/yr""}}
 
 == HARD RULES ==
 1. ALL figures LOCAL {s.LocName} EUR/year, anchored to {s.Anchor}.
 2. {s.CeilingLine}
 3. €100k+ remote listings carry crypto/US-only/contractor caveats — never the local rate.
+4. salaryNow/salaryPotential = the NUMERIC BAND ONLY (e.g. €45,000–€55,000/yr) — no words or caveats; those go in salaryRationale.
 Write in {Loc.Instance.T("ai.lang")}.
 
 == OBJECTIONS ==
@@ -676,8 +792,8 @@ trajectory, hiring trends). Reply with ONLY a JSON object: {{""queries"":[""..."
                 Skill = g.Skill ?? "", Why = g.Why ?? "", Action = g.Action ?? ""
             }).Where(g => !string.IsNullOrWhiteSpace(g.Skill)).ToList(),
             TargetRoles = dto.TargetRoles ?? new(),
-            SalaryNow = dto.SalaryNow ?? "",
-            SalaryPotential = dto.SalaryPotential ?? "",
+            SalaryNow = CleanBand(dto.SalaryNow),
+            SalaryPotential = CleanBand(dto.SalaryPotential),
             SalaryRationale = dto.SalaryRationale ?? "",
             Steps = (dto.Steps ?? new()).Select(s => new PlanStep
             {

@@ -785,6 +785,52 @@
                                                TextWrapping="Wrap" Foreground="{DynamicResource TextSoft}"/>
                                 </StackPanel>
                             </Border>
+                            <Button Classes="ghost" HorizontalAlignment="Center" Command="{Binding PausePlanCommand}" IsVisible="{Binding CanPausePlan}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Pause"/><TextBlock Text="{l:T plan.pause}"/></StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Paused: resume reuses the research + completed parts -->
+                    <Border IsVisible="{Binding CanResumePlan}" Classes="card" Padding="16" Margin="0,12,0,0">
+                        <StackPanel Spacing="11" HorizontalAlignment="Center">
+                            <TextBlock Text="{l:T plan.resumeHint}" FontSize="12.5" TextWrapping="Wrap" TextAlignment="Center" Foreground="{DynamicResource TextSoft}"/>
+                            <Button Classes="accent" HorizontalAlignment="Center" Command="{Binding ResumePlanCommand}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Play"/><TextBlock Text="{l:T plan.resume}"/></StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Demand from your own scored jobs (Part B) -->
+                    <Border IsVisible="{Binding HasDemand}" Classes="card" Margin="0,12,0,0" Padding="13,11">
+                        <StackPanel Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{l:T improve.demand.title}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                <TextBlock Text="{Binding DemandHeader}" FontSize="11.5" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/>
+                            </StackPanel>
+                            <TextBlock Text="{l:T improve.demand.caption}" FontSize="11" FontStyle="Italic" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                            <TextBlock Text="{l:T improve.demand.thin}" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Amber}" IsVisible="{Binding DemandThin}"/>
+                            <ItemsControl ItemsSource="{Binding PlanMarket.SkillDemand}">
+                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:SkillStat">
+                                    <Border Classes="chip" Padding="9,4" Margin="0,4,7,0">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock Text="{Binding Skill}" FontSize="12" Foreground="{DynamicResource AccentText}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Count}" FontSize="12" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource Muted}"/>
+                                        </StackPanel>
+                                    </Border></DataTemplate></ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <StackPanel Spacing="2" Margin="0,3,0,0" IsVisible="{Binding PlanMarket.HasRoleMatches}">
+                                <TextBlock Text="{l:T improve.demand.roles}" FontSize="10.5" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"/>
+                                <ItemsControl ItemsSource="{Binding PlanMarket.RoleMatches}">
+                                    <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:JobRef">
+                                        <Button Classes="link" FontSize="11.5" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                                                Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).OpenUrlCommand}" CommandParameter="{Binding Url}">
+                                            <TextBlock TextWrapping="Wrap"><Run Text="{Binding Title}"/><Run Text=" · "/><Run Text="{Binding Company}" Foreground="{DynamicResource Muted}"/></TextBlock>
+                                        </Button></DataTemplate></ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -817,7 +863,64 @@
                             <Button Classes="ghost" Command="{Binding GeneratePlanCommand}" ToolTip.Tip="{l:T improve.regenerate.tip}">
                                 <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T improve.regenerate}"/></StackPanel>
                             </Button>
+                            <CheckBox IsChecked="{Binding IncludeProgressInPdf}" Content="{l:T plan.includeProgress}" VerticalAlignment="Center"
+                                      IsVisible="{Binding HasPlanProgress}" ToolTip.Tip="{l:T plan.includeProgress.tip}"/>
                         </StackPanel>
+
+                        <!-- Progresso: o plano como checklist que percorres -->
+                        <Border IsVisible="{Binding HasPlanProgress}" Classes="card" Padding="13,10">
+                            <StackPanel Spacing="7">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Text="{l:T improve.progress}" FontSize="11" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding PlanProgressText}" FontSize="12.5" FontWeight="Bold" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                                </Grid>
+                                <ProgressBar Minimum="0" Maximum="100" Value="{Binding PlanProgressPercent}" Height="6"/>
+                                <TextBlock Text="{l:T improve.progress.done}" FontSize="11" FontStyle="Italic" TextWrapping="Wrap" Foreground="{DynamicResource Signal}" IsVisible="{Binding PlanComplete}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- O que mudou desde o plano anterior -->
+                        <Border IsVisible="{Binding HasPlanChanges}" Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Signal}" BorderThickness="1" CornerRadius="10" Padding="13,10">
+                            <StackPanel Spacing="6">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Signal}"/>
+                                    <TextBlock Text="{l:T improve.changed}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource Signal}"/>
+                                    <TextBlock Text="{Binding PlanChanges.PrevDate}" FontSize="10.5" VerticalAlignment="Center" Foreground="{DynamicResource Muted}"/>
+                                </StackPanel>
+                                <Grid ColumnDefinitions="150,*" IsVisible="{Binding PlanChanges.HasGapsClosed}">
+                                    <TextBlock Grid.Column="0" Text="{l:T improve.changed.gapsClosed}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Signal}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding PlanChanges.GapsClosedText}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="150,*" IsVisible="{Binding PlanChanges.HasGapsNew}">
+                                    <TextBlock Grid.Column="0" Text="{l:T improve.changed.gapsNew}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Amber}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding PlanChanges.GapsNewText}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="150,*" IsVisible="{Binding PlanChanges.HasRolesAdded}">
+                                    <TextBlock Grid.Column="0" Text="{l:T improve.changed.rolesAdded}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentText}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding PlanChanges.RolesAddedText}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="150,*" IsVisible="{Binding PlanChanges.HasRolesDropped}">
+                                    <TextBlock Grid.Column="0" Text="{l:T improve.changed.rolesDropped}" FontSize="11.5" FontWeight="SemiBold" Foreground="{DynamicResource Muted}"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding PlanChanges.RolesDroppedText}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
+                                </Grid>
+                                <Grid ColumnDefinitions="150,*" IsVisible="{Binding PlanChanges.HasSalaryNowMove}">
+                                    <TextBlock Grid.Column="0" Text="{l:T improve.changed.salaryNow}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Top" Foreground="{DynamicResource AccentText}"/>
+                                    <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*">
+                                        <TextBlock Grid.Column="0" Text="{Binding PlanChanges.SalaryNowBefore}" FontSize="11.5" Margin="0,0,6,0" VerticalAlignment="Top" Foreground="{DynamicResource Muted}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding PlanChanges.SalaryNowArrow}" FontSize="11.5" FontWeight="Bold" Margin="0,0,6,0" VerticalAlignment="Top" Foreground="{DynamicResource AccentText}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding PlanChanges.SalaryNowAfter}" FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                    </Grid>
+                                </Grid>
+                                <Grid ColumnDefinitions="150,*" IsVisible="{Binding PlanChanges.HasSalaryPotentialMove}">
+                                    <TextBlock Grid.Column="0" Text="{l:T improve.changed.salaryPotential}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Top" Foreground="{DynamicResource AccentText}"/>
+                                    <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*">
+                                        <TextBlock Grid.Column="0" Text="{Binding PlanChanges.SalaryPotentialBefore}" FontSize="11.5" Margin="0,0,6,0" VerticalAlignment="Top" Foreground="{DynamicResource Muted}"/>
+                                        <TextBlock Grid.Column="1" Text="{Binding PlanChanges.SalaryPotentialArrow}" FontSize="11.5" FontWeight="Bold" Margin="0,0,6,0" VerticalAlignment="Top" Foreground="{DynamicResource AccentText}"/>
+                                        <TextBlock Grid.Column="2" Text="{Binding PlanChanges.SalaryPotentialAfter}" FontSize="11.5" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                    </Grid>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
 
                         <!-- Adversarial review still running (plan already visible) -->
                         <Border IsVisible="{Binding IsCritiquing}" Background="{DynamicResource AccentSoft}" CornerRadius="8" Padding="11,8">
@@ -828,6 +931,18 @@
                                 </StackPanel>
                                 <TextBlock Text="{Binding PlanReasoningTail}" FontFamily="{DynamicResource MonoFont}" FontSize="11" TextWrapping="Wrap"
                                            Foreground="{DynamicResource TextSoft}" IsVisible="{Binding HasPlanReasoning}"/>
+                                <Button Classes="ghost" HorizontalAlignment="Left" Command="{Binding PausePlanCommand}" IsVisible="{Binding CanPausePlan}">
+                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Pause"/><TextBlock Text="{l:T plan.pause}"/></StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Foco: se fizeres só uma coisa (Part C) -->
+                        <Border IsVisible="{Binding HasFocusGap}" Background="{DynamicResource AccentSoft}" BorderBrush="{DynamicResource Accent}" BorderThickness="1" CornerRadius="10" Padding="13,10">
+                            <StackPanel Spacing="3">
+                                <TextBlock Text="{l:T improve.focus.hint}" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource AccentText}"/>
+                                <TextBlock Text="{Binding FocusGap.Skill}" FontSize="13.5" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                <TextBlock Text="{Binding FocusGap.CorpusLabel}" FontSize="11.5" Foreground="{DynamicResource Muted}" IsVisible="{Binding FocusGap.HasCorpusHits}"/>
                             </StackPanel>
                         </Border>
 
@@ -857,14 +972,22 @@
                                     <ItemsControl ItemsSource="{Binding Plan.SkillGaps}">
                                         <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:SkillGap">
                                             <Border Background="{DynamicResource Panel2}" CornerRadius="8" Padding="11,8" Margin="0,3,0,0">
-                                                <StackPanel Spacing="2">
-                                                    <TextBlock Text="{Binding Skill}" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Text}"/>
-                                                    <TextBlock Text="{Binding Why}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" IsVisible="{Binding HasWhy}"/>
-                                                    <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding HasAction}" Margin="0,1,0,0">
-                                                        <TextBlock Text="→" Foreground="{DynamicResource AccentText}" FontWeight="Bold"/>
-                                                        <TextBlock Text="{Binding Action}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource TextSoft}"/>
+                                                <Grid ColumnDefinitions="Auto,*">
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding Done, Mode=TwoWay}" VerticalAlignment="Top" MinWidth="0" Margin="0,-2,6,0" ToolTip.Tip="{l:T improve.done.tip}"/>
+                                                    <StackPanel Grid.Column="1" Spacing="2">
+                                                        <TextBlock Text="{Binding Skill}" FontSize="12.5" FontWeight="SemiBold" Foreground="{DynamicResource Text}"/>
+                                                        <TextBlock Text="{Binding Why}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" IsVisible="{Binding HasWhy}"/>
+                                                        <Grid ColumnDefinitions="Auto,*" IsVisible="{Binding HasAction}" Margin="0,1,0,0">
+                                                            <TextBlock Grid.Column="0" Text="→" Foreground="{DynamicResource AccentText}" FontWeight="Bold" Margin="0,0,6,0" VerticalAlignment="Top"/>
+                                                            <TextBlock Grid.Column="1" Text="{Binding Action}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource TextSoft}"/>
+                                                        </Grid>
+                                                        <!-- Corpus grounding: is this gap seen in the user's own jobs? (poisoning-aware, honest) -->
+                                                        <Border CornerRadius="6" Padding="7,1" Margin="0,3,0,0" HorizontalAlignment="Left" Background="{DynamicResource Signal}" IsVisible="{Binding HasCorpusHits}">
+                                                            <TextBlock Text="{Binding CorpusLabel}" FontSize="10" FontWeight="SemiBold" Foreground="White"/>
+                                                        </Border>
+                                                        <TextBlock Text="{l:T improve.gap.webonly}" FontSize="10.5" FontStyle="Italic" Foreground="{DynamicResource Muted}" Margin="0,3,0,0" IsVisible="{Binding !HasCorpusHits}"/>
                                                     </StackPanel>
-                                                </StackPanel>
+                                                </Grid>
                                             </Border></DataTemplate></ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </StackPanel>
@@ -920,11 +1043,12 @@
                                 </StackPanel>
                                 <ItemsControl ItemsSource="{Binding Plan.Steps}">
                                     <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:PlanStep">
-                                        <Grid ColumnDefinitions="Auto,*" Margin="0,4,0,0">
-                                            <Border Grid.Column="0" Background="{DynamicResource AccentSoft}" CornerRadius="7" Padding="8,3" Margin="0,1,11,0" VerticalAlignment="Top" IsVisible="{Binding HasHorizon}">
+                                        <Grid ColumnDefinitions="Auto,Auto,*" Margin="0,4,0,0">
+                                            <CheckBox Grid.Column="0" IsChecked="{Binding Done, Mode=TwoWay}" VerticalAlignment="Top" MinWidth="0" Margin="0,-2,6,0" ToolTip.Tip="{l:T improve.done.tip}"/>
+                                            <Border Grid.Column="1" Background="{DynamicResource AccentSoft}" CornerRadius="7" Padding="8,3" Margin="0,1,11,0" VerticalAlignment="Top" IsVisible="{Binding HasHorizon}">
                                                 <TextBlock Text="{Binding Horizon}" FontSize="10.5" FontWeight="SemiBold" Foreground="{DynamicResource AccentText}" FontFamily="{DynamicResource MonoFont}"/>
                                             </Border>
-                                            <StackPanel Grid.Column="1" Spacing="1">
+                                            <StackPanel Grid.Column="2" Spacing="1">
                                                 <TextBlock Text="{Binding Title}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
                                                 <TextBlock Text="{Binding Detail}" FontSize="11.5" TextWrapping="Wrap" Foreground="{DynamicResource Muted}" IsVisible="{Binding HasDetail}"/>
                                             </StackPanel>
@@ -963,6 +1087,29 @@
                                 </StackPanel>
 
                                 <md:MarkdownScrollViewer Markdown="{Binding Plan.RawFallback}" MaxHeight="440" MarkdownStyleName="FluentAvalonia" IsVisible="{Binding Plan.HasFallback}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Skills radar (Part C): your stack vs. your matched market's demand -->
+                        <Border IsVisible="{Binding HasRadar}" Classes="card">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}"/>
+                                    <TextBlock Text="{l:T improve.radar.title}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                                </StackPanel>
+                                <ctl:SkillsRadar ItemsSource="{Binding RadarAxes}" Height="248" HorizontalAlignment="Stretch"
+                                                 DemandBrush="{DynamicResource Accent}" YouBrush="{DynamicResource Signal}"
+                                                 GridBrush="{DynamicResource Muted}" LabelBrush="{DynamicResource Muted}"/>
+                                <StackPanel Orientation="Horizontal" Spacing="16" HorizontalAlignment="Center">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Border Width="11" Height="11" CornerRadius="2" Background="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{l:T improve.radar.demand}" FontSize="11" Foreground="{DynamicResource Muted}"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Border Width="11" Height="11" CornerRadius="2" Background="{DynamicResource Signal}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{l:T improve.radar.you}" FontSize="11" Foreground="{DynamicResource Muted}"/>
+                                    </StackPanel>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -1009,6 +1156,33 @@
                                     <TextBlock Text="{Binding PlanReasoning}" FontFamily="{DynamicResource MonoFont}" FontSize="11"
                                                TextWrapping="Wrap" Foreground="{DynamicResource Muted}"/>
                                 </ScrollViewer>
+                            </StackPanel>
+                        </Expander>
+
+                        <!-- Histórico de planos: cada regeneração arquiva o anterior aqui -->
+                        <Expander IsVisible="{Binding HasPlanHistory}" Header="{l:T improve.history}">
+                            <StackPanel Spacing="8" Margin="2,4,2,2">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="sub" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:T improve.history.hint}"/>
+                                    <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding ClearPlanHistoryCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6"><ui:SymbolIcon Symbol="Delete"/><TextBlock Text="{l:T improve.history.clear}"/></StackPanel>
+                                    </Button>
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding PlanHistory}">
+                                    <ItemsControl.ItemTemplate><DataTemplate x:DataType="core:PlanSnapshot">
+                                        <Border Background="{DynamicResource Panel2}" CornerRadius="8" Padding="11,8" Margin="0,3,0,0">
+                                            <StackPanel Spacing="2">
+                                                <Grid ColumnDefinitions="*,Auto">
+                                                    <TextBlock Grid.Column="0" Text="{Binding AsOfDate}" FontSize="11" FontWeight="Bold" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}"/>
+                                                    <Border Grid.Column="1" Background="{DynamicResource AccentSoft}" CornerRadius="6" Padding="7,1" IsVisible="{Binding HasProgress}">
+                                                        <TextBlock Text="{Binding ProgressText}" FontSize="10.5" FontWeight="SemiBold" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}"/>
+                                                    </Border>
+                                                </Grid>
+                                                <TextBlock Text="{Binding Headline}" FontSize="12" TextWrapping="Wrap" Foreground="{DynamicResource Text}"/>
+                                                <TextBlock Text="{Binding SalaryLine}" FontSize="11" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource Muted}" IsVisible="{Binding HasSalaryLine}"/>
+                                            </StackPanel>
+                                        </Border></DataTemplate></ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </StackPanel>
                         </Expander>
                     </StackPanel>

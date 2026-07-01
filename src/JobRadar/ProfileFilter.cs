@@ -144,8 +144,9 @@ public static class ProfileFilter
     /// True if <paramref name="token"/> occurs in <paramref name="text"/> as a whole word
     /// (no alphanumeric neighbour). Handles tokens with symbols like "c#"/".net" since the
     /// boundary test only looks at letters/digits. Prevents "go" matching "good"/"category".
+    /// Shared with <see cref="JobMarket"/> so skill matching is defined in one place.
     /// </summary>
-    private static bool WordIn(string text, string token)
+    internal static bool WordIn(string text, string token)
     {
         int i = 0;
         while ((i = text.IndexOf(token, i, StringComparison.Ordinal)) >= 0)
