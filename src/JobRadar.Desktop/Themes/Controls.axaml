@@ -49,19 +49,37 @@
     </Style>
 
     <!-- ============ Buttons ============ -->
+    <!-- Motion policy (Avalonia has no OS reduced-motion hook): interaction motion stays <=300ms and uses
+         opacity/brush/translate/scale only; ambient motion (HeroMark ping, RadarScope sweep) is slow,
+         low-contrast and never carries information.
+         The hover styles swap brushes on the template's ContentPresenter, so the BrushTransitions must live
+         on that presenter — a Transitions setter on the Button itself never fires. -->
     <Style Selector="Button.accent">
         <Setter Property="Background" Value="{DynamicResource Accent}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
         <Setter Property="CornerRadius" Value="{DynamicResource CtrlRadius}"/>
         <Setter Property="Padding" Value="16,9"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
+        <!-- Base value: without it the first press snaps (null->scale has nothing to transition from). -->
+        <Setter Property="RenderTransform" Value="none"/>
         <Setter Property="Transitions">
-            <Transitions><BrushTransition Property="Background" Duration="0:0:0.15"/></Transitions>
+            <Transitions><TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.08"/></Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Button.accent /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Transitions">
+            <Transitions>
+                <BrushTransition Property="Background" Duration="0:0:0.13"/>
+                <BrushTransition Property="Foreground" Duration="0:0:0.13"/>
+            </Transitions>
         </Setter>
     </Style>
     <Style Selector="Button.accent:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentHover}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
+    </Style>
+    <Style Selector="Button.accent:pressed">
+        <Setter Property="RenderTransform" Value="scale(0.97)"/>
     </Style>
 
     <Style Selector="Button.ghost">
@@ -71,11 +89,27 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="{DynamicResource CtrlRadius}"/>
         <Setter Property="Padding" Value="14,9"/>
+        <Setter Property="RenderTransform" Value="none"/>
+        <Setter Property="Transitions">
+            <Transitions><TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.08"/></Transitions>
+        </Setter>
+    </Style>
+    <Style Selector="Button.ghost /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Transitions">
+            <Transitions>
+                <BrushTransition Property="Background" Duration="0:0:0.13"/>
+                <BrushTransition Property="BorderBrush" Duration="0:0:0.13"/>
+                <BrushTransition Property="Foreground" Duration="0:0:0.13"/>
+            </Transitions>
+        </Setter>
     </Style>
     <Style Selector="Button.ghost:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
         <Setter Property="Foreground" Value="{DynamicResource Text}"/>
+    </Style>
+    <Style Selector="Button.ghost:pressed">
+        <Setter Property="RenderTransform" Value="scale(0.97)"/>
     </Style>
 
     <Style Selector="Button.link">
@@ -84,6 +118,11 @@
         <Setter Property="Padding" Value="2"/>
         <Setter Property="Foreground" Value="{DynamicResource AccentText}"/>
         <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+    <Style Selector="Button.link /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Transitions">
+            <Transitions><BrushTransition Property="Foreground" Duration="0:0:0.13"/></Transitions>
+        </Setter>
     </Style>
     <Style Selector="Button.link:pointerover /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Background" Value="Transparent"/>

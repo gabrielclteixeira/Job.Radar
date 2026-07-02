@@ -27,6 +27,14 @@
             <Setter Property="Padding" Value="12,9"/>
             <Setter Property="FontSize" Value="13.5"/>
         </Style>
+        <Style Selector="Button.nav /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Transitions">
+                <Transitions>
+                    <BrushTransition Property="Background" Duration="0:0:0.13"/>
+                    <BrushTransition Property="Foreground" Duration="0:0:0.13"/>
+                </Transitions>
+            </Setter>
+        </Style>
         <Style Selector="Button.nav:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource Panel2}"/>
             <Setter Property="Foreground" Value="{DynamicResource Text}"/>
@@ -292,9 +300,11 @@
                                     <ComboBox Grid.Column="0" HorizontalAlignment="Stretch" ItemsSource="{Binding FieldOptions}" SelectedIndex="{Binding FieldIndex}"/>
                                     <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding ModeOptions}" SelectedIndex="{Binding ModeIndex}"/>
                                     <TextBox Grid.Column="4" Text="{Binding Value}" Watermark="C#"/>
-                                    <Button Grid.Column="6" Classes="ghost" Content="✕" Padding="12,9"
+                                    <Button Grid.Column="6" Classes="ghost" Padding="12,9"
                                             Command="{Binding ((vm:MainViewModel)DataContext).RemoveFilterCommand, ElementName=FiltersList}"
-                                            CommandParameter="{Binding}" ToolTip.Tip="{l:T filter.remove.tip}"/>
+                                            CommandParameter="{Binding}" ToolTip.Tip="{l:T filter.remove.tip}">
+                                        <ui:SymbolIcon Symbol="Dismiss" FontSize="14"/>
+                                    </Button>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -379,7 +389,7 @@
                                             <Button Classes="ghost" Command="{Binding ResearchCommand}" ToolTip.Tip="{l:T job.research.tip}">
                                                 <Panel>
                                                     <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding !IsResearching}"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T job.research}"/></StackPanel>
-                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding IsResearching}"><TextBlock Text="✕" VerticalAlignment="Center"/><TextBlock Text="{l:T job.research.cancel}"/></StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding IsResearching}"><ui:SymbolIcon Symbol="Dismiss" FontSize="14" VerticalAlignment="Center"/><TextBlock Text="{l:T job.research.cancel}"/></StackPanel>
                                                 </Panel>
                                             </Button>
                                         </StackPanel>
@@ -543,7 +553,7 @@
                                             <Button Grid.Column="1" Classes="ghost" VerticalAlignment="Center" Command="{Binding ResearchCommand}" ToolTip.Tip="{l:T researcher.research.tip}">
                                                 <Panel>
                                                     <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding !IsResearching}"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T researcher.research}"/></StackPanel>
-                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding IsResearching}"><TextBlock Text="✕" VerticalAlignment="Center"/><TextBlock Text="{l:T job.research.cancel}"/></StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding IsResearching}"><ui:SymbolIcon Symbol="Dismiss" FontSize="14" VerticalAlignment="Center"/><TextBlock Text="{l:T job.research.cancel}"/></StackPanel>
                                                 </Panel>
                                             </Button>
                                         </Grid>
@@ -1145,7 +1155,7 @@
                                     <Button Grid.Column="1" Classes="ghost" Margin="8,0,0,0" Command="{Binding CopyReasoningCommand}">
                                         <Panel>
                                             <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding !ReasoningCopied}"><ui:SymbolIcon Symbol="Copy"/><TextBlock Text="{l:T reasoning.copy}"/></StackPanel>
-                                            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ReasoningCopied}"><TextBlock Text="✓" Foreground="{DynamicResource Signal}"/><TextBlock Text="{l:T reasoning.copied}"/></StackPanel>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding ReasoningCopied}"><ui:SymbolIcon Symbol="Checkmark" FontSize="14" Foreground="{DynamicResource Signal}" VerticalAlignment="Center"/><TextBlock Text="{l:T reasoning.copied}"/></StackPanel>
                                         </Panel>
                                     </Button>
                                     <Button Grid.Column="2" Classes="ghost" Margin="6,0,0,0" Command="{Binding SaveReasoningCommand}" IsEnabled="{Binding !Busy}">
@@ -1268,7 +1278,7 @@
                                                     </Border>
                                                     <Button Grid.Column="2" Classes="ghost" Padding="10,7" VerticalAlignment="Center" ToolTip.Tip="{l:T models.remove.tip}"
                                                             Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveModelCommand}" CommandParameter="{Binding}">
-                                                        <TextBlock Text="✕"/>
+                                                        <ui:SymbolIcon Symbol="Dismiss" FontSize="14"/>
                                                     </Button>
                                                 </Grid>
                                             </Border>
