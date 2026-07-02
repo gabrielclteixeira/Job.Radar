@@ -305,7 +305,9 @@ public partial class MainViewModel : ObservableObject
     // reused across language switches, and a field would freeze the labels at construction-time language.
     public string[] CritiqueModes => new[] { L("improve.mode.single"), L("improve.mode.debate"), L("improve.mode.revise") };
     public bool HasPlan => Plan is not null;
-    public bool ShowGenerateIntro => !HasPlan && !IsPlanning;
+    // !PlanPaused: while paused the ONLY call to action is "Retomar" — a competing fresh "Generate" here would
+    // silently drop the interrupted run's captured context (diff, tick carry-over, feed-forward).
+    public bool ShowGenerateIntro => !HasPlan && !IsPlanning && !PlanPaused;
     // Critique view-props — let the UI/PDF update when the critique fills in without reassigning Plan.
     public IReadOnlyList<CritiquePoint>? PlanCritique => Plan?.Critique;
     public bool HasPlanCritique => Plan?.HasCritique == true;
@@ -325,7 +327,10 @@ public partial class MainViewModel : ObservableObject
     }
     partial void OnIsPlanningChanged(bool value)
     { OnPropertyChanged(nameof(ShowGenerateIntro)); OnPropertyChanged(nameof(CanPausePlan)); OnPropertyChanged(nameof(CanResumePlan)); }
-    partial void OnIsCritiquingChanged(bool value) => OnPropertyChanged(nameof(CanPausePlan));
+    // CanResumePlan too: pausing DURING the critique raises PlanPaused while IsCritiquing is still true, so the
+    // "Retomar" card only appears when this final IsCritiquing=false re-notifies it.
+    partial void OnIsCritiquingChanged(bool value)
+    { OnPropertyChanged(nameof(CanPausePlan)); OnPropertyChanged(nameof(CanResumePlan)); }
     partial void OnCritiqueModeIndexChanged(int value) => SaveUiSettings();
 
     // ---- living document: checklist progress, plan-to-plan diff, growth history ----
@@ -364,6 +369,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (e.PropertyName != nameof(SkillGap.Done)) return;
         NotifyProgress();
+        RefreshFocus();   // a ticked-off gap shouldn't stay the "do one thing" focus
         SavePlan();
     }
 
@@ -372,13 +378,15 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _planPaused;   // a generation was paused (cancelled mid-run; parts persisted)
     public bool CanPausePlan => IsPlanning || IsCritiquing;
     public bool CanResumePlan => PlanPaused && !IsPlanning && !IsCritiquing;
-    partial void OnPlanPausedChanged(bool value) => OnPropertyChanged(nameof(CanResumePlan));
+    partial void OnPlanPausedChanged(bool value)
+    { OnPropertyChanged(nameof(CanResumePlan)); OnPropertyChanged(nameof(ShowGenerateIntro)); }
 
     // Run context preserved across a pause so resume feeds the model the SAME inputs → the parts cache matches
     // and the living-document diff still works.
     private PlanSnapshot? _pendingPrevSnap;
     private HashSet<string> _pendingPrevDoneKeys = new(StringComparer.Ordinal);
     private string? _pendingCompletedContext;
+    private string? _pendingMarket;
     private bool _pendingActive;
 
     [RelayCommand] private void PausePlan() => _planCts?.Cancel();
@@ -388,17 +396,16 @@ public partial class MainViewModel : ObservableObject
     private async Task RunPlanAsync(bool resume)
     {
         if (IsPlanning || IsCritiquing) return;
+        IsPlanning = true;   // claim the run BEFORE the first await, so a second click can't start a parallel one
 
         // Ground the plan in the user's own scored jobs (strong-fit only — poisoning-aware) and refresh the panel.
         var signal = await BuildMarketSignalAsync();
 
-        if (resume && _pendingActive)
+        if (!_pendingActive)
         {
-            // keep the captured context so the parts cache + diff line up with the interrupted run
-        }
-        else
-        {
-            // Fresh start: capture the plan being replaced (for carry-over of ticks, feed-forward, and the diff).
+            // Capture the plan being replaced (for carry-over of ticks, feed-forward, and the diff). Captured
+            // ONCE per generation attempt-series: a paused or FAILED run keeps this context (Plan is null by
+            // then), so a later attempt still diffs against the real previous plan. Cleared on success.
             var prevPlan = Plan;
             _pendingPrevSnap = prevPlan is not null ? PlanSnapshot.From(prevPlan) : null;
             _pendingPrevDoneKeys = new HashSet<string>(
@@ -407,9 +414,14 @@ public partial class MainViewModel : ObservableObject
                 ? string.Join("\n", prevPlan.DoneLabels.Select(x => "- " + x)) : null;
             _pendingActive = true;
         }
+        // Pin the market context: RESUME must feed the model the SAME inputs, or the parts-cache signature
+        // changes and the completed parts are silently re-run. A fresh attempt re-pins from the current corpus.
+        if (!resume || _pendingMarket is null)
+            _pendingMarket = signal.HasData ? signal.ToMarketContext() : MarketContext();
         var prevSnap = _pendingPrevSnap;
         var prevDoneKeys = _pendingPrevDoneKeys;
         string? completedContext = _pendingCompletedContext;
+        string market = _pendingMarket;
         void CarryOverDone(CareerPlanResult target)
         {
             if (prevDoneKeys.Count == 0) return;
@@ -417,11 +429,10 @@ public partial class MainViewModel : ObservableObject
             foreach (var s in target.Steps) if (prevDoneKeys.Contains(PlanDiff.Key(s.Title))) s.Done = true;
         }
 
-        IsPlanning = true; PlanError = ""; Plan = null; PlanChanges = null; PlanPaused = false;
+        PlanError = ""; Plan = null; PlanChanges = null; PlanPaused = false;
         PlanStatus = L(resume ? "plan.resuming" : "plan.preparing");
         PlanReasoning = "";
         _planCts = new CancellationTokenSource();
-        string market = signal.HasData ? signal.ToMarketContext() : MarketContext();
         Diag.Info($"plan: {(resume ? "resume" : "generate")} start (engine={_cfg.Claude.Provider} model={_cfg.Claude.Model} critique={(CritiqueMode)CritiqueModeIndex} done_carried={prevDoneKeys.Count} strongJobs={signal.StrongCount})");
         var progress = new Progress<string>(m => { Diag.Info("plan: " + m); Dispatcher.UIThread.Post(() => { PlanStatus = m; PlanReasoning += $"\n▸ {m}\n"; }); });
         var reasoning = new Progress<string>(d => Dispatcher.UIThread.Post(() => PlanReasoning += d));
@@ -446,7 +457,7 @@ public partial class MainViewModel : ObservableObject
             // Archive the previous plan, surface what changed, and finish the run (clear resume state + parts cache).
             PlanChanges = PlanDiff.Between(prevSnap, critiqued);
             if (prevSnap is not null) ArchiveSnapshot(prevSnap);
-            _pendingActive = false; _pendingPrevSnap = null; _pendingCompletedContext = null;
+            _pendingActive = false; _pendingPrevSnap = null; _pendingCompletedContext = null; _pendingMarket = null;
             _pendingPrevDoneKeys = new HashSet<string>(StringComparer.Ordinal);
             CareerPlan.ClearParts(_planPartsPath);
             Diag.Info("plan: done" + (critiqued.Revised ? " (revised)" : "") + (PlanChanges?.HasChanges == true ? " (changed)" : ""));
@@ -532,8 +543,15 @@ public partial class MainViewModel : ObservableObject
         // Only render the radar when there's real demand to plot: at least a couple of skills you have that
         // appear in your matched jobs. A gap-only radar (no strong-fit corpus) is all-zero and meaningless.
         RadarAxes = (signal.HasData && have.Count >= 2 && axes.Count >= 3) ? axes : null;
-        FocusGap = plan.HasSkillGaps ? plan.SkillGaps.OrderByDescending(g => g.CorpusHits).First() : null;
+        RefreshFocus();
     }
+
+    /// <summary>The "do one thing" callout: the NOT-yet-done gap best grounded in the user's own jobs.
+    /// Re-picked when the user ticks a gap off, so the focus always points at remaining work.</summary>
+    private void RefreshFocus() => FocusGap = Plan?.SkillGaps
+        .Where(g => !g.Done && !string.IsNullOrWhiteSpace(g.Skill))
+        .OrderByDescending(g => g.CorpusHits)
+        .FirstOrDefault();
 
     private static string Shorten(string s) => s.Length > 16 ? s[..15] + "…" : s;
 

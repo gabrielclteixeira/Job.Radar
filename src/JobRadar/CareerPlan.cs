@@ -232,9 +232,16 @@ $@"You are a candid career coach. Using the candidate, the jobs already scored, 
 ONLY one JSON object: {{""headline"":""one-line positioning for this candidate"",""strengths"":[""short phrase""],""targetRoles"":[""role title""]}}
 - 3–5 strengths, 2–4 targetRoles. Every phrase concrete, under ~16 words. Write in {lang}.
 {ctx}");
-        SaveParts(partsCachePath, cache);
+        // Cache only output that PARSES — junk in the cache would make every retry within the TTL replay the
+        // same failure without re-rolling the model. Same guard on every part below.
         var pos = ParsePart<PositioningDto>(cache.Positioning);
-        if (pos is null || string.IsNullOrWhiteSpace(pos.Headline)) return new CareerPlanResult();  // hard-fail upstream
+        if (pos is null || string.IsNullOrWhiteSpace(pos.Headline))
+        {
+            cache.Positioning = null;
+            SaveParts(partsCachePath, cache);
+            return new CareerPlanResult();  // hard-fail upstream
+        }
+        SaveParts(partsCachePath, cache);
         string coherence = Coherence(pos.Headline, pos.TargetRoles);
 
         log?.Report(Loc.Instance.T("plan.synth.gaps"));
@@ -249,13 +256,15 @@ $@"You are a candid career coach. {coherence}Output ONLY one JSON object:
   Do NOT make ""learn Python"" (or switching primary language) a step; express AI/data work THROUGH their stack.
 - Every phrase concrete, under ~16 words. Write in {lang}.
 {ctx}");
-        SaveParts(partsCachePath, cache);
         var gs = ParsePart<GapsStepsDto>(cache.GapsSteps);
+        if (gs is null) cache.GapsSteps = null;
+        SaveParts(partsCachePath, cache);
 
         log?.Report(Loc.Instance.T("plan.synth.salary"));
         cache.Salary = await Part(cache.Salary, BuildSalaryPrompt(profile, marketContext, snippets, salary, coherence));
-        SaveParts(partsCachePath, cache);
         var sal = ParsePart<SalaryDto>(cache.Salary);
+        if (sal is null) cache.Salary = null;
+        SaveParts(partsCachePath, cache);
 
         log?.Report(Loc.Instance.T("plan.synth.signals"));
         cache.Signals = await Part(cache.Signals,
@@ -263,8 +272,9 @@ $@"You are a candid career coach. {coherence}From the research snippets, output 
 {{""marketSignals"":[""in-demand skill or hiring trend, cite [n]""],""bottomLine"":""one encouraging, honest sentence""}}
 - 2–5 marketSignals, each citing [n]. Use ONLY the snippets for market claims. Write in {lang}.
 {ctx}");
-        SaveParts(partsCachePath, cache);
         var sig = ParsePart<SignalsDto>(cache.Signals);
+        if (sig is null) cache.Signals = null;
+        SaveParts(partsCachePath, cache);
 
         return Assemble(pos, gs, sal, sig);
     }
