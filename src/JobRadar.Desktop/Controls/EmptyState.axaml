@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:FluentAvalonia.UI.Controls"
+             x:Class="JobRadar.Desktop.Controls.EmptyState">
+    <Border Classes="card">
+        <StackPanel Spacing="11" HorizontalAlignment="Center" Margin="0,10">
+            <Border Width="52" Height="52" CornerRadius="26" Background="{DynamicResource AccentSoft}" HorizontalAlignment="Center">
+                <ui:SymbolIcon x:Name="Icon" Symbol="Find" FontSize="26" Foreground="{DynamicResource AccentText}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <TextBlock x:Name="TitleText" FontWeight="SemiBold" FontSize="14" HorizontalAlignment="Center"
+                       TextAlignment="Center" Foreground="{DynamicResource Text}"/>
+            <TextBlock x:Name="BodyText" Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="440"
+                       HorizontalAlignment="Center"/>
+            <ContentControl x:Name="Action" HorizontalAlignment="Center" IsVisible="False" Margin="0,3,0,0"/>
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -245,6 +245,11 @@ public partial class MainViewModel : ObservableObject
     partial void OnIsScoringChanged(bool value) { OnPropertyChanged(nameof(CanPause)); OnPropertyChanged(nameof(CanResume)); }
     partial void OnPausedChanged(bool value) => OnPropertyChanged(nameof(CanResume));
 
+    // A scoring failure that must OUTLIVE the scanning card: ScoringStatus lives inside the IsScoring card,
+    // which hides in the finally, so the message used to vanish. Shown as a persistent, dismissible banner.
+    [ObservableProperty] private string _scoringError = "";
+    [RelayCommand] private void DismissScoringError() => ScoringError = "";
+
     /// <summary>Pause the running classification — cancels the run; jobs scored so far are already saved.</summary>
     [RelayCommand]
     private void PauseScoring() => _scoreCts?.Cancel();
@@ -254,7 +259,7 @@ public partial class MainViewModel : ObservableObject
     private async Task ResumeScoring()
     {
         if (IsScoring) return;
-        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
+        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = ""; ScoringError = "";
         Paused = false; ResultsTitle = L("title.jobs"); ScoringStatus = L("scoring.resuming");
         MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
         _scoreCts = new CancellationTokenSource();
@@ -266,7 +271,7 @@ public partial class MainViewModel : ObservableObject
             FinalizeResults(result);
         }
         catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
-        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
+        catch (Exception ex) { ScoringError = ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
         finally { IsScoring = false; Busy = false; }
     }
     [ObservableProperty] private bool _hasJobs;
@@ -1322,7 +1327,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task ViewJobs()
     {
-        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
+        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = ""; ScoringError = "";
         ResultsTitle = L("title.saved");
         ScoringStatus = L("scoring.loadingSaved"); MinScore = 0; IsScoring = true; Paused = false;
         ShowOnly(results: true); Busy = true;
@@ -1335,7 +1340,7 @@ public partial class MainViewModel : ObservableObject
             if (!HasJobs) ScoringStatus = L("empty.noSaved");
         }
         catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
-        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
+        catch (Exception ex) { ScoringError = ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
         finally { IsScoring = false; Busy = false; }
     }
 
@@ -1360,7 +1365,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task Rescore()
     {
-        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
+        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = ""; ScoringError = "";
         ResultsTitle = L("title.jobs"); ScoringStatus = L("scoring.rescoring");
         MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); Busy = true;
         _scoreCts = new CancellationTokenSource();
@@ -1373,7 +1378,7 @@ public partial class MainViewModel : ObservableObject
             if (!HasJobs) ScoringStatus = L("empty.noSavedRescore");
         }
         catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
-        catch (Exception ex) { ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
+        catch (Exception ex) { ScoringError = ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
         finally { IsScoring = false; Busy = false; }
     }
 
@@ -1532,7 +1537,7 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task RunPipeline(bool useAi, bool demo)
     {
-        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = "";
+        Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = ""; ScoringError = "";
         ResultsTitle = demo ? L("title.demo") : L("title.jobs");
         ScoringStatus = demo ? L("scoring.loadingDemo") : L("scoring.searching");
         MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); Busy = true;
@@ -1547,7 +1552,7 @@ public partial class MainViewModel : ObservableObject
             FinalizeResults(result);
         }
         catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
-        catch (Exception ex) { var m = Loc.Instance.F("error.generic", ex.Message); Log.Add(m); ScoringStatus = m; Diag.Error("search/score run failed", ex); }
+        catch (Exception ex) { var m = Loc.Instance.F("error.generic", ex.Message); Log.Add(m); ScoringError = ScoringStatus = m; Diag.Error("search/score run failed", ex); }
         finally { IsScoring = false; Busy = false; }
     }
 

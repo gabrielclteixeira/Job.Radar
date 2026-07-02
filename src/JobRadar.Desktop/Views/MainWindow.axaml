@@ -329,10 +329,36 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Empty -->
-                    <Border IsVisible="{Binding !HasJobs}" Classes="card" Margin="0,2,0,0">
-                        <TextBlock Classes="sub" TextWrapping="Wrap" TextAlignment="Center" Text="{Binding EmptyMessage}"/>
+                    <!-- Persistent scoring error: ScoringStatus lives inside the scanning card, which hides when
+                         the run ends — a failure needs a surface that survives it. -->
+                    <Border Classes="banner danger" Margin="0,2,0,0"
+                            IsVisible="{Binding ScoringError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <Grid ColumnDefinitions="Auto,10,*,8,Auto">
+                            <ui:SymbolIcon Grid.Column="0" Symbol="WarningFilled" Foreground="{DynamicResource Danger}" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                            <StackPanel Grid.Column="2" Spacing="2">
+                                <TextBlock Text="{l:T scoring.error.title}" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Danger}"/>
+                                <TextBlock Text="{Binding ScoringError}" Classes="sub" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <Button Grid.Column="4" Classes="link" VerticalAlignment="Top" Command="{Binding DismissScoringErrorCommand}" ToolTip.Tip="{l:T banner.dismiss.tip}">
+                                <ui:SymbolIcon Symbol="Dismiss" FontSize="14"/>
+                            </Button>
+                        </Grid>
                     </Border>
+
+                    <!-- Empty (hidden while the first results stream in) -->
+                    <ctl:EmptyState Margin="0,2,0,0" Title="{l:T empty.results.title}" Body="{Binding EmptyMessage}">
+                        <ctl:EmptyState.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="!HasJobs"/>
+                                <Binding Path="!IsScoring"/>
+                            </MultiBinding>
+                        </ctl:EmptyState.IsVisible>
+                        <ctl:EmptyState.ActionContent>
+                            <Button Classes="accent" HorizontalAlignment="Center" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}">
+                                <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="{l:T home.search}"/></StackPanel>
+                            </Button>
+                        </ctl:EmptyState.ActionContent>
+                    </ctl:EmptyState>
 
                     <Expander Margin="0,0,0,4" Header="{l:T results.howScore}" IsVisible="{Binding HasJobs}">
                         <TextBlock TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource Muted}" Margin="4"
@@ -393,7 +419,7 @@
                                             <TextBlock Text="{Binding ResearchStatus}" FontSize="12" FontFamily="{DynamicResource MonoFont}"
                                                        Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                         </StackPanel>
-                                        <TextBlock Text="{Binding ResearchError}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"
+                                        <TextBlock Text="{Binding ResearchError}" FontSize="12" Foreground="{DynamicResource Danger}" TextWrapping="Wrap"
                                                    IsVisible="{Binding ResearchError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
                                         <Border IsVisible="{Binding HasBrief}" Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}"
@@ -512,15 +538,14 @@
                     </StackPanel>
 
                     <!-- Empty state: no matched jobs yet -->
-                    <Border Classes="card" Margin="0,12,0,0" IsVisible="{Binding ResearcherEmpty}">
-                        <StackPanel Spacing="11" HorizontalAlignment="Center">
-                            <TextBlock Text="{l:T researcher.empty.title}" FontWeight="SemiBold" FontSize="14" HorizontalAlignment="Center" Foreground="{DynamicResource Text}"/>
-                            <TextBlock Text="{l:T researcher.empty.body}" Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="440"/>
+                    <ctl:EmptyState Margin="0,12,0,0" Symbol="People" IsVisible="{Binding ResearcherEmpty}"
+                                    Title="{l:T researcher.empty.title}" Body="{l:T researcher.empty.body}">
+                        <ctl:EmptyState.ActionContent>
                             <Button Classes="accent" HorizontalAlignment="Center" Command="{Binding NavigateCommand}" CommandParameter="results">
                                 <TextBlock Text="{l:T researcher.empty.cta}"/>
                             </Button>
-                        </StackPanel>
-                    </Border>
+                        </ctl:EmptyState.ActionContent>
+                    </ctl:EmptyState>
 
                     <!-- Companies -->
                     <ItemsControl ItemsSource="{Binding Companies}" Margin="0,12,0,0" IsVisible="{Binding HasCompanies}">
@@ -560,7 +585,7 @@
                                             <ui:ProgressRing IsIndeterminate="True" Width="15" Height="15" VerticalAlignment="Center"/>
                                             <TextBlock Text="{Binding Status}" FontSize="12" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                         </StackPanel>
-                                        <TextBlock Text="{Binding Error}" FontSize="12" Foreground="{DynamicResource Muted}" TextWrapping="Wrap" IsVisible="{Binding HasError}"/>
+                                        <TextBlock Text="{Binding Error}" FontSize="12" Foreground="{DynamicResource Danger}" TextWrapping="Wrap" IsVisible="{Binding HasError}"/>
 
                                         <Border IsVisible="{Binding HasReport}" Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="10" Padding="14">
                                             <StackPanel Spacing="9">

@@ -21,6 +21,7 @@
             <SolidColorBrush x:Key="SignalSoft"   Color="#15291F"/>
             <SolidColorBrush x:Key="Amber"        Color="#F2B765"/>
             <SolidColorBrush x:Key="Danger"       Color="#FF6B6B"/>
+            <SolidColorBrush x:Key="DangerSoft"   Color="#2C191E"/>
             <SolidColorBrush x:Key="DialTrack"    Color="#2A2A38"/>
             <Color x:Key="GlowColor">#5C7C5CFF</Color>
         </ResourceDictionary>
@@ -43,6 +44,7 @@
             <SolidColorBrush x:Key="SignalSoft"   Color="#E4F7EE"/>
             <SolidColorBrush x:Key="Amber"        Color="#B4690E"/>
             <SolidColorBrush x:Key="Danger"       Color="#D64545"/>
+            <SolidColorBrush x:Key="DangerSoft"   Color="#FBECEC"/>
             <SolidColorBrush x:Key="DialTrack"    Color="#E6E4F0"/>
             <Color x:Key="GlowColor">#1A5B3DF5</Color>
         </ResourceDictionary>

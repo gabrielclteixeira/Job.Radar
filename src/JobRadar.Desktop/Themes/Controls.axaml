@@ -129,6 +129,17 @@
         <Setter Property="Foreground" Value="{DynamicResource AccentHover}"/>
     </Style>
 
+    <!-- ============ Banners ============ -->
+    <Style Selector="Border.banner">
+        <Setter Property="CornerRadius" Value="{DynamicResource CtrlRadius}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="12,10"/>
+    </Style>
+    <Style Selector="Border.banner.danger">
+        <Setter Property="Background" Value="{DynamicResource DangerSoft}"/>
+        <Setter Property="BorderBrush" Value="{DynamicResource Danger}"/>
+    </Style>
+
     <!-- ============ Motion ============ -->
     <!-- Page entrance: style animations re-run whenever the selector ACTIVATES, so [IsVisible=true] plays a
          fade+rise on every navigation into the view — without restructuring the IsVisible-toggled panels
