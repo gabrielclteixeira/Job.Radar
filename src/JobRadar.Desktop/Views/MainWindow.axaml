@@ -392,7 +392,7 @@
                     <Border Classes="banner danger" Margin="0,2,0,0"
                             IsVisible="{Binding ScoringError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
                         <Grid ColumnDefinitions="Auto,10,*,8,Auto">
-                            <ui:SymbolIcon Grid.Column="0" Symbol="WarningFilled" Foreground="{DynamicResource Danger}" VerticalAlignment="Top" Margin="0,2,0,0"/>
+                            <ui:SymbolIcon Grid.Column="0" Symbol="Important" Foreground="{DynamicResource Danger}" VerticalAlignment="Top" Margin="0,2,0,0"/>
                             <StackPanel Grid.Column="2" Spacing="2">
                                 <TextBlock Text="{l:T scoring.error.title}" FontWeight="SemiBold" FontSize="13" Foreground="{DynamicResource Danger}"/>
                                 <TextBlock Text="{Binding ScoringError}" Classes="sub" TextWrapping="Wrap"/>
