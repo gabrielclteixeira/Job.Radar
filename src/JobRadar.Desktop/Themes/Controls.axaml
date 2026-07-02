@@ -129,4 +129,39 @@
         <Setter Property="Foreground" Value="{DynamicResource AccentHover}"/>
     </Style>
 
+    <!-- ============ Motion ============ -->
+    <!-- Page entrance: style animations re-run whenever the selector ACTIVATES, so [IsVisible=true] plays a
+         fade+rise on every navigation into the view — without restructuring the IsVisible-toggled panels
+         into a transitioning control. The outgoing view disappears instantly by design. -->
+    <Style Selector="StackPanel.page[IsVisible=true]">
+        <Style.Animations>
+            <Animation Duration="0:0:0.28" Easing="CubicEaseOut">
+                <KeyFrame Cue="0%">
+                    <Setter Property="Opacity" Value="0"/>
+                    <Setter Property="TranslateTransform.Y" Value="10"/>
+                </KeyFrame>
+                <KeyFrame Cue="100%">
+                    <Setter Property="Opacity" Value="1"/>
+                    <Setter Property="TranslateTransform.Y" Value="0"/>
+                </KeyFrame>
+            </Animation>
+        </Style.Animations>
+    </Style>
+
+    <!-- Job cards fade in as they attach — one per Jobs.Add() during streaming = a natural stagger. -->
+    <Style Selector="Expander.jobCard">
+        <Style.Animations>
+            <Animation Duration="0:0:0.20" Easing="CubicEaseOut">
+                <KeyFrame Cue="0%">
+                    <Setter Property="Opacity" Value="0"/>
+                    <Setter Property="TranslateTransform.Y" Value="6"/>
+                </KeyFrame>
+                <KeyFrame Cue="100%">
+                    <Setter Property="Opacity" Value="1"/>
+                    <Setter Property="TranslateTransform.Y" Value="0"/>
+                </KeyFrame>
+            </Animation>
+        </Style.Animations>
+    </Style>
+
 </Styles>

@@ -129,13 +129,8 @@
             <Grid>
 
                 <!-- ============ HOME ============ -->
-                <StackPanel IsVisible="{Binding IsWelcome}" Spacing="0" HorizontalAlignment="Center" MaxWidth="600" Margin="0,36,0,0">
-                    <Grid Width="92" Height="92" HorizontalAlignment="Center">
-                        <Ellipse Width="92" Height="92" Stroke="{DynamicResource Accent}" StrokeThickness="1.5" Opacity="0.35"/>
-                        <Ellipse Width="60" Height="60" Stroke="{DynamicResource Accent}" StrokeThickness="1.5" Opacity="0.55"/>
-                        <Ellipse Width="28" Height="28" Stroke="{DynamicResource Accent}" StrokeThickness="1.5" Opacity="0.8"/>
-                        <Ellipse Width="9"  Height="9"  Fill="{DynamicResource Accent}"/>
-                    </Grid>
+                <StackPanel Classes="page" IsVisible="{Binding IsWelcome}" Spacing="0" HorizontalAlignment="Center" MaxWidth="600" Margin="0,36,0,0">
+                    <ctl:HeroMark HorizontalAlignment="Center"/>
                     <TextBlock Text="Job Radar" FontSize="38" FontWeight="Bold" HorizontalAlignment="Center"
                                Margin="0,18,0,0" Foreground="{DynamicResource Text}"/>
                     <TextBlock Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="470" Margin="0,9,0,0" FontSize="14"
@@ -200,7 +195,7 @@
                 </StackPanel>
 
                 <!-- ============ PROFILE ============ -->
-                <StackPanel IsVisible="{Binding IsProfile}" Spacing="6">
+                <StackPanel Classes="page" IsVisible="{Binding IsProfile}" Spacing="6">
                     <TextBlock Classes="h1" Text="{l:T profile.title}"/>
                     <TextBlock Classes="sub" Text="{l:T profile.sub}"/>
                     <Border Classes="card" Margin="0,12,0,0">
@@ -262,7 +257,7 @@
                 </StackPanel>
 
                 <!-- ============ RESULTS ============ -->
-                <StackPanel IsVisible="{Binding IsResults}" Spacing="10">
+                <StackPanel Classes="page" IsVisible="{Binding IsResults}" Spacing="10">
                     <TextBlock Classes="h1" Text="{Binding ResultsTitle}"/>
 
                     <WrapPanel Orientation="Horizontal" Margin="0,2,0,0">
@@ -351,7 +346,7 @@
                     <ItemsControl ItemsSource="{Binding Jobs}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="vm:JobVm">
-                                <Expander Margin="0,0,0,8" HorizontalAlignment="Stretch">
+                                <Expander Classes="jobCard" Margin="0,0,0,8" HorizontalAlignment="Stretch">
                                     <Expander.Header>
                                         <Grid ColumnDefinitions="Auto,16,*" HorizontalAlignment="Stretch" Margin="2,9,8,9">
                                             <ctl:ScoreDial Grid.Column="0" Score="{Binding Score}" Label="{Binding ScoreLabel}" VerticalAlignment="Top"/>
@@ -482,7 +477,7 @@
                 </StackPanel>
 
                 <!-- ============ COMPANY RESEARCHER ============ -->
-                <StackPanel IsVisible="{Binding IsResearcher}" Spacing="6" MaxWidth="760">
+                <StackPanel Classes="page" IsVisible="{Binding IsResearcher}" Spacing="6" MaxWidth="760">
                     <TextBlock Classes="h1" Text="{l:T nav.researcher}"/>
                     <TextBlock Classes="sub" Text="{l:T researcher.sub}"/>
 
@@ -748,7 +743,7 @@
                 </StackPanel>
 
                 <!-- ============ IMPROVE (career plan) ============ -->
-                <StackPanel IsVisible="{Binding IsImprove}" Spacing="6" MaxWidth="720">
+                <StackPanel Classes="page" IsVisible="{Binding IsImprove}" Spacing="6" MaxWidth="720">
                     <TextBlock Classes="h1" Text="{l:T nav.improve}"/>
                     <TextBlock Classes="sub" Text="{l:T improve.sub}"/>
 
@@ -1199,7 +1194,7 @@
                 </StackPanel>
 
                 <!-- ============ SETTINGS ============ -->
-                <StackPanel IsVisible="{Binding IsSettings}" Spacing="6" MaxWidth="660">
+                <StackPanel Classes="page" IsVisible="{Binding IsSettings}" Spacing="6" MaxWidth="660">
                     <TextBlock Classes="h1" Text="{l:T nav.settings}"/>
                     <TextBlock Classes="sub" Text="{l:T settings.sub}"/>
 

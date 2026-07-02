@@ -1,0 +1,54 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="JobRadar.Desktop.Controls.HeroMark"
+             Width="92" Height="92">
+    <UserControl.Styles>
+        <!-- A slow radar "ping": one ring expands and fades every 3.6s. Deliberately slower and dimmer than
+             RadarScope's 2.4s sweep — the hero is ambient/idle, the scope means the app is working. -->
+        <Style Selector="Ellipse#Ping">
+            <Style.Animations>
+                <Animation Duration="0:0:3.6" IterationCount="INFINITE" Easing="CubicEaseOut">
+                    <KeyFrame Cue="0%">
+                        <Setter Property="ScaleTransform.ScaleX" Value="0.25"/>
+                        <Setter Property="ScaleTransform.ScaleY" Value="0.25"/>
+                        <Setter Property="Opacity" Value="0"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="10%">
+                        <Setter Property="Opacity" Value="0.45"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="75%">
+                        <Setter Property="ScaleTransform.ScaleX" Value="1"/>
+                        <Setter Property="ScaleTransform.ScaleY" Value="1"/>
+                        <Setter Property="Opacity" Value="0"/>
+                    </KeyFrame>
+                    <KeyFrame Cue="100%">
+                        <Setter Property="ScaleTransform.ScaleX" Value="1"/>
+                        <Setter Property="ScaleTransform.ScaleY" Value="1"/>
+                        <Setter Property="Opacity" Value="0"/>
+                    </KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+        <!-- The centre dot breathes in phase with the ping. -->
+        <Style Selector="Ellipse#Dot">
+            <Style.Animations>
+                <Animation Duration="0:0:3.6" IterationCount="INFINITE">
+                    <KeyFrame Cue="0%"><Setter Property="Opacity" Value="1"/></KeyFrame>
+                    <KeyFrame Cue="50%"><Setter Property="Opacity" Value="0.55"/></KeyFrame>
+                    <KeyFrame Cue="100%"><Setter Property="Opacity" Value="1"/></KeyFrame>
+                </Animation>
+            </Style.Animations>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <Ellipse Width="92" Height="92" Stroke="{DynamicResource Accent}" StrokeThickness="1.5" Opacity="0.35"/>
+        <Ellipse Width="60" Height="60" Stroke="{DynamicResource Accent}" StrokeThickness="1.5" Opacity="0.55"/>
+        <Ellipse Width="28" Height="28" Stroke="{DynamicResource Accent}" StrokeThickness="1.5" Opacity="0.8"/>
+        <Ellipse x:Name="Ping" Width="92" Height="92" Stroke="{DynamicResource Accent}" StrokeThickness="1.5"
+                 Opacity="0" RenderTransformOrigin="50%,50%">
+            <Ellipse.RenderTransform><ScaleTransform ScaleX="0.25" ScaleY="0.25"/></Ellipse.RenderTransform>
+        </Ellipse>
+        <Ellipse x:Name="Dot" Width="9" Height="9" Fill="{DynamicResource Accent}"/>
+    </Grid>
+</UserControl>
