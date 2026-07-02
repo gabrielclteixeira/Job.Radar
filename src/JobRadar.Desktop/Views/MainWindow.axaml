@@ -281,11 +281,69 @@
                         <Button Classes="ghost" Command="{Binding OpenLinkedInCommand}" Margin="0,0,8,8" ToolTip.Tip="{l:T results.linkedin.tip}">
                             <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="LinkedIn"/></StackPanel>
                         </Button>
+                        <Button Classes="ghost" Command="{Binding ToggleLinkedInImportCommand}" Margin="0,0,8,8" ToolTip.Tip="{l:T linkedin.import.tip}">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T linkedin.import}"/>
+                                <Border Classes="chip" VerticalAlignment="Center" IsVisible="{Binding HasLinkedInImported}">
+                                    <TextBlock Text="{Binding LinkedInImportedCount}"/>
+                                </Border>
+                            </StackPanel>
+                        </Button>
                         <Button Classes="ghost" Command="{Binding DeleteJobsCommand}" IsEnabled="{Binding !Busy}" IsVisible="{Binding HasJobs}"
                                 Margin="0,0,8,8" Foreground="{DynamicResource Danger}" ToolTip.Tip="{l:T results.delete.tip}">
                             <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Delete"/><TextBlock Text="{l:T results.delete}"/></StackPanel>
                         </Button>
                     </WrapPanel>
+
+                    <!-- LinkedIn import: paste + AI extract. Opt-in and deliberately over-explained — the flow can
+                         sound scary, so the copy stresses that the USER does the opening/copying in their own
+                         browser and the app automates nothing against their account. -->
+                    <Border Classes="card" IsVisible="{Binding ShowLinkedInImport}" Margin="0,2,0,4">
+                        <StackPanel Spacing="10">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Border Width="3" Height="15" CornerRadius="2" Background="{DynamicResource Accent}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{l:T linkedin.import.title}" FontSize="11" FontWeight="Bold" LetterSpacing="1" VerticalAlignment="Center" Foreground="{DynamicResource AccentText}"/>
+                            </StackPanel>
+                            <TextBlock Classes="sub" TextWrapping="Wrap" Text="{l:T linkedin.import.safe}"/>
+
+                            <Grid ColumnDefinitions="20,*" Margin="0,2,0,0">
+                                <TextBlock Grid.Column="0" Text="1." FontWeight="Bold" Foreground="{DynamicResource AccentText}"/>
+                                <StackPanel Grid.Column="1" Spacing="7">
+                                    <TextBlock Classes="sub" TextWrapping="Wrap" Text="{l:T linkedin.import.step1}"/>
+                                    <Button Classes="ghost" HorizontalAlignment="Left" Command="{Binding OpenLinkedInCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T linkedin.import.open}"/></StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                            <Grid ColumnDefinitions="20,*">
+                                <TextBlock Grid.Column="0" Text="2." FontWeight="Bold" Foreground="{DynamicResource AccentText}"/>
+                                <TextBlock Grid.Column="1" Classes="sub" TextWrapping="Wrap" Text="{l:T linkedin.import.step2}"/>
+                            </Grid>
+                            <Grid ColumnDefinitions="20,*">
+                                <TextBlock Grid.Column="0" Text="3." FontWeight="Bold" Foreground="{DynamicResource AccentText}"/>
+                                <StackPanel Grid.Column="1" Spacing="7">
+                                    <TextBox Text="{Binding LinkedInPaste}" AcceptsReturn="True" Height="140" TextWrapping="Wrap"
+                                             Watermark="{l:T linkedin.import.watermark}" IsEnabled="{Binding !IsImportingLinkedIn}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Button Classes="accent" Command="{Binding ExtractLinkedInJobsCommand}" IsEnabled="{Binding !IsImportingLinkedIn}">
+                                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Add"/><TextBlock Text="{l:T linkedin.import.extract}"/></StackPanel>
+                                        </Button>
+                                        <ui:ProgressRing IsIndeterminate="True" Width="18" Height="18" VerticalAlignment="Center" IsVisible="{Binding IsImportingLinkedIn}"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Classes="sub" TextWrapping="Wrap" Foreground="{DynamicResource AccentText}" Text="{Binding LinkedInImportStatus}"
+                                       IsVisible="{Binding LinkedInImportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <Grid ColumnDefinitions="*,Auto" IsVisible="{Binding HasLinkedInImported}">
+                                <TextBlock Grid.Column="0" Classes="sub" TextWrapping="Wrap" VerticalAlignment="Center" Text="{l:T linkedin.import.next}"/>
+                                <Button Grid.Column="1" Classes="link" Margin="8,0,0,0" Command="{Binding ClearLinkedInImportsCommand}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6"><ui:SymbolIcon Symbol="Delete" FontSize="13"/><TextBlock Text="{l:T linkedin.import.clear}"/></StackPanel>
+                                </Button>
+                            </Grid>
+                            <TextBlock Classes="sub" FontSize="11" FontStyle="Italic" TextWrapping="Wrap" Text="{l:T linkedin.import.nourl}"/>
+                        </StackPanel>
+                    </Border>
 
                     <!-- Filter rows (added via "+ Filtro") -->
                     <ItemsControl x:Name="FiltersList" ItemsSource="{Binding Filters}" Margin="0,0,0,2">

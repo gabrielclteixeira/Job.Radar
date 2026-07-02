@@ -62,6 +62,7 @@ public partial class MainViewModel : ObservableObject
         LoadPlan();
         LoadPlanHistory();
         _companyCache = CompanyCache.Load(_companyCachePath);
+        LinkedInImportedCount = LinkedInImport.CountSaved(LinkedInJobsFile);
         _langInitialised = true;
     }
 
@@ -1524,6 +1525,56 @@ public partial class MainViewModel : ObservableObject
         if (_profile.Remote) url += "&f_WT=2"; // remote filter
         try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = url, UseShellExecute = true }); }
         catch { /* best-effort */ }
+    }
+
+    // ---- LinkedIn import: paste + AI extract (opt-in, ToS-safe — the USER opens/copies in their own browser;
+    // the app automates nothing against their account). Extracted jobs land in linkedin-jobs.json, which the
+    // pipeline already merges on the next search. ----
+    [ObservableProperty] private bool _showLinkedInImport;
+    [ObservableProperty] private string _linkedInPaste = "";
+    [ObservableProperty] private bool _isImportingLinkedIn;
+    [ObservableProperty] private string _linkedInImportStatus = "";
+    [ObservableProperty] private int _linkedInImportedCount;
+    public bool HasLinkedInImported => LinkedInImportedCount > 0;
+    partial void OnLinkedInImportedCountChanged(int value) => OnPropertyChanged(nameof(HasLinkedInImported));
+
+    private string LinkedInJobsFile => Path.IsPathRooted(_cfg.LinkedInJobsPath)
+        ? _cfg.LinkedInJobsPath : Path.Combine(_root, _cfg.LinkedInJobsPath);
+
+    [RelayCommand] private void ToggleLinkedInImport() => ShowLinkedInImport = !ShowLinkedInImport;
+
+    [RelayCommand]
+    private async Task ExtractLinkedInJobs()
+    {
+        if (IsImportingLinkedIn || string.IsNullOrWhiteSpace(LinkedInPaste)) return;
+        IsImportingLinkedIn = true;
+        LinkedInImportStatus = L("linkedin.import.working");
+        var progress = new Progress<string>(m => Dispatcher.UIThread.Post(() => LinkedInImportStatus = m));
+        try
+        {
+            var (jobs, error) = await LinkedInImport.ExtractAsync(_cfg.Claude, LinkedInPaste, progress);
+            if (jobs.Count == 0)
+            {
+                LinkedInImportStatus = string.IsNullOrWhiteSpace(error)
+                    ? L("linkedin.import.none") : Loc.Instance.F("error.generic", error);
+                return;
+            }
+            var (added, total) = LinkedInImport.SaveMerged(LinkedInJobsFile, jobs);
+            LinkedInImportedCount = total;
+            LinkedInImportStatus = Loc.Instance.F("linkedin.import.done", added, total);
+            LinkedInPaste = "";
+            Diag.Info($"linkedin import: +{added} ({total} total)");
+        }
+        catch (Exception ex) { LinkedInImportStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("linkedin import failed", ex); }
+        finally { IsImportingLinkedIn = false; }
+    }
+
+    [RelayCommand]
+    private void ClearLinkedInImports()
+    {
+        LinkedInImport.Clear(LinkedInJobsFile);
+        LinkedInImportedCount = 0;
+        LinkedInImportStatus = L("linkedin.import.cleared");
     }
 
     [RelayCommand] private void CloseSettings() => ShowOnly(welcome: true);
