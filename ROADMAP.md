@@ -71,6 +71,20 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   the employer's own postings. Every field is **source-linked, confidence-tagged, and "unknown" when thin** (no
   fabricated numbers). Per-company cache with an "as of" date + TTL, name filter, sortable, and **export** to
   CSV/HTML/PDF. Key-free (search snippets + a Jina page-fetch + Wikidata + your own AI engine).
+- **Premium polish, first pass (surgical)** — the app finally moves: page-entrance motion on every view,
+  working hover/pressed transitions on **all** button classes (the old accent transition was dead code — it sat
+  on the Button while hover swaps brushes on the template presenter), an ambient animated **hero** (radar ping +
+  breathing centre dot) as the one signature moment, and job cards fading in as results stream. States got
+  honest too: scoring failures now surface in a **persistent, dismissible error banner** (they used to vanish
+  with the scanning card), a shared **EmptyState** card (icon + title + body + CTA) covers Results and
+  Companies, per-item research errors render in the danger colour, and close/check glyph buttons became real
+  icons. Typography/spacing normalization and list virtualization stay in the backlog.
+- **LinkedIn import (paste + AI)** — the ToS-safe, opt-in LinkedIn option: open LinkedIn Jobs pre-filled from
+  the profile (in the user's **own** browser and session), copy the results page(s), paste into the app, and
+  the user's own engine extracts the listings into `linkedin-jobs.json` — merged, deduped and scored like any
+  other source. Nothing is automated against the account, and the import card over-explains exactly that
+  (optional, 100% manual, extraction runs locally). Honest caveat: copied text carries no links, so imported
+  jobs may have no clickable URL. A Playwright-assisted pass (the user logs in) remains a future idea.
 
 ---
 
@@ -119,12 +133,12 @@ Data Labs / Crunchbase) for users who want hard data instead of best-effort snip
 
 ## 💡 Backlog / ideas
 
-- **Premium UI polish** — elevate the front-end to feel like a premium, polished product: refined visual
-  design, smooth transitions/motion, consistent spacing & iconography, and proper empty/loading/error states.
-- **LinkedIn aggregation** — LinkedIn isn't scraped (ToS). Today: a "Procurar no LinkedIn" button opens
-  LinkedIn Jobs in the browser pre-filled from the profile, plus the optional `linkedin-jobs.json` merge.
-  Explore a ToS-respecting way to pull results into the app (e.g. a user-run browser snippet/export, or a
-  Playwright-assisted pass where the **user logs in** — best-effort, opt-in, given LinkedIn's bot defenses).
+- **Premium UI polish** — *(first surgical pass shipped: motion, hero, error/empty states, icons — see
+  Shipped)*. Remaining: normalize typography/spacing/radii to the token scale (the half-point font sweep),
+  virtualize the jobs/companies lists (ItemsControl → virtualizing list), and richer loading states.
+- **LinkedIn aggregation** — *(paste + AI import shipped — see Shipped)*. Remaining idea: a
+  Playwright-assisted pass where the **user logs in** and the app pulls the results best-effort — opt-in and
+  clearly explained, given LinkedIn's bot defenses and the account-restriction risk.
 - **Deeper company research** — *(promoted to "Company Researcher", Planned #4)*. Remaining sub-idea: optional
   use of the **Claude CLI's native web search** to ground the extracted signals more richly.
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.
