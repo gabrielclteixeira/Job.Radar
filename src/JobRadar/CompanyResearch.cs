@@ -50,9 +50,13 @@ Use ONLY the snippets (don't invent). Reply with ONLY one valid JSON object, dou
 {{""pros"":[""short phrase""],""cons"":[""short phrase""],""context"":[""neutral fact""],""reputationNote"":""one sentence or empty"",""salaryFound"":""comparable figures with currency, or 'desconhecido'"",""salaryExpectation"":""a €/yr range to target at THIS company"",""salaryRationale"":""1 sentence: how you derived it"",""bottomLine"":""one sentence""}}
 - pros/cons: concrete, from reviews; cite sources inline like [2]. Keep each under ~12 words.
 - salaryExpectation: a realistic €/year range for THIS candidate's level and LOCATION ({location ?? "their local market"}),
-  reasoning from the found figures and their experience/seniority/target. The snippets are often US/global and
-  inflated — adjust DOWN to the local market and anchor to the candidate's own floor/target above; don't copy US
-  numbers or assume remote = global pay. If figures are thin, widen the range and say so in salaryRationale.
+  ANCHORED to what THIS company actually pays per the found figures. Company averages often mix junior roles, so a
+  more experienced candidate may sit at the top of the found band or modestly above it — but NEVER far beyond what
+  this employer plausibly pays. The candidate's own floor/target describe what they WANT, not what the company pays:
+  never inflate the range toward them. If the company's figures sit below the candidate's floor, keep the expectation
+  at the company's reality and flag the mismatch in bottomLine instead. US/global snippets are inflated — adjust DOWN
+  to the local market; don't copy US numbers or assume remote = global pay. If figures are thin, widen the range and
+  say so in salaryRationale.
 - Be honest when data is thin (empty arrays are fine).
 - Write the text in {Loc.Instance.T("ai.lang")}.
 
@@ -173,9 +177,12 @@ Rules:
 - layoffs: only REAL, dated events found in the text; [] if none. Put the snippet index in ""source"" as ""[n]"".
 - signals: other recent notable events from the last ~18 months — funding round, acquisition/merger, hiring freeze,
   leadership change, office open/close. Each ≤14 words with an inline [n]. [] if none. Do NOT duplicate layoffs here.
-- payBand: a realistic €/year range for THIS candidate's level ({cand}) and LOCATION ({(string.IsNullOrWhiteSpace(loc) ? "their local market" : loc)}).
-  Snippets are often US/global and inflated — adjust DOWN to the local market and anchor to the candidate's own
-  floor/target; never copy US figures verbatim. If figures are thin, widen the range and lower confidence.
+- payBand: a realistic €/year range for THIS candidate's level ({cand}) and LOCATION ({(string.IsNullOrWhiteSpace(loc) ? "their local market" : loc)}),
+  ANCHORED to figures found for THIS company. A more experienced candidate may sit at the top of the found band, but
+  never far beyond what this employer plausibly pays. The candidate's floor/target are wishes, NOT evidence of company
+  pay — never inflate the band toward them; if company figures sit below the floor, keep the band at company reality.
+  US/global snippets are inflated — adjust DOWN to the local market; never copy US figures verbatim. If figures are
+  thin, widen the range and lower confidence.
 - industry/companySize/headquarters/founded/ceo: short, only if stated. PREFER the [WIKIDATA] line when present (it's authoritative).
 - confidence: ""high"" only if several sources corroborate; ""unknown"" if you'd be guessing — be honest.
 - arrays: at most 3 items each, short. Empty arrays are fine when data is thin.
