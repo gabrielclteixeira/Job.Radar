@@ -126,6 +126,6 @@ public static class CvStore
         if (d.Lang is not ("pt" or "en")) d.Lang = "pt";
         if (!System.Text.RegularExpressions.Regex.IsMatch(d.AccentColor ?? "", "^#[0-9a-fA-F]{6}$"))
             d.AccentColor = "#4C2DBE";
-        if (d.TemplateId is not ("clean" or "accent")) d.TemplateId = "clean";
+        if (d.TemplateId is not ("clean" or "accent" or "sidebar")) d.TemplateId = "clean";
     }
 }
