@@ -76,12 +76,14 @@ public partial class MainViewModel : ObservableObject
     public bool IsNavResults => Nav == "results";
     public bool IsNavResearcher => Nav == "researcher";
     public bool IsNavImprove => Nav == "improve";
+    public bool IsNavCoach => Nav == "coach";
     public bool IsNavSettings => Nav == "settings";
     partial void OnNavChanged(string value)
     {
         OnPropertyChanged(nameof(IsNavHome)); OnPropertyChanged(nameof(IsNavProfile));
         OnPropertyChanged(nameof(IsNavResults)); OnPropertyChanged(nameof(IsNavResearcher));
-        OnPropertyChanged(nameof(IsNavImprove)); OnPropertyChanged(nameof(IsNavSettings));
+        OnPropertyChanged(nameof(IsNavImprove)); OnPropertyChanged(nameof(IsNavCoach));
+        OnPropertyChanged(nameof(IsNavSettings));
     }
 
     [RelayCommand]
@@ -105,6 +107,7 @@ public partial class MainViewModel : ObservableObject
                 break;
             case "improve": ShowOnly(improve: true); _ = RefreshPlanGroundingAsync(); break;  // career-growth area
             case "researcher": OpenResearcher(); break;       // employer-health signals across matched jobs
+            case "coach": OpenCoach(); break;                  // grounded chat (applications/salary/interviews)
             case "settings": OpenSettings(); break;            // loads settings fields + shows
             default: ShowOnly(welcome: true); break;          // home
         }
@@ -282,6 +285,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isSettings;
     [ObservableProperty] private bool _isImprove;
     [ObservableProperty] private bool _isResearcher;
+    [ObservableProperty] private bool _isCoach;
 
     // ---- improve (career plan) ----
     [ObservableProperty] private CareerPlanResult? _plan;
@@ -1897,10 +1901,10 @@ public partial class MainViewModel : ObservableObject
         EmptyMessage = _all.Count > 0 ? L("empty.noMatch") : L("empty.noneToShow");
     }
 
-    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false, bool improve = false, bool researcher = false)
+    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false, bool improve = false, bool researcher = false, bool coach = false)
     {
-        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings; IsImprove = improve; IsResearcher = researcher;
-        Nav = settings ? "settings" : improve ? "improve" : researcher ? "researcher" : results ? "results" : profile ? "profile" : "home";
+        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings; IsImprove = improve; IsResearcher = researcher; IsCoach = coach;
+        Nav = settings ? "settings" : improve ? "improve" : researcher ? "researcher" : coach ? "coach" : results ? "results" : profile ? "profile" : "home";
     }
 
     // ---- Company Researcher (employer-health signals across the matched jobs) ----
@@ -2076,6 +2080,169 @@ public partial class MainViewModel : ObservableObject
         }
         catch (Exception ex) { ExportMsg = Loc.Instance.F("export.failed", ex.Message); }
         finally { Busy = false; }
+    }
+
+    // ---- Coach (grounded chat: applications / salary / interviews, with screenshots) ----
+    public ObservableCollection<CoachMessageVm> CoachTranscript { get; } = new();
+    public bool CoachEmpty => CoachTranscript.Count == 0;
+    [ObservableProperty] private string _coachInput = "";
+    [ObservableProperty] private bool _isCoachSending;
+    [ObservableProperty] private string _coachError = "";
+    public ObservableCollection<CoachAttachmentVm> CoachAttachments { get; } = new();
+    public bool HasCoachAttachments => CoachAttachments.Count > 0;
+    public ObservableCollection<string> CoachCompanyOptions { get; } = new();
+    [ObservableProperty] private int _coachCompanyIndex;             // 0 = "(sem empresa)"
+    [ObservableProperty] private string _coachVisionWarning = "";
+    private CancellationTokenSource? _coachCts;
+    private string _coachMarket = "";                                 // pinned on view open
+    private string? _coachTempDir;
+    /// <summary>Set by the view: scrolls the transcript to the newest message (after layout).</summary>
+    public Action? ScrollCoachToEnd;
+    /// <summary>Per-session folder for pasted screenshots (deleted by "Limpar conversa").</summary>
+    public string CoachTempDir => _coachTempDir ??= Directory.CreateDirectory(
+        Path.Combine(Path.GetTempPath(), "JobRadar", $"coach-{Environment.ProcessId}")).FullName;
+
+    private void OpenCoach()
+    {
+        // Company picker = union of the two research caches. Reports carry a display name; briefs
+        // are keyed lowercase only (no name field) — cosmetic, the lookup key is the same.
+        var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in _companyCache.Values)
+            if (!string.IsNullOrWhiteSpace(r.Company)) names.Add(r.Company.Trim());
+        foreach (var k in _briefCache.Keys)
+            if (!names.Contains(k)) names.Add(k);
+        string current = CoachCompanyIndex > 0 && CoachCompanyIndex < CoachCompanyOptions.Count
+            ? CoachCompanyOptions[CoachCompanyIndex] : "";
+        CoachCompanyOptions.Clear();
+        CoachCompanyOptions.Add(L("coach.company.none"));
+        foreach (var n in names) CoachCompanyOptions.Add(n);
+        CoachCompanyIndex = Math.Max(0, CoachCompanyOptions.IndexOf(current));
+        _ = RefreshCoachMarketAsync();
+        ShowOnly(coach: true);
+    }
+
+    private async Task RefreshCoachMarketAsync()
+    {
+        try { var s = await BuildMarketSignalAsync(); _coachMarket = s.HasData ? s.ToMarketContext() : ""; }
+        catch { _coachMarket = ""; }
+    }
+
+    [RelayCommand]
+    private async Task SendCoach()
+    {
+        string text = (CoachInput ?? "").Trim();
+        if (IsCoachSending || (text.Length == 0 && CoachAttachments.Count == 0)) return;
+        CoachError = "";
+        var images = CoachAttachments.Select(a => a.Path).ToList();
+        CoachTranscript.Add(new CoachMessageVm(isUser: true, text, images.Count > 0 ? images : null));
+        OnPropertyChanged(nameof(CoachEmpty));
+        CoachInput = "";
+        foreach (var a in CoachAttachments) a.Dispose();   // free the thumbs; keep the FILES (history references them)
+        CoachAttachments.Clear();
+        OnPropertyChanged(nameof(HasCoachAttachments));
+        CoachVisionWarning = "";
+        ScrollCoachToEnd?.Invoke();
+
+        string? companyBlock = null;
+        if (CoachCompanyIndex > 0 && CoachCompanyIndex < CoachCompanyOptions.Count)
+        {
+            string name = CoachCompanyOptions[CoachCompanyIndex];
+            _companyCache.TryGetValue(CompanyCache.Key(name), out var rep);
+            _briefCache.TryGetValue(CompanyCache.Key(name), out var brief);
+            companyBlock = Coach.FormatCompanyContext(name, rep, brief);
+        }
+        string system = Coach.BuildSystemPrompt(_profile, _coachMarket, companyBlock);
+        var history = CoachTranscript
+            .Select(m => new ChatMessage(m.IsUser ? "user" : "assistant", m.Text, m.ImagePaths))
+            .ToList();
+        var capped = Coach.Cap(history, system.Length, UsingLocalEngine ? Coach.OpenAiBudget : Coach.CliBudget);
+
+        var answerVm = new CoachMessageVm(isUser: false, "") { IsStreaming = true };
+        CoachTranscript.Add(answerVm);
+        IsCoachSending = true;
+        _coachCts = new CancellationTokenSource();
+        var onDelta = UsingLocalEngine   // streaming only on the OpenAI path; the CLI shows a spinner
+            ? new Progress<string>(d => Dispatcher.UIThread.Post(() =>
+                { answerVm.Text += d; ScrollCoachToEnd?.Invoke(); }))
+            : null;
+        try
+        {
+            string? answer = await LlmClient.ChatAsync(_cfg.Claude, system, capped, onDelta, _coachCts.Token);
+            if (!string.IsNullOrWhiteSpace(answer)) answerVm.Text = answer;   // final authoritative text
+            else if (string.IsNullOrWhiteSpace(answerVm.Text))
+            {
+                CoachTranscript.Remove(answerVm);
+                CoachError = LlmClient.LastError ?? L("llm.empty");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (string.IsNullOrWhiteSpace(answerVm.Text)) CoachTranscript.Remove(answerVm);
+        }
+        catch (Exception ex)
+        {
+            CoachTranscript.Remove(answerVm);
+            CoachError = Loc.Instance.F("error.generic", ex.Message);
+        }
+        finally
+        {
+            answerVm.IsStreaming = false;
+            IsCoachSending = false;
+            OnPropertyChanged(nameof(CoachEmpty));
+            ScrollCoachToEnd?.Invoke();
+        }
+    }
+
+    [RelayCommand] private void StopCoach() => _coachCts?.Cancel();
+
+    [RelayCommand]
+    private void ClearCoach()
+    {
+        _coachCts?.Cancel();
+        CoachTranscript.Clear();
+        CoachError = ""; CoachVisionWarning = "";
+        foreach (var a in CoachAttachments) a.Dispose();
+        CoachAttachments.Clear();
+        OnPropertyChanged(nameof(HasCoachAttachments));
+        try { if (_coachTempDir is not null) Directory.Delete(_coachTempDir, true); } catch { }
+        _coachTempDir = null;
+        OnPropertyChanged(nameof(CoachEmpty));
+    }
+
+    /// <summary>Adds an image (from the picker or Ctrl+V) as a pending attachment. Silently ignores
+    /// files Avalonia can't decode — for pasted clipboard data that means "not really an image".</summary>
+    public void AddCoachImage(string path)
+    {
+        try { CoachAttachments.Add(new CoachAttachmentVm(path)); }
+        catch { return; }
+        OnPropertyChanged(nameof(HasCoachAttachments));
+        _ = UpdateCoachVisionWarningAsync();
+    }
+
+    [RelayCommand]
+    private void RemoveCoachAttachment(CoachAttachmentVm? a)
+    {
+        if (a is null) return;
+        a.Dispose();
+        CoachAttachments.Remove(a);
+        OnPropertyChanged(nameof(HasCoachAttachments));
+        if (CoachAttachments.Count == 0) CoachVisionWarning = "";
+    }
+
+    /// <summary>Best-effort "does the local model see images?" warning. Never blocks sending —
+    /// the Claude CLI always reads images, and LM Studio can't be probed (soft warning).</summary>
+    private async Task UpdateCoachVisionWarningAsync()
+    {
+        CoachVisionWarning = "";
+        if (CoachAttachments.Count == 0 || !UsingLocalEngine) return;
+        bool heur = System.Text.RegularExpressions.Regex.IsMatch(_cfg.Claude.Model ?? "",
+            "llava|vision|vl|minicpm|moondream|gemma3|pixtral|internvl",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (heur) return;
+        bool? cap = await LlmClient.DetectVisionAsync(_cfg.Claude.BaseUrl, _cfg.Claude.Model);
+        if (CoachAttachments.Count == 0) return;   // removed meanwhile
+        if (cap == false) CoachVisionWarning = L("coach.vision.no");
+        else if (cap is null) CoachVisionWarning = L("coach.vision.unknown");
     }
 
     /// <summary>Loads the LLM backend override saved from the Settings screen (machine-local, gitignored).</summary>
