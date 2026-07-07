@@ -2118,7 +2118,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<CoachAttachmentVm> CoachAttachments { get; } = new();
     public bool HasCoachAttachments => CoachAttachments.Count > 0;
     public ObservableCollection<string> CoachCompanyOptions { get; } = new();
-    [ObservableProperty] private int _coachCompanyIndex;             // 0 = "(sem empresa)"
+    [ObservableProperty] private object? _coachCompanyPick;          // AutoCompleteBox selection; none-label = general thread
     [ObservableProperty] private string _coachVisionWarning = "";
     private CancellationTokenSource? _coachCts;
     private string _coachMarket = "";                                 // pinned on view open
@@ -2133,16 +2133,33 @@ public partial class MainViewModel : ObservableObject
     private string _coachThreadKey = "";
     private bool _coachSwitching;                                     // guards index churn while rebuilding options
 
-    private string CoachKeyForIndex(int idx)
-        => idx > 0 && idx < CoachCompanyOptions.Count ? CompanyCache.Key(CoachCompanyOptions[idx]) : "";
+    private string CoachKeyForPick(object? pick)
+        => pick is string s && s.Length > 0 && !string.Equals(s, L("coach.company.none"), StringComparison.Ordinal)
+            ? CompanyCache.Key(s) : "";
 
     private void OpenCoach()
     {
-        // Company picker = research caches ∪ companies that already have a conversation thread.
-        // Reports carry a display name; briefs/threads are keyed lowercase only — cosmetic.
+        RebuildCoachCompanies();
+        if (!IsCoachSending) LoadCoachThread(CoachKeyForPick(CoachCompanyPick));
+        _ = RefreshCoachMarketAsync();
+        ShowOnly(coach: true);
+        // Opened before ever visiting Jobs → quietly pull the scored cache so every employer is pickable.
+        if (_all.Count == 0)
+            _ = EnsureJobsLoadedAsync().ContinueWith(t =>
+            {
+                if (t.Result) Dispatcher.UIThread.Post(RebuildCoachCompanies);
+            }, TaskScheduler.Default);
+    }
+
+    /// <summary>Company picker = research caches ∪ conversation threads ∪ employers from the scored
+    /// jobs. Reports/jobs carry display names; briefs/threads are keyed lowercase only — cosmetic.</summary>
+    private void RebuildCoachCompanies()
+    {
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in _companyCache.Values)
             if (!string.IsNullOrWhiteSpace(r.Company)) names.Add(r.Company.Trim());
+        foreach (var v in _all)
+            if (!string.IsNullOrWhiteSpace(v.Company)) names.Add(v.Company.Trim());
         foreach (var k in _briefCache.Keys)
             if (!names.Contains(k)) names.Add(k);
         foreach (var k in _coachThreads.Keys)
@@ -2151,26 +2168,21 @@ public partial class MainViewModel : ObservableObject
         _coachSwitching = true;
         try
         {
-            string current = CoachCompanyIndex > 0 && CoachCompanyIndex < CoachCompanyOptions.Count
-                ? CoachCompanyOptions[CoachCompanyIndex] : "";
+            string current = CoachCompanyPick as string ?? "";
             CoachCompanyOptions.Clear();
             CoachCompanyOptions.Add(L("coach.company.none"));
             foreach (var n in names) CoachCompanyOptions.Add(n);
-            CoachCompanyIndex = Math.Max(0, CoachCompanyOptions.IndexOf(current));
+            CoachCompanyPick = CoachCompanyOptions.Contains(current) ? current : CoachCompanyOptions[0];
         }
         finally { _coachSwitching = false; }
-
-        if (!IsCoachSending) LoadCoachThread(CoachKeyForIndex(CoachCompanyIndex));
-        _ = RefreshCoachMarketAsync();
-        ShowOnly(coach: true);
     }
 
-    /// <summary>Dropdown change = conversation switch: stash the current thread, load the new one.</summary>
-    partial void OnCoachCompanyIndexChanged(int value)
+    /// <summary>Picker change = conversation switch: stash the current thread, load the new one.</summary>
+    partial void OnCoachCompanyPickChanged(object? value)
     {
         if (_coachSwitching || IsCoachSending) return;
         StashCoachThread();
-        LoadCoachThread(CoachKeyForIndex(value));
+        LoadCoachThread(CoachKeyForPick(value));
     }
 
     /// <summary>Writes the on-screen transcript into the thread map + disk (in-flight bubbles skipped).</summary>
@@ -2220,12 +2232,11 @@ public partial class MainViewModel : ObservableObject
         ScrollCoachToEnd?.Invoke();
 
         string? companyBlock = null;
-        if (CoachCompanyIndex > 0 && CoachCompanyIndex < CoachCompanyOptions.Count)
+        if (CoachKeyForPick(CoachCompanyPick) is { Length: > 0 } companyKey && CoachCompanyPick is string companyName)
         {
-            string name = CoachCompanyOptions[CoachCompanyIndex];
-            _companyCache.TryGetValue(CompanyCache.Key(name), out var rep);
-            _briefCache.TryGetValue(CompanyCache.Key(name), out var brief);
-            companyBlock = Coach.FormatCompanyContext(name, rep, brief);
+            _companyCache.TryGetValue(companyKey, out var rep);
+            _briefCache.TryGetValue(companyKey, out var brief);
+            companyBlock = Coach.FormatCompanyContext(companyName, rep, brief);
         }
         string system = Coach.BuildSystemPrompt(_profile, _coachMarket, companyBlock);
         var history = CoachTranscript
