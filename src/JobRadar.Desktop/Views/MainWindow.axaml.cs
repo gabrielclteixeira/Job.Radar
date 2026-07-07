@@ -289,4 +289,23 @@ public partial class MainWindow : Window
             if (!string.IsNullOrEmpty(path)) await vm.LoadCvAsync(path);
         }
     }
+
+    /// <summary>CV Studio import: same PDF picker, but the AI extracts the FULL structured document.</summary>
+    private async void OnPickCvForStudio(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Escolhe o teu CV (PDF)",
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType("PDF") { Patterns = new[] { "*.pdf" } } },
+        });
+
+        if (files.Count > 0)
+        {
+            var path = files[0].TryGetLocalPath();
+            if (!string.IsNullOrEmpty(path)) await vm.ImportCvForStudioAsync(path);
+        }
+    }
 }

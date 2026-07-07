@@ -128,6 +128,9 @@
                     <Button Classes="nav" Classes.active="{Binding IsNavCoach}" Command="{Binding NavigateCommand}" CommandParameter="coach">
                         <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Comment"/><TextBlock Text="{l:T nav.coach}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
+                    <Button Classes="nav" Classes.active="{Binding IsNavCv}" Command="{Binding NavigateCommand}" CommandParameter="cv">
+                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Document"/><TextBlock Text="{l:T nav.cv}" VerticalAlignment="Center"/></StackPanel>
+                    </Button>
                     <Button Classes="nav" Classes.active="{Binding IsNavSettings}" Command="{Binding NavigateCommand}" CommandParameter="settings">
                         <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Settings"/><TextBlock Text="{l:T nav.settings}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
@@ -1401,6 +1404,232 @@
                             </Button>
                         </Panel>
                     </Grid>
+                </StackPanel>
+
+                <!-- ============ CV STUDIO ============ -->
+                <StackPanel Classes="page" IsVisible="{Binding IsCv}" Spacing="10">
+                    <TextBlock Classes="h1" Text="{l:T cv.title}"/>
+                    <TextBlock Classes="sub" Text="{l:T cv.sub}" TextWrapping="Wrap"/>
+
+                    <!-- empty state: import PDF or seed from profile -->
+                    <StackPanel Spacing="10" IsVisible="{Binding !HasCvDoc}">
+                        <ctl:EmptyState Symbol="Document" Title="{l:T cv.empty.title}" Body="{l:T cv.empty.body}">
+                            <ctl:EmptyState.ActionContent>
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                    <Button Classes="accent" Click="OnPickCvForStudio" ToolTip.Tip="{l:T cv.import.tip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="OpenFile"/><TextBlock Text="{l:T cv.import}"/></StackPanel>
+                                    </Button>
+                                    <Button Classes="ghost" Command="{Binding SeedCvFromProfileCommand}" IsEnabled="{Binding HasSavedProfile}" ToolTip.Tip="{l:T cv.seed.tip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Contact"/><TextBlock Text="{l:T cv.seed}"/></StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </ctl:EmptyState.ActionContent>
+                        </ctl:EmptyState>
+                        <StackPanel Orientation="Horizontal" Spacing="9" IsVisible="{Binding Busy}" HorizontalAlignment="Center">
+                            <ui:ProgressRing IsIndeterminate="True" Width="15" Height="15" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding CvStatus}" FontSize="12" FontFamily="{DynamicResource MonoFont}" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding CvStatus}" FontSize="12" Foreground="{DynamicResource Danger}" TextWrapping="Wrap" HorizontalAlignment="Center" IsVisible="{Binding !Busy}"/>
+                    </StackPanel>
+
+                    <!-- editor -->
+                    <StackPanel Spacing="10" IsVisible="{Binding HasCvDoc}">
+                        <!-- toolbar -->
+                        <Border Classes="card" Padding="14">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnDefinitions="Auto,8,*,16,Auto,8,*,16,Auto,8,*">
+                                    <TextBlock Grid.Column="0" Classes="fld" VerticalAlignment="Center" Text="{l:T cv.template}"/>
+                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding CvTemplateOptions}" SelectedIndex="{Binding CvTemplateIndex}"/>
+                                    <TextBlock Grid.Column="4" Classes="fld" VerticalAlignment="Center" Text="{l:T cv.lang}"/>
+                                    <ComboBox Grid.Column="6" HorizontalAlignment="Stretch" ItemsSource="{Binding CvLangOptions}" SelectedIndex="{Binding CvLangIndex}"/>
+                                    <TextBlock Grid.Column="8" Classes="fld" VerticalAlignment="Center" Text="{l:T cv.accent}"/>
+                                    <ComboBox Grid.Column="10" HorizontalAlignment="Stretch" ItemsSource="{Binding CvAccentOptions}" SelectedIndex="{Binding CvAccentIndex}"/>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="ghost" Command="{Binding SaveCvCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T cv.save}"/></StackPanel>
+                                    </Button>
+                                    <Button Classes="ghost" Command="{Binding PreviewCvCommand}" ToolTip.Tip="{l:T cv.preview.tip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Open"/><TextBlock Text="{l:T cv.preview}"/></StackPanel>
+                                    </Button>
+                                    <Button Classes="accent" Command="{Binding ExportCvPdfCommand}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T cv.export}"/></StackPanel>
+                                    </Button>
+                                    <Button Classes="link" Click="OnPickCvForStudio" Content="{l:T cv.import}" VerticalAlignment="Center" ToolTip.Tip="{l:T cv.import.tip}"/>
+                                    <Border Classes="chip" VerticalAlignment="Center" IsVisible="{Binding HasCvTailored}">
+                                        <TextBlock Text="{Binding CvTailoredChip}"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="{Binding CvStatus}" FontSize="11.5" Foreground="{DynamicResource Muted}" TextWrapping="Wrap"
+                                           IsVisible="{Binding CvStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- header -->
+                        <Border Classes="card" Padding="16">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="h2" Text="{l:T cv.sec.header}"/>
+                                <Grid ColumnDefinitions="*,16,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2" Margin="0,0,0,6">
+                                        <TextBlock Classes="fld" Text="{l:T cv.name}"/><TextBox Text="{Binding CvFullName}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="0" Grid.Column="2" Spacing="2" Margin="0,0,0,6">
+                                        <TextBlock Classes="fld" Text="{l:T cv.headline}"/><TextBox Text="{Binding CvHeadline}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2" Margin="0,0,0,6">
+                                        <TextBlock Classes="fld" Text="{l:T cv.email}"/><TextBox Text="{Binding CvEmail}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="1" Grid.Column="2" Spacing="2" Margin="0,0,0,6">
+                                        <TextBlock Classes="fld" Text="{l:T cv.phone}"/><TextBox Text="{Binding CvPhone}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Spacing="2" Margin="0,0,0,6">
+                                        <TextBlock Classes="fld" Text="{l:T cv.location}"/><TextBox Text="{Binding CvLocation}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Row="2" Grid.Column="2" Grid.RowSpan="2" Spacing="2">
+                                        <TextBlock Classes="fld" Text="{l:T cv.links}"/>
+                                        <TextBox Text="{Binding CvLinksText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" Watermark="{l:T cv.links.wm}"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- summary -->
+                        <Border Classes="card" Padding="16">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="h2" Text="{l:T cv.sec.summary}"/>
+                                <TextBox Text="{Binding CvSummary}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="64"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- experience -->
+                        <Border Classes="card" Padding="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="h2" Text="{l:T cv.sec.experience}"/>
+                                <ItemsControl x:Name="CvExpList" ItemsSource="{Binding CvExperience}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:CvExperienceVm">
+                                            <Border Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                                                <Grid ColumnDefinitions="*,10,Auto">
+                                                    <StackPanel Grid.Column="0" Spacing="4">
+                                                        <Grid ColumnDefinitions="*,8,*">
+                                                            <StackPanel Grid.Column="0" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.exp.company}"/><TextBox Text="{Binding Company}"/></StackPanel>
+                                                            <StackPanel Grid.Column="2" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.exp.role}"/><TextBox Text="{Binding Role}"/></StackPanel>
+                                                        </Grid>
+                                                        <Grid ColumnDefinitions="*,8,*,8,*">
+                                                            <StackPanel Grid.Column="0" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.exp.start}"/><TextBox Text="{Binding Start}"/></StackPanel>
+                                                            <StackPanel Grid.Column="2" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.exp.end}"/><TextBox Text="{Binding End}"/></StackPanel>
+                                                            <StackPanel Grid.Column="4" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.exp.location}"/><TextBox Text="{Binding Location}"/></StackPanel>
+                                                        </Grid>
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Classes="fld" Text="{l:T cv.exp.bullets}"/>
+                                                            <TextBox Text="{Binding BulletsText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70" Watermark="{l:T cv.exp.bullets.wm}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Spacing="4">
+                                                        <Button Classes="ghost" Content="↑" Command="{Binding ((vm:MainViewModel)DataContext).MoveCvExperienceUpCommand, ElementName=CvExpList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.up}"/>
+                                                        <Button Classes="ghost" Content="↓" Command="{Binding ((vm:MainViewModel)DataContext).MoveCvExperienceDownCommand, ElementName=CvExpList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.down}"/>
+                                                        <Button Classes="ghost" Command="{Binding ((vm:MainViewModel)DataContext).RemoveCvExperienceCommand, ElementName=CvExpList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.remove}">
+                                                            <ui:SymbolIcon Symbol="Dismiss" FontSize="14"/>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Classes="ghost" Command="{Binding AddCvExperienceCommand}" Content="{l:T cv.exp.add}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- education -->
+                        <Border Classes="card" Padding="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="h2" Text="{l:T cv.sec.education}"/>
+                                <ItemsControl x:Name="CvEduList" ItemsSource="{Binding CvEducation}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:CvEducationVm">
+                                            <Border Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                                                <Grid ColumnDefinitions="*,10,Auto">
+                                                    <StackPanel Grid.Column="0" Spacing="4">
+                                                        <Grid ColumnDefinitions="*,8,*">
+                                                            <StackPanel Grid.Column="0" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.edu.school}"/><TextBox Text="{Binding School}"/></StackPanel>
+                                                            <StackPanel Grid.Column="2" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.edu.degree}"/><TextBox Text="{Binding Degree}"/></StackPanel>
+                                                        </Grid>
+                                                        <Grid ColumnDefinitions="*,8,*,8,*">
+                                                            <StackPanel Grid.Column="0" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.exp.start}"/><TextBox Text="{Binding Start}"/></StackPanel>
+                                                            <StackPanel Grid.Column="2" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.exp.end}"/><TextBox Text="{Binding End}"/></StackPanel>
+                                                            <StackPanel Grid.Column="4" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.exp.location}"/><TextBox Text="{Binding Location}"/></StackPanel>
+                                                        </Grid>
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Classes="fld" Text="{l:T cv.edu.details}"/>
+                                                            <TextBox Text="{Binding DetailsText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Spacing="4">
+                                                        <Button Classes="ghost" Content="↑" Command="{Binding ((vm:MainViewModel)DataContext).MoveCvEducationUpCommand, ElementName=CvEduList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.up}"/>
+                                                        <Button Classes="ghost" Content="↓" Command="{Binding ((vm:MainViewModel)DataContext).MoveCvEducationDownCommand, ElementName=CvEduList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.down}"/>
+                                                        <Button Classes="ghost" Command="{Binding ((vm:MainViewModel)DataContext).RemoveCvEducationCommand, ElementName=CvEduList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.remove}">
+                                                            <ui:SymbolIcon Symbol="Dismiss" FontSize="14"/>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Classes="ghost" Command="{Binding AddCvEducationCommand}" Content="{l:T cv.edu.add}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- projects -->
+                        <Border Classes="card" Padding="16">
+                            <StackPanel Spacing="8">
+                                <TextBlock Classes="h2" Text="{l:T cv.sec.projects}"/>
+                                <ItemsControl x:Name="CvProjList" ItemsSource="{Binding CvProjects}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:CvProjectVm">
+                                            <Border Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                                                <Grid ColumnDefinitions="*,10,Auto">
+                                                    <StackPanel Grid.Column="0" Spacing="4">
+                                                        <Grid ColumnDefinitions="*,8,*">
+                                                            <StackPanel Grid.Column="0" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.proj.name}"/><TextBox Text="{Binding Name}"/></StackPanel>
+                                                            <StackPanel Grid.Column="2" Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.proj.link}"/><TextBox Text="{Binding Link}"/></StackPanel>
+                                                        </Grid>
+                                                        <StackPanel Spacing="2"><TextBlock Classes="fld" Text="{l:T cv.proj.desc}"/><TextBox Text="{Binding Description}"/></StackPanel>
+                                                        <StackPanel Spacing="2">
+                                                            <TextBlock Classes="fld" Text="{l:T cv.exp.bullets}"/>
+                                                            <TextBox Text="{Binding BulletsText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel Grid.Column="2" Spacing="4">
+                                                        <Button Classes="ghost" Content="↑" Command="{Binding ((vm:MainViewModel)DataContext).MoveCvProjectUpCommand, ElementName=CvProjList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.up}"/>
+                                                        <Button Classes="ghost" Content="↓" Command="{Binding ((vm:MainViewModel)DataContext).MoveCvProjectDownCommand, ElementName=CvProjList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.down}"/>
+                                                        <Button Classes="ghost" Command="{Binding ((vm:MainViewModel)DataContext).RemoveCvProjectCommand, ElementName=CvProjList}" CommandParameter="{Binding}" ToolTip.Tip="{l:T cv.row.remove}">
+                                                            <ui:SymbolIcon Symbol="Dismiss" FontSize="14"/>
+                                                        </Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Classes="ghost" Command="{Binding AddCvProjectCommand}" Content="{l:T cv.proj.add}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- skills / certs / languages -->
+                        <Border Classes="card" Padding="16">
+                            <StackPanel Spacing="6">
+                                <TextBlock Classes="h2" Text="{l:T cv.sec.skills}"/>
+                                <TextBlock Classes="fld" Text="{l:T cv.skills.groups}"/>
+                                <TextBox Text="{Binding CvSkillGroupsText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" Watermark="{l:T cv.skills.wm}"/>
+                                <TextBlock Classes="fld" Text="{l:T cv.certs}" Margin="0,6,0,0"/>
+                                <TextBox Text="{Binding CvCertsText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="48"/>
+                                <TextBlock Classes="fld" Text="{l:T cv.langs}" Margin="0,6,0,0"/>
+                                <TextBox Text="{Binding CvLanguagesText}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                 </StackPanel>
 
                 <!-- ============ SETTINGS ============ -->

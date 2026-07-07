@@ -27,6 +27,8 @@ public partial class MainViewModel : ObservableObject
     private readonly string _companyCachePath;
     private readonly string _briefCachePath;
     private readonly string _coachHistoryPath;
+    private readonly string _cvPath;
+    private readonly string _cvChatPath;
     private AppConfig _cfg;
 
     /// <summary>Set by the view: shows a cost-confirmation dialog before a paid (Apify) search.</summary>
@@ -53,6 +55,8 @@ public partial class MainViewModel : ObservableObject
         _companyCachePath = Path.Combine(_root, "company-reports.json");
         _briefCachePath = Path.Combine(_root, "company-briefs.json");
         _coachHistoryPath = Path.Combine(_root, "coach-history.json");
+        _cvPath = Path.Combine(_root, "cv-data.json");
+        _cvChatPath = Path.Combine(_root, "cv-chat.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
         ApplyApifyOverride();
@@ -80,13 +84,14 @@ public partial class MainViewModel : ObservableObject
     public bool IsNavResearcher => Nav == "researcher";
     public bool IsNavImprove => Nav == "improve";
     public bool IsNavCoach => Nav == "coach";
+    public bool IsNavCv => Nav == "cv";
     public bool IsNavSettings => Nav == "settings";
     partial void OnNavChanged(string value)
     {
         OnPropertyChanged(nameof(IsNavHome)); OnPropertyChanged(nameof(IsNavProfile));
         OnPropertyChanged(nameof(IsNavResults)); OnPropertyChanged(nameof(IsNavResearcher));
         OnPropertyChanged(nameof(IsNavImprove)); OnPropertyChanged(nameof(IsNavCoach));
-        OnPropertyChanged(nameof(IsNavSettings));
+        OnPropertyChanged(nameof(IsNavCv)); OnPropertyChanged(nameof(IsNavSettings));
     }
 
     [RelayCommand]
@@ -101,6 +106,9 @@ public partial class MainViewModel : ObservableObject
             else { LoadSettingsFields(); _settingsSnapshot = SettingsSignature(); } // discard — revert fields
         }
 
+        // Leaving the CV editor implicitly commits + saves (profile-form convention).
+        if (Nav == "cv" && page != "cv" && _cvDoc is not null) { CommitCvEditors(); SaveCvDoc(false); }
+
         switch (page)
         {
             case "profile": EditProfile(); break;          // loads the form + shows profile
@@ -111,6 +119,7 @@ public partial class MainViewModel : ObservableObject
             case "improve": ShowOnly(improve: true); _ = RefreshPlanGroundingAsync(); break;  // career-growth area
             case "researcher": OpenResearcher(); break;       // employer-health signals across matched jobs
             case "coach": OpenCoach(); break;                  // grounded chat (applications/salary/interviews)
+            case "cv": OpenCvStudio(); break;                  // structured CV editor + templates + assistant
             case "settings": OpenSettings(); break;            // loads settings fields + shows
             default: ShowOnly(welcome: true); break;          // home
         }
@@ -289,6 +298,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isImprove;
     [ObservableProperty] private bool _isResearcher;
     [ObservableProperty] private bool _isCoach;
+    [ObservableProperty] private bool _isCv;
 
     // ---- improve (career plan) ----
     [ObservableProperty] private CareerPlanResult? _plan;
@@ -1904,10 +1914,10 @@ public partial class MainViewModel : ObservableObject
         EmptyMessage = _all.Count > 0 ? L("empty.noMatch") : L("empty.noneToShow");
     }
 
-    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false, bool improve = false, bool researcher = false, bool coach = false)
+    private void ShowOnly(bool welcome = false, bool profile = false, bool running = false, bool results = false, bool settings = false, bool improve = false, bool researcher = false, bool coach = false, bool cv = false)
     {
-        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings; IsImprove = improve; IsResearcher = researcher; IsCoach = coach;
-        Nav = settings ? "settings" : improve ? "improve" : researcher ? "researcher" : coach ? "coach" : results ? "results" : profile ? "profile" : "home";
+        IsWelcome = welcome; IsProfile = profile; IsRunning = running; IsResults = results; IsSettings = settings; IsImprove = improve; IsResearcher = researcher; IsCoach = coach; IsCv = cv;
+        Nav = settings ? "settings" : improve ? "improve" : researcher ? "researcher" : coach ? "coach" : cv ? "cv" : results ? "results" : profile ? "profile" : "home";
     }
 
     // ---- Company Researcher (employer-health signals across the matched jobs) ----
@@ -2310,6 +2320,270 @@ public partial class MainViewModel : ObservableObject
         if (CoachAttachments.Count == 0) return;   // removed meanwhile
         if (cap == false) CoachVisionWarning = L("coach.vision.no");
         else if (cap is null) CoachVisionWarning = L("coach.vision.unknown");
+    }
+
+    // ---- CV Studio (structured CV: sections editor + templates + PDF export + AI assistant) ----
+    private CvDocument? _cvDoc;
+    private bool _cvLoaded;                                          // lazy-open guard
+    public bool HasCvDoc => _cvDoc is not null;
+    private readonly List<string> _cvUndo = new();                   // JSON snapshots (chat/import applies)
+    public bool CanUndoCv => _cvUndo.Count > 0;
+    [ObservableProperty] private string _cvChangeNote = "";
+    [ObservableProperty] private string _cvStatus = "";
+    [ObservableProperty] private string _cvTailoredChip = "";
+    public bool HasCvTailored => !string.IsNullOrEmpty(CvTailoredChip);
+    partial void OnCvTailoredChipChanged(string value) => OnPropertyChanged(nameof(HasCvTailored));
+
+    // Header / summary / flat-list editor fields (lists follow the app's text-field conventions).
+    [ObservableProperty] private string _cvFullName = "";
+    [ObservableProperty] private string _cvHeadline = "";
+    [ObservableProperty] private string _cvEmail = "";
+    [ObservableProperty] private string _cvPhone = "";
+    [ObservableProperty] private string _cvLocation = "";
+    [ObservableProperty] private string _cvLinksText = "";           // one per line: Label | URL
+    [ObservableProperty] private string _cvSummary = "";
+    [ObservableProperty] private string _cvSkillGroupsText = "";     // one group per line: Label: a, b, c
+    [ObservableProperty] private string _cvCertsText = "";           // one per line
+    [ObservableProperty] private string _cvLanguagesText = "";       // comma-separated
+    public ObservableCollection<CvExperienceVm> CvExperience { get; } = new();
+    public ObservableCollection<CvEducationVm> CvEducation { get; } = new();
+    public ObservableCollection<CvProjectVm> CvProjects { get; } = new();
+
+    // Presentation settings (app-owned; the assistant is never allowed to change the visual ones).
+    public string[] CvTemplateOptions => CvTemplates.All.Select(t => L(t.LocKey)).ToArray();
+    [ObservableProperty] private int _cvTemplateIndex;
+    public string[] CvLangOptions => new[] { L("opt.cvlang.pt"), L("opt.cvlang.en") };
+    [ObservableProperty] private int _cvLangIndex;
+    private static readonly string[] CvAccentHex = { "#4C2DBE", "#1E5AA8", "#1A7F4B", "#8C2F39", "#333333", "#0F766E" };
+    public string[] CvAccentOptions => new[]
+    {
+        L("cv.accent.violet"), L("cv.accent.blue"), L("cv.accent.green"),
+        L("cv.accent.wine"), L("cv.accent.graphite"), L("cv.accent.teal"),
+    };
+    [ObservableProperty] private int _cvAccentIndex;
+
+    private void OpenCvStudio()
+    {
+        if (!_cvLoaded)
+        {
+            _cvDoc = CvStore.Load(_cvPath);
+            if (_cvDoc is not null) LoadCvEditors();
+            _cvLoaded = true;
+        }
+        ShowOnly(cv: true);
+    }
+
+    /// <summary>Document → editor fields (after load, import, chat apply or undo).</summary>
+    private void LoadCvEditors()
+    {
+        var d = _cvDoc!;
+        CvFullName = d.Header.FullName; CvHeadline = d.Header.Title; CvEmail = d.Header.Email;
+        CvPhone = d.Header.Phone; CvLocation = d.Header.Location;
+        CvLinksText = string.Join("\n", d.Header.Links.Select(l =>
+            string.IsNullOrWhiteSpace(l.Label) ? l.Url : $"{l.Label} | {l.Url}"));
+        CvSummary = d.Summary;
+        CvExperience.Clear(); foreach (var e in d.Experience) CvExperience.Add(CvExperienceVm.From(e));
+        CvEducation.Clear(); foreach (var e in d.Education) CvEducation.Add(CvEducationVm.From(e));
+        CvProjects.Clear(); foreach (var p in d.Projects) CvProjects.Add(CvProjectVm.From(p));
+        CvSkillGroupsText = string.Join("\n", d.SkillGroups.Select(g =>
+            string.IsNullOrWhiteSpace(g.Label) ? string.Join(", ", g.Skills) : $"{g.Label}: {string.Join(", ", g.Skills)}"));
+        CvCertsText = string.Join("\n", d.Certifications);
+        CvLanguagesText = string.Join(", ", d.Languages);
+        CvTemplateIndex = Math.Max(0, Array.FindIndex(CvTemplates.All, t => t.Id == d.TemplateId));
+        CvLangIndex = d.Lang == "en" ? 1 : 0;
+        CvAccentIndex = Math.Max(0, Array.IndexOf(CvAccentHex, d.AccentColor));
+        CvTailoredChip = d.TailoredFor.Length > 0 ? Loc.Instance.F("cv.tailor.chip", d.TailoredFor) : "";
+        OnPropertyChanged(nameof(HasCvDoc));
+    }
+
+    /// <summary>Editor fields → document (before save/preview/export/chat and on leaving the view).</summary>
+    private void CommitCvEditors()
+    {
+        if (_cvDoc is null) return;
+        var d = _cvDoc;
+        d.Header.FullName = CvFullName.Trim(); d.Header.Title = CvHeadline.Trim();
+        d.Header.Email = CvEmail.Trim(); d.Header.Phone = CvPhone.Trim(); d.Header.Location = CvLocation.Trim();
+        d.Header.Links = CvLinksText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line =>
+            {
+                int bar = line.IndexOf('|');
+                return bar < 0
+                    ? new CvLink { Url = line }
+                    : new CvLink { Label = line[..bar].Trim(), Url = line[(bar + 1)..].Trim() };
+            })
+            .Where(l => l.Url.Length > 0 || l.Label.Length > 0).ToList();
+        d.Summary = CvSummary.Trim();
+        d.Experience = CvExperience.Select(v => v.ToModel()).ToList();
+        d.Education = CvEducation.Select(v => v.ToModel()).ToList();
+        d.Projects = CvProjects.Select(v => v.ToModel()).ToList();
+        d.SkillGroups = CvSkillGroupsText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line =>
+            {
+                int colon = line.IndexOf(':');
+                string label = colon < 0 ? "" : line[..colon].Trim();
+                string rest = colon < 0 ? line : line[(colon + 1)..];
+                return new CvSkillGroup { Label = label, Skills = Split(rest) };
+            })
+            .Where(g => g.Skills.Count > 0).ToList();
+        d.Certifications = CvCertsText.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        d.Languages = Split(CvLanguagesText);
+        d.TemplateId = CvTemplates.All[Math.Clamp(CvTemplateIndex, 0, CvTemplates.All.Length - 1)].Id;
+        d.Lang = CvLangIndex == 1 ? "en" : "pt";
+        d.AccentColor = CvAccentHex[Math.Clamp(CvAccentIndex, 0, CvAccentHex.Length - 1)];
+    }
+
+    private void SaveCvDoc(bool announce)
+    {
+        if (_cvDoc is null) return;
+        CvStore.Save(_cvPath, _cvDoc);
+        if (announce) CvStatus = L("cv.saved");
+    }
+
+    [RelayCommand]
+    private void SaveCv()
+    {
+        CommitCvEditors();
+        SaveCvDoc(announce: true);
+    }
+
+    [RelayCommand]
+    private void SeedCvFromProfile()
+    {
+        if (_cvDoc is not null) PushCvUndo();
+        _cvDoc = CvStudio.FromProfile(_profile);
+        LoadCvEditors();
+        SaveCvDoc(false);
+        CvStatus = "";
+    }
+
+    /// <summary>Called by the view after the PDF picker: extract text + LLM-import the full document.</summary>
+    public async Task ImportCvForStudioAsync(string path)
+    {
+        Busy = true; CvStatus = L("cv.importing");
+        try
+        {
+            string text = "";
+            try { text = await Task.Run(() => CvProfiler.ExtractText(path)); } catch { }
+            var doc = string.IsNullOrWhiteSpace(text) ? null
+                : await CvStudio.ImportAsync(text, _profile, _cfg.Claude);
+            if (doc is null)
+            {
+                CvStatus = L("cv.import.failed") +
+                    (string.IsNullOrWhiteSpace(LlmClient.LastError) ? "" : $" ({LlmClient.LastError})");
+                return;
+            }
+            if (_cvDoc is not null) PushCvUndo();
+            _cvDoc = doc;
+            LoadCvEditors();
+            SaveCvDoc(false);
+            CvStatus = "";
+        }
+        finally { Busy = false; }
+    }
+
+    private string CvSafeName()
+        => string.Concat((string.IsNullOrWhiteSpace(CvFullName) ? "CV" : CvFullName)
+            .Split(Path.GetInvalidFileNameChars())).Replace(' ', '_');
+
+    [RelayCommand]
+    private void PreviewCv()
+    {
+        if (_cvDoc is null) return;
+        CommitCvEditors(); SaveCvDoc(false);
+        try
+        {
+            string outDir = Path.Combine(_root, "output");
+            Directory.CreateDirectory(outDir);
+            string html = Path.Combine(outDir, $"{CvSafeName()}-CV.html");
+            File.WriteAllText(html, CvTemplates.Render(_cvDoc), new System.Text.UTF8Encoding(false));
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = html, UseShellExecute = true });
+        }
+        catch (Exception ex) { CvStatus = Loc.Instance.F("cv.export.failed", ex.Message); }
+    }
+
+    [RelayCommand]
+    private async Task ExportCvPdf()
+    {
+        if (_cvDoc is null) return;
+        CommitCvEditors(); SaveCvDoc(false);
+        Busy = true;
+        try
+        {
+            string outDir = Path.Combine(_root, "output");
+            Directory.CreateDirectory(outDir);
+            string suffix = _cvDoc.TailoredFor.Length > 0
+                ? "-" + string.Concat(_cvDoc.TailoredFor.Split(Path.GetInvalidFileNameChars())).Replace(' ', '_')
+                : "";
+            string baseName = $"{CvSafeName()}-CV{suffix}";
+            string content = CvTemplates.Render(_cvDoc);
+            string? open = await Task.Run(() =>
+            {
+                string html = Path.Combine(outDir, baseName + ".html");
+                File.WriteAllText(html, content, new System.Text.UTF8Encoding(false));
+                string? edge = Reports.FindEdge();
+                if (edge is null) return html;                        // no Edge — hand back the HTML
+                string pdf = Path.Combine(outDir, baseName + ".pdf");
+                if (Reports.WritePdf(html, pdf, edge) && File.Exists(pdf)) return pdf;
+                // Likely locked by a PDF viewer — retry once with a stamped name.
+                pdf = Path.Combine(outDir, $"{baseName}-{DateTime.Now:HHmmss}.pdf");
+                return Reports.WritePdf(html, pdf, edge) && File.Exists(pdf) ? pdf : html;
+            });
+            CvStatus = Loc.Instance.F("cv.exported", open);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = open, UseShellExecute = true });
+        }
+        catch (Exception ex) { CvStatus = Loc.Instance.F("cv.export.failed", ex.Message); }
+        finally { Busy = false; }
+    }
+
+    // Row commands (Filters pattern): add / remove / move ±1 per section.
+    private static void MoveRow<T>(ObservableCollection<T> c, T? item, int delta)
+    {
+        if (item is null) return;
+        int i = c.IndexOf(item), j = i + delta;
+        if (i < 0 || j < 0 || j >= c.Count) return;
+        c.Move(i, j);
+    }
+
+    [RelayCommand] private void AddCvExperience() => CvExperience.Add(new CvExperienceVm());
+    [RelayCommand] private void RemoveCvExperience(CvExperienceVm? v) { if (v is not null) CvExperience.Remove(v); }
+    [RelayCommand] private void MoveCvExperienceUp(CvExperienceVm? v) => MoveRow(CvExperience, v, -1);
+    [RelayCommand] private void MoveCvExperienceDown(CvExperienceVm? v) => MoveRow(CvExperience, v, +1);
+    [RelayCommand] private void AddCvEducation() => CvEducation.Add(new CvEducationVm());
+    [RelayCommand] private void RemoveCvEducation(CvEducationVm? v) { if (v is not null) CvEducation.Remove(v); }
+    [RelayCommand] private void MoveCvEducationUp(CvEducationVm? v) => MoveRow(CvEducation, v, -1);
+    [RelayCommand] private void MoveCvEducationDown(CvEducationVm? v) => MoveRow(CvEducation, v, +1);
+    [RelayCommand] private void AddCvProject() => CvProjects.Add(new CvProjectVm());
+    [RelayCommand] private void RemoveCvProject(CvProjectVm? v) { if (v is not null) CvProjects.Remove(v); }
+    [RelayCommand] private void MoveCvProjectUp(CvProjectVm? v) => MoveRow(CvProjects, v, -1);
+    [RelayCommand] private void MoveCvProjectDown(CvProjectVm? v) => MoveRow(CvProjects, v, +1);
+
+    private void PushCvUndo()
+    {
+        if (_cvDoc is null) return;
+        _cvUndo.Add(JsonSerializer.Serialize(_cvDoc));
+        if (_cvUndo.Count > 10) _cvUndo.RemoveAt(0);
+        OnPropertyChanged(nameof(CanUndoCv));
+    }
+
+    [RelayCommand]
+    private void UndoCvChange()
+    {
+        if (_cvUndo.Count == 0) return;
+        string snap = _cvUndo[^1];
+        _cvUndo.RemoveAt(_cvUndo.Count - 1);
+        try
+        {
+            var doc = JsonSerializer.Deserialize<CvDocument>(snap,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (doc is null) return;
+            CvStore.Normalize(doc);
+            _cvDoc = doc;
+        }
+        catch { return; }
+        LoadCvEditors();
+        SaveCvDoc(false);
+        CvChangeNote = L("cv.chat.undone");
+        OnPropertyChanged(nameof(CanUndoCv));
     }
 
     /// <summary>Loads the LLM backend override saved from the Settings screen (machine-local, gitignored).</summary>
