@@ -85,6 +85,18 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   other source. Nothing is automated against the account, and the import card over-explains exactly that
   (optional, 100% manual, extraction runs locally). Honest caveat: copied text carries no links, so imported
   jobs may have no clickable URL. A Playwright-assisted pass (the user logs in) remains a future idea.
+- **Per-job company briefing cached 7 days** — the in-card employer analysis now persists (machine-local)
+  and survives restarts/new searches; the button flips to "research again" for an explicit refresh, the card
+  shows the "as of" date, and a cancelled/failed re-research restores the previous briefing. The salary
+  expectation prompt was also recalibrated: it anchors to what **the company actually pays** (the candidate's
+  floor/target are wishes, not evidence — a below-floor employer gets flagged instead of inflated).
+- **Coach — grounded chat with images** — a 7th view: chat with your own engine about applications, salary
+  and interview answers, with the **profile, the matched-market signal and the cached company research**
+  injected as context (pick a company and the answer uses its real pay data). Paste (Ctrl+V) or attach
+  screenshots of application questions — the model answers AS the candidate; on Ollama the answer streams
+  token-by-token and a best-effort vision check warns when the local model can't see images (Claude CLI reads
+  them natively). Transcript is session-only (nothing persisted); "clear conversation" wipes it and the
+  pasted screenshots.
 
 ---
 
