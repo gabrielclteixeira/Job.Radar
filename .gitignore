@@ -47,6 +47,9 @@ company-briefs.json
 # coach conversation history + pasted screenshots (personal data, machine-local)
 coach-history.json
 coach-images/
+# CV Studio structured document + assistant chat (personal data, machine-local)
+cv-data.json
+cv-chat.json
 
 # app / dev scratch
 app-err.log
