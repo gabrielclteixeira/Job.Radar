@@ -174,6 +174,7 @@ Rules:
                     CvStore.Normalize(cv);
                     cv.TemplateId = current.TemplateId;          // visual settings are app-owned
                     cv.AccentColor = current.AccentColor;
+                    cv.PhotoPath = current.PhotoPath;
                     if (cv.Lang is not ("pt" or "en")) cv.Lang = current.Lang;
                     if (string.IsNullOrWhiteSpace(cv.TailoredFor)) cv.TailoredFor = current.TailoredFor;
                     bool plausible = !string.IsNullOrWhiteSpace(cv.Header.FullName)

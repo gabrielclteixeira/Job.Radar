@@ -1445,6 +1445,8 @@
                                     <TextBlock Grid.Column="8" Classes="fld" VerticalAlignment="Center" Text="{l:T cv.accent}"/>
                                     <ComboBox Grid.Column="10" HorizontalAlignment="Stretch" ItemsSource="{Binding CvAccentOptions}" SelectedIndex="{Binding CvAccentIndex}"/>
                                 </Grid>
+                                <Button Classes="link" Command="{Binding PreviewTemplateSampleCommand}" Content="{l:T cv.sample}"
+                                        ToolTip.Tip="{l:T cv.sample.tip}" HorizontalAlignment="Left"/>
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <Button Classes="ghost" Command="{Binding SaveCvCommand}">
                                         <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T cv.save}"/></StackPanel>
@@ -1490,6 +1492,18 @@
                                         <TextBox Text="{Binding CvLinksText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" Watermark="{l:T cv.links.wm}"/>
                                     </StackPanel>
                                 </Grid>
+                                <StackPanel Spacing="4" Margin="0,8,0,0">
+                                    <TextBlock Classes="fld" Text="{l:T cv.photo}"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button Classes="ghost" Click="OnPickCvPhoto" Content="{l:T cv.photo.pick}"/>
+                                        <Button Classes="link" Command="{Binding RemoveCvPhotoCommand}" Content="{l:T cv.photo.remove}"
+                                                IsVisible="{Binding HasCvPhoto}" VerticalAlignment="Center"/>
+                                        <Border Classes="chip" VerticalAlignment="Center" IsVisible="{Binding HasCvPhoto}">
+                                            <TextBlock Text="{l:T cv.photo.set}"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Classes="sub" FontSize="11" Text="{l:T cv.photo.note}" TextWrapping="Wrap"/>
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 

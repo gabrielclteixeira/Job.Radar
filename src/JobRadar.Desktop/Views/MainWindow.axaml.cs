@@ -303,6 +303,20 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>CV photo picker (optional; copied next to the CV data, machine-local).</summary>
+    private async void OnPickCvPhoto(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel vm) return;
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = JobRadar.Loc.Instance.T("cv.photo.pick"),
+            AllowMultiple = false,
+            FileTypeFilter = new[] { new FilePickerFileType(JobRadar.Loc.Instance.T("coach.attach.filter"))
+                { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.webp" } } },
+        });
+        if (files.Count > 0 && files[0].TryGetLocalPath() is { } p) vm.SetCvPhoto(p);
+    }
+
     /// <summary>CV Studio import: same PDF picker, but the AI extracts the FULL structured document.</summary>
     private async void OnPickCvForStudio(object? sender, RoutedEventArgs e)
     {

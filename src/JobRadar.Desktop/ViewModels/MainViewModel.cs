@@ -2384,6 +2384,7 @@ public partial class MainViewModel : ObservableObject
         CvAccentIndex = Math.Max(0, Array.IndexOf(CvAccentHex, d.AccentColor));
         CvTailoredChip = d.TailoredFor.Length > 0 ? Loc.Instance.F("cv.tailor.chip", d.TailoredFor) : "";
         OnPropertyChanged(nameof(HasCvDoc));
+        OnPropertyChanged(nameof(HasCvPhoto));
     }
 
     /// <summary>Editor fields → document (before save/preview/export/chat and on leaving the view).</summary>
@@ -2474,6 +2475,55 @@ public partial class MainViewModel : ObservableObject
     private string CvSafeName()
         => string.Concat((string.IsNullOrWhiteSpace(CvFullName) ? "CV" : CvFullName)
             .Split(Path.GetInvalidFileNameChars())).Replace(' ', '_');
+
+    /// <summary>Opens the SELECTED template rendered with John Doe sample data — template browsing
+    /// without touching the user's document.</summary>
+    [RelayCommand]
+    private void PreviewTemplateSample()
+    {
+        try
+        {
+            var sample = CvTemplates.SampleDoc(CvLangIndex == 1 ? "en" : "pt");
+            sample.TemplateId = CvTemplates.All[Math.Clamp(CvTemplateIndex, 0, CvTemplates.All.Length - 1)].Id;
+            sample.AccentColor = CvAccentHex[Math.Clamp(CvAccentIndex, 0, CvAccentHex.Length - 1)];
+            string outDir = Path.Combine(_root, "output");
+            Directory.CreateDirectory(outDir);
+            string html = Path.Combine(outDir, "cv-template-sample.html");
+            File.WriteAllText(html, CvTemplates.Render(sample), new System.Text.UTF8Encoding(false));
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = html, UseShellExecute = true });
+        }
+        catch (Exception ex) { CvStatus = Loc.Instance.F("cv.export.failed", ex.Message); }
+    }
+
+    public bool HasCvPhoto => _cvDoc is { PhotoPath.Length: > 0 };
+
+    /// <summary>Copies the picked photo next to the CV data (cv-photo.*, machine-local) and attaches it.</summary>
+    public void SetCvPhoto(string path)
+    {
+        if (_cvDoc is null) return;
+        try
+        {
+            foreach (var old in Directory.GetFiles(_root, "cv-photo.*")) File.Delete(old);
+            string dest = Path.Combine(_root, "cv-photo" + Path.GetExtension(path).ToLowerInvariant());
+            File.Copy(path, dest, overwrite: true);
+            _cvDoc.PhotoPath = dest;
+            SaveCvDoc(false);
+            CvStatus = L("cv.photo.set");
+            OnPropertyChanged(nameof(HasCvPhoto));
+        }
+        catch (Exception ex) { CvStatus = Loc.Instance.F("error.generic", ex.Message); }
+    }
+
+    [RelayCommand]
+    private void RemoveCvPhoto()
+    {
+        if (_cvDoc is null) return;
+        try { if (_cvDoc.PhotoPath.Length > 0 && File.Exists(_cvDoc.PhotoPath)) File.Delete(_cvDoc.PhotoPath); } catch { }
+        _cvDoc.PhotoPath = "";
+        SaveCvDoc(false);
+        CvStatus = "";
+        OnPropertyChanged(nameof(HasCvPhoto));
+    }
 
     [RelayCommand]
     private void PreviewCv()

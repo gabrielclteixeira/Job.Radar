@@ -11,9 +11,10 @@ namespace JobRadar;
 public sealed class CvDocument
 {
     public string Lang { get; set; } = "pt";            // "pt" | "en" — CV output language (≠ UI language)
-    public string TemplateId { get; set; } = "clean";   // "clean" | "accent"
+    public string TemplateId { get; set; } = "clean";   // clean | editorial | terminal | stationery | panel
     public string AccentColor { get; set; } = "#4C2DBE";
     public string TailoredFor { get; set; } = "";       // company name when tuned to a job ("" = generic)
+    public string PhotoPath { get; set; } = "";         // optional user photo (absolute path, machine-local)
     public CvHeader Header { get; set; } = new();
     public string Summary { get; set; } = "";
     public List<CvExperience> Experience { get; set; } = new();
@@ -123,9 +124,17 @@ public static class CvStore
         d.Languages ??= new List<string>();
         d.Summary ??= "";
         d.TailoredFor ??= "";
+        d.PhotoPath ??= "";
         if (d.Lang is not ("pt" or "en")) d.Lang = "pt";
         if (!System.Text.RegularExpressions.Regex.IsMatch(d.AccentColor ?? "", "^#[0-9a-fA-F]{6}$"))
             d.AccentColor = "#4C2DBE";
-        if (d.TemplateId is not ("clean" or "accent" or "sidebar")) d.TemplateId = "clean";
+        // Migrate the retired first-pass template ids to their design successors.
+        d.TemplateId = d.TemplateId switch
+        {
+            "accent" => "editorial",
+            "sidebar" => "panel",
+            "clean" or "editorial" or "terminal" or "stationery" or "panel" => d.TemplateId,
+            _ => "clean",
+        };
     }
 }
