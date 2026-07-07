@@ -95,8 +95,9 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   injected as context (pick a company and the answer uses its real pay data). Paste (Ctrl+V) or attach
   screenshots of application questions — the model answers AS the candidate; on Ollama the answer streams
   token-by-token and a best-effort vision check warns when the local model can't see images (Claude CLI reads
-  them natively). Transcript is session-only (nothing persisted); "clear conversation" wipes it and the
-  pasted screenshots.
+  them natively). Conversations are **per-company threads** — the company dropdown doubles as the thread
+  selector — persisted across restarts (machine-local, with the pasted screenshots); "clear conversation"
+  wipes only the active company's thread.
 
 ---
 
