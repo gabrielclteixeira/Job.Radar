@@ -17,6 +17,7 @@ public partial class MainWindow : Window
         // Tunneled: with AcceptsReturn the TextBox consumes Return in its own KeyDown, so a
         // bubble handler never sees it — tunneling fires first and e.Handled stops the newline.
         CoachInputBox.AddHandler(KeyDownEvent, OnCoachInputKeyDown, RoutingStrategies.Tunnel);
+        CvChatInputBox.AddHandler(KeyDownEvent, OnCvChatInputKeyDown, RoutingStrategies.Tunnel);
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainViewModel vm)
@@ -34,8 +35,20 @@ public partial class MainWindow : Window
                 // Background priority: layout runs first so ScrollToEnd sees the new extent.
                 vm.ScrollCoachToEnd = () => Dispatcher.UIThread.Post(
                     () => CoachScroll?.ScrollToEnd(), DispatcherPriority.Background);
+                vm.ScrollCvChatToEnd = () => Dispatcher.UIThread.Post(
+                    () => CvChatScroll?.ScrollToEnd(), DispatcherPriority.Background);
             }
         };
+    }
+
+    /// <summary>CV assistant input: Enter sends, Shift+Enter inserts a newline (no image paste here).</summary>
+    private void OnCvChatInputKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.Enter or Key.Return)) return;
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift)) return;
+        e.Handled = true;
+        if (DataContext is MainViewModel vm && vm.SendCvChatCommand.CanExecute(null))
+            vm.SendCvChatCommand.Execute(null);
     }
 
     /// <summary>Coach input: Enter sends (Shift+Enter inserts a newline); Ctrl+V may carry an image.</summary>

@@ -2370,6 +2370,7 @@ public partial class MainViewModel : ObservableObject
             if (_cvDoc is not null) LoadCvEditors();
             _cvLoaded = true;
         }
+        LoadCvChat();
         ShowOnly(cv: true);
     }
 
@@ -2584,6 +2585,124 @@ public partial class MainViewModel : ObservableObject
         SaveCvDoc(false);
         CvChangeNote = L("cv.chat.undone");
         OnPropertyChanged(nameof(CanUndoCv));
+    }
+
+    // ---- CV assistant chat: critiques AND applies edits ({"reply","cv"} contract) ----
+    public ObservableCollection<CoachMessageVm> CvChatTranscript { get; } = new();
+    public bool CvChatEmpty => CvChatTranscript.Count == 0;
+    [ObservableProperty] private string _cvChatInput = "";
+    [ObservableProperty] private bool _isCvChatSending;
+    [ObservableProperty] private string _cvChatError = "";
+    private CancellationTokenSource? _cvChatCts;
+    private bool _cvChatLoaded;
+    /// <summary>Set by the view: scrolls the assistant transcript to the newest message.</summary>
+    public Action? ScrollCvChatToEnd;
+
+    private void LoadCvChat()
+    {
+        if (_cvChatLoaded) return;
+        _cvChatLoaded = true;
+        try
+        {
+            if (!File.Exists(_cvChatPath)) return;
+            var msgs = JsonSerializer.Deserialize<List<CoachStoredMessage>>(File.ReadAllText(_cvChatPath));
+            if (msgs is null) return;
+            foreach (var m in msgs) CvChatTranscript.Add(new CoachMessageVm(m.IsUser, m.Text));
+            OnPropertyChanged(nameof(CvChatEmpty));
+        }
+        catch { /* ignore a bad chat file */ }
+    }
+
+    private void SaveCvChat()
+    {
+        try
+        {
+            var msgs = CvChatTranscript.Where(m => !m.IsStreaming && m.Text.Length > 0)
+                .Select(m => new CoachStoredMessage { IsUser = m.IsUser, Text = m.Text }).ToList();
+            File.WriteAllText(_cvChatPath, JsonSerializer.Serialize(msgs, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { /* best-effort */ }
+    }
+
+    [RelayCommand]
+    private Task SendCvChat() => SendCvChatCore(CvChatInput, null, null);
+
+    [RelayCommand] private void StopCvChat() => _cvChatCts?.Cancel();
+
+    [RelayCommand]
+    private void ClearCvChat()
+    {
+        _cvChatCts?.Cancel();
+        CvChatTranscript.Clear();
+        CvChatError = "";
+        try { File.Delete(_cvChatPath); } catch { }
+        OnPropertyChanged(nameof(CvChatEmpty));
+    }
+
+    private async Task SendCvChatCore(string userText, string? jobBlock, string? tailoredFor)
+    {
+        userText = (userText ?? "").Trim();
+        if (IsCvChatSending || _cvDoc is null || userText.Length == 0) return;
+        CommitCvEditors(); SaveCvDoc(false);              // the assistant sees exactly what's on screen
+        CvChatError = ""; CvChangeNote = "";
+        CvChatTranscript.Add(new CoachMessageVm(isUser: true, userText));
+        CvChatInput = "";
+        OnPropertyChanged(nameof(CvChatEmpty));
+        ScrollCvChatToEnd?.Invoke();
+
+        var history = CvChatTranscript.Where(m => !m.IsStreaming && m.Text.Length > 0)
+            .Select(m => (m.IsUser, m.Text)).ToList();
+        if (history.Count > 0) history.RemoveAt(history.Count - 1);   // the latest message travels separately
+        if (history.Count > 6) history.RemoveRange(0, history.Count - 6);
+        string prompt = CvStudio.BuildChatPrompt(_cvDoc, history, userText, jobBlock);
+
+        var answerVm = new CoachMessageVm(isUser: false, "") { IsStreaming = true };
+        CvChatTranscript.Add(answerVm);
+        IsCvChatSending = true;
+        _cvChatCts = new CancellationTokenSource();
+        try
+        {
+            string? raw = await LlmClient.CompleteAsync(CvStudio.WithCvBudget(_cfg.Claude), prompt, _cvChatCts.Token, json: true);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                CvChatTranscript.Remove(answerVm);
+                CvChatError = LlmClient.LastError ?? L("llm.empty");
+                return;
+            }
+            var (reply, newCv, triedButInvalid) = CvStudio.ParseChatReply(raw, _cvDoc);
+            answerVm.Text = reply.Length > 0 ? reply : L("cv.chat.notApplied");
+            if (newCv is not null)
+            {
+                var sections = CvStudio.ChangedSections(_cvDoc, newCv);
+                PushCvUndo();                              // snapshot BEFORE apply
+                if (tailoredFor is not null) newCv.TailoredFor = tailoredFor;
+                _cvDoc = newCv;
+                LoadCvEditors();
+                SaveCvDoc(false);
+                if (sections.Count > 0)
+                    CvChangeNote = Loc.Instance.F("cv.chat.applied",
+                        string.Join(", ", sections.Select(s => L("cv.sec." + s))));
+            }
+            else if (triedButInvalid && reply.Length > 0)
+                answerVm.Text += "\n\n" + L("cv.chat.notApplied");
+        }
+        catch (OperationCanceledException)
+        {
+            if (answerVm.Text.Length == 0) CvChatTranscript.Remove(answerVm);
+        }
+        catch (Exception ex)
+        {
+            CvChatTranscript.Remove(answerVm);
+            CvChatError = Loc.Instance.F("error.generic", ex.Message);
+        }
+        finally
+        {
+            answerVm.IsStreaming = false;
+            IsCvChatSending = false;
+            OnPropertyChanged(nameof(CvChatEmpty));
+            ScrollCvChatToEnd?.Invoke();
+            SaveCvChat();
+        }
     }
 
     /// <summary>Loads the LLM backend override saved from the Settings screen (machine-local, gitignored).</summary>

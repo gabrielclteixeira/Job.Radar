@@ -1629,6 +1629,71 @@
                                 <TextBox Text="{Binding CvLanguagesText}"/>
                             </StackPanel>
                         </Border>
+
+                        <!-- CV assistant: critiques AND applies edits, with undo -->
+                        <Border Classes="card" Padding="16">
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Classes="h2" Text="{l:T cv.sec.chat}" VerticalAlignment="Center"/>
+                                    <Button Grid.Column="1" Classes="link" Command="{Binding ClearCvChatCommand}" Content="{l:T coach.clear}" IsVisible="{Binding !CvChatEmpty}"/>
+                                </Grid>
+
+                                <Border Classes="chip" HorizontalAlignment="Left"
+                                        IsVisible="{Binding CvChangeNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <ui:SymbolIcon Symbol="Checkmark" FontSize="13" Foreground="{DynamicResource Signal}" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding CvChangeNote}" FontSize="11.5" TextWrapping="Wrap" MaxWidth="520" VerticalAlignment="Center"/>
+                                        <Button Classes="link" Command="{Binding UndoCvChangeCommand}" Content="{l:T cv.chat.undo}" IsEnabled="{Binding CanUndoCv}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <ctl:EmptyState Symbol="Comment" IsVisible="{Binding CvChatEmpty}"
+                                                Title="{l:T cv.chat.empty.title}" Body="{l:T cv.chat.empty.body}"/>
+
+                                <ScrollViewer x:Name="CvChatScroll" MaxHeight="420" VerticalScrollBarVisibility="Auto" IsVisible="{Binding !CvChatEmpty}">
+                                    <ItemsControl ItemsSource="{Binding CvChatTranscript}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:CoachMessageVm">
+                                                <Border Classes="bubble" Classes.user="{Binding IsUser}">
+                                                    <StackPanel Spacing="6">
+                                                        <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{DynamicResource Text}"
+                                                                             IsVisible="{Binding !ShowFinalMarkdown}"/>
+                                                        <md:MarkdownScrollViewer Markdown="{Binding Text}" MarkdownStyleName="FluentAvalonia"
+                                                                                 IsVisible="{Binding ShowFinalMarkdown}"/>
+                                                        <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ShowSpinner}">
+                                                            <ui:ProgressRing IsIndeterminate="True" Width="15" Height="15"/>
+                                                            <TextBlock Classes="sub" Text="{l:T coach.thinking}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+
+                                <Border Classes="banner danger" IsVisible="{Binding CvChatError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                    <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <ui:SymbolIcon Symbol="Important" Foreground="{DynamicResource Danger}" VerticalAlignment="Top"/>
+                                        <TextBlock Text="{Binding CvChatError}" FontSize="12" TextWrapping="Wrap" MaxWidth="640"
+                                                   Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Grid ColumnDefinitions="*,8,Auto">
+                                    <TextBox x:Name="CvChatInputBox" Grid.Column="0" Text="{Binding CvChatInput}"
+                                             AcceptsReturn="True" TextWrapping="Wrap" MinHeight="44" MaxHeight="140"
+                                             Watermark="{l:T cv.chat.input.wm}" IsEnabled="{Binding !IsCvChatSending}"/>
+                                    <Panel Grid.Column="2" VerticalAlignment="Bottom">
+                                        <Button Classes="accent" Command="{Binding SendCvChatCommand}" IsVisible="{Binding !IsCvChatSending}">
+                                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Send"/><TextBlock Text="{l:T coach.send}"/></StackPanel>
+                                        </Button>
+                                        <Button Classes="ghost" Command="{Binding StopCvChatCommand}" IsVisible="{Binding IsCvChatSending}">
+                                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Stop"/><TextBlock Text="{l:T coach.stop}"/></StackPanel>
+                                        </Button>
+                                    </Panel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </StackPanel>
 
