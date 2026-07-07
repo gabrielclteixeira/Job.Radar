@@ -1664,11 +1664,13 @@
                                 <ctl:EmptyState Symbol="Comment" IsVisible="{Binding CvChatEmpty}"
                                                 Title="{l:T cv.chat.empty.title}" Body="{l:T cv.chat.empty.body}"/>
 
-                                <!-- tune the CV to one of the scored jobs -->
+                                <!-- tune the CV to one of the scored jobs (type-to-search) -->
                                 <Grid ColumnDefinitions="Auto,8,*,8,Auto">
                                     <TextBlock Grid.Column="0" Classes="fld" VerticalAlignment="Center" Text="{l:T cv.tailor}"/>
-                                    <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" IsEnabled="{Binding HasCvJobs}"
-                                              ItemsSource="{Binding CvJobOptions}" SelectedIndex="{Binding CvJobIndex}"/>
+                                    <AutoCompleteBox Grid.Column="2" HorizontalAlignment="Stretch" IsEnabled="{Binding HasCvJobs}"
+                                                     ItemsSource="{Binding CvJobOptions}" SelectedItem="{Binding CvJobPick}"
+                                                     FilterMode="Contains" MinimumPrefixLength="0"
+                                                     Watermark="{l:T cv.tailor.wm}"/>
                                     <Button Grid.Column="4" Classes="ghost" Command="{Binding TailorCvToJobCommand}"
                                             IsEnabled="{Binding HasCvJobs}" Content="{l:T cv.tailor.run}"/>
                                 </Grid>

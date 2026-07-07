@@ -1927,6 +1927,32 @@ public partial class MainViewModel : ObservableObject
     {
         BuildCompanies();
         ShowOnly(researcher: true);
+        // Opened before ever visiting Jobs → quietly pull the scored cache and rebuild.
+        if (_all.Count == 0)
+            _ = EnsureJobsLoadedAsync().ContinueWith(t =>
+            {
+                if (t.Result) Dispatcher.UIThread.Post(BuildCompanies);
+            }, TaskScheduler.Default);
+    }
+
+    /// <summary>Quietly fills <c>_all</c> from the scored cache when no jobs are loaded yet — the
+    /// Companies view and the CV job picker need them without a Jobs visit. No view switch, no
+    /// streaming UI; the Results view stays coherent via ApplyFilter.</summary>
+    private async Task<bool> EnsureJobsLoadedAsync()
+    {
+        if (_all.Count > 0) return true;
+        if (IsScoring) return false;
+        try
+        {
+            var result = await Pipeline.LoadCachedAsync(_cfg, _root, null);
+            if (_all.Count == 0 && result.Jobs.Count > 0)
+            {
+                _all = result.Jobs.Select(NewJobVm).OrderByDescending(v => v.Score).ToList();
+                Dispatcher.UIThread.Post(ApplyFilter);
+            }
+        }
+        catch { /* cache unavailable — pickers just stay empty */ }
+        return _all.Count > 0;
     }
 
     /// <summary>Rebuilds the company list from the matched jobs (distinct employers + counts), reusing any
@@ -2629,34 +2655,32 @@ public partial class MainViewModel : ObservableObject
     // ---- tailor: tune the CV to one of the scored jobs (the app has the full posting text) ----
     public ObservableCollection<string> CvJobOptions { get; } = new();
     private List<JobEntity> _cvJobs = new();
-    [ObservableProperty] private int _cvJobIndex;
+    [ObservableProperty] private object? _cvJobPick;   // AutoCompleteBox selection (type-to-search)
     public bool HasCvJobs => _cvJobs.Count > 0;
 
-    /// <summary>Job picker = loaded jobs, else the scored cache (best score first, capped at 40).</summary>
+    /// <summary>Job picker = loaded jobs (quietly pulled from the scored cache when needed),
+    /// deduped by Title+Company keeping the best score, best-first.</summary>
     private async Task RefreshCvJobsAsync()
     {
-        List<JobEntity> jobs;
-        if (_all.Count > 0)
-            jobs = _all.Select(v => v.Entity).ToList();
-        else
-        {
-            try { jobs = (await Pipeline.LoadCachedAsync(_cfg, _root, null)).Jobs; }
-            catch { jobs = new(); }
-        }
-        _cvJobs = jobs.Where(j => !string.IsNullOrWhiteSpace(j.Title))
-            .OrderByDescending(j => j.FinalScore).Take(40).ToList();
+        await EnsureJobsLoadedAsync();
+        _cvJobs = _all.Select(v => v.Entity)
+            .Where(j => !string.IsNullOrWhiteSpace(j.Title))
+            .GroupBy(j => $"{j.Title.Trim()}|{(j.Company ?? "").Trim()}", StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.OrderByDescending(j => j.FinalScore).First())
+            .OrderByDescending(j => j.FinalScore)
+            .Take(100).ToList();
         CvJobOptions.Clear();
         foreach (var j in _cvJobs) CvJobOptions.Add($"{j.Title} @ {j.Company}");
-        if (CvJobOptions.Count == 0) CvJobOptions.Add(L("cv.tailor.none"));
-        CvJobIndex = 0;
+        CvJobPick = null;
         OnPropertyChanged(nameof(HasCvJobs));
     }
 
     [RelayCommand]
     private Task TailorCvToJob()
     {
-        if (_cvJobs.Count == 0 || CvJobIndex < 0 || CvJobIndex >= _cvJobs.Count) return Task.CompletedTask;
-        var job = _cvJobs[CvJobIndex];
+        int i = CvJobPick is string s ? CvJobOptions.IndexOf(s) : -1;
+        if (i < 0 || i >= _cvJobs.Count) return Task.CompletedTask;
+        var job = _cvJobs[i];
         return SendCvChatCore(L("cv.tailor.msg"), CvStudio.BuildTailorJobBlock(job), job.Company);
     }
 
