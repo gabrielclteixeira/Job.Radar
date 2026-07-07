@@ -49,6 +49,23 @@
             <Setter Property="Background" Value="{DynamicResource AccentHover}"/>
         </Style>
 
+        <!-- Coach chat bubbles: assistant left on Panel2, user right on AccentSoft.
+             Alignment/colour flip via the "user" class — no converters needed. -->
+        <Style Selector="Border.bubble">
+            <Setter Property="Background" Value="{DynamicResource Panel2}"/>
+            <Setter Property="CornerRadius" Value="12,12,12,4"/>
+            <Setter Property="Padding" Value="12,9"/>
+            <Setter Property="Margin" Value="0,0,60,8"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="MaxWidth" Value="620"/>
+        </Style>
+        <Style Selector="Border.bubble.user">
+            <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
+            <Setter Property="CornerRadius" Value="12,12,4,12"/>
+            <Setter Property="Margin" Value="60,0,0,8"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+
         <!-- Brief accent flash used to draw the eye to a setting jumped to from elsewhere -->
         <Style Selector="Border.flash">
             <Setter Property="Background" Value="Transparent"/>
@@ -107,6 +124,9 @@
                     </Button>
                     <Button Classes="nav" Classes.active="{Binding IsNavImprove}" Command="{Binding NavigateCommand}" CommandParameter="improve">
                         <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Flag"/><TextBlock Text="{l:T nav.improve}" VerticalAlignment="Center"/></StackPanel>
+                    </Button>
+                    <Button Classes="nav" Classes.active="{Binding IsNavCoach}" Command="{Binding NavigateCommand}" CommandParameter="coach">
+                        <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Comment"/><TextBlock Text="{l:T nav.coach}" VerticalAlignment="Center"/></StackPanel>
                     </Button>
                     <Button Classes="nav" Classes.active="{Binding IsNavSettings}" Command="{Binding NavigateCommand}" CommandParameter="settings">
                         <StackPanel Orientation="Horizontal" Spacing="11"><ui:SymbolIcon Symbol="Settings"/><TextBlock Text="{l:T nav.settings}" VerticalAlignment="Center"/></StackPanel>
@@ -1280,6 +1300,107 @@
                             </StackPanel>
                         </Expander>
                     </StackPanel>
+                </StackPanel>
+
+                <!-- ============ COACH ============ -->
+                <StackPanel Classes="page" IsVisible="{Binding IsCoach}" Spacing="10">
+                    <TextBlock Classes="h1" Text="{l:T coach.title}"/>
+                    <TextBlock Classes="sub" Text="{l:T coach.sub}" TextWrapping="Wrap"/>
+
+                    <Grid ColumnDefinitions="Auto,8,260,*,Auto" Margin="0,2,0,0">
+                        <TextBlock Grid.Column="0" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"
+                                   VerticalAlignment="Center" Text="{l:T coach.company}"/>
+                        <ComboBox Grid.Column="2" HorizontalAlignment="Stretch"
+                                  ItemsSource="{Binding CoachCompanyOptions}" SelectedIndex="{Binding CoachCompanyIndex}"/>
+                        <Button Grid.Column="4" Classes="ghost" Command="{Binding ClearCoachCommand}" IsVisible="{Binding !CoachEmpty}">
+                            <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Delete"/><TextBlock Text="{l:T coach.clear}"/></StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <ctl:EmptyState Symbol="Comment" IsVisible="{Binding CoachEmpty}"
+                                    Title="{l:T coach.empty.title}" Body="{l:T coach.empty.body}"/>
+
+                    <ScrollViewer x:Name="CoachScroll" MaxHeight="460" VerticalScrollBarVisibility="Auto" IsVisible="{Binding !CoachEmpty}">
+                        <ItemsControl ItemsSource="{Binding CoachTranscript}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:CoachMessageVm">
+                                    <Border Classes="bubble" Classes.user="{Binding IsUser}">
+                                        <StackPanel Spacing="6">
+                                            <ItemsControl ItemsSource="{Binding Thumbs}" IsVisible="{Binding HasThumbs}">
+                                                <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                                                <ItemsControl.ItemTemplate><DataTemplate>
+                                                    <Border CornerRadius="6" ClipToBounds="True" Margin="0,0,6,6">
+                                                        <Image Source="{Binding}" MaxWidth="220" Stretch="Uniform"/>
+                                                    </Border>
+                                                </DataTemplate></ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            <!-- plain text for user msgs AND while streaming; markdown once complete -->
+                                            <SelectableTextBlock Text="{Binding Text}" TextWrapping="Wrap" Foreground="{DynamicResource Text}"
+                                                                 IsVisible="{Binding !ShowFinalMarkdown}"/>
+                                            <md:MarkdownScrollViewer Markdown="{Binding Text}" MarkdownStyleName="FluentAvalonia"
+                                                                     IsVisible="{Binding ShowFinalMarkdown}"/>
+                                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ShowSpinner}">
+                                                <ui:ProgressRing IsIndeterminate="True" Width="15" Height="15"/>
+                                                <TextBlock Classes="sub" Text="{l:T coach.thinking}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <Border Classes="banner danger" IsVisible="{Binding CoachError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <StackPanel Orientation="Horizontal" Spacing="9">
+                            <ui:SymbolIcon Symbol="Important" Foreground="{DynamicResource Danger}" VerticalAlignment="Top"/>
+                            <TextBlock Text="{Binding CoachError}" FontSize="12" TextWrapping="Wrap" MaxWidth="640"
+                                       Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Classes="chip" HorizontalAlignment="Left"
+                            IsVisible="{Binding CoachVisionWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <ui:SymbolIcon Symbol="Important" FontSize="13" Foreground="{DynamicResource Amber}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding CoachVisionWarning}" FontSize="11.5" TextWrapping="Wrap" MaxWidth="560"/>
+                        </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding CoachAttachments}" IsVisible="{Binding HasCoachAttachments}">
+                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:CoachAttachmentVm">
+                                <Border Classes="chip" Margin="0,0,8,6" Padding="6">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Image Source="{Binding Thumb}" Height="40" Stretch="Uniform"/>
+                                        <Button Classes="link" VerticalAlignment="Center"
+                                                Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveCoachAttachmentCommand}"
+                                                CommandParameter="{Binding}">
+                                            <ui:SymbolIcon Symbol="Dismiss" FontSize="13"/>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Grid ColumnDefinitions="*,8,Auto,Auto" Margin="0,4,0,0">
+                        <TextBox x:Name="CoachInputBox" Grid.Column="0" Text="{Binding CoachInput}"
+                                 AcceptsReturn="True" TextWrapping="Wrap" MinHeight="44" MaxHeight="140"
+                                 Watermark="{l:T coach.input.wm}" IsEnabled="{Binding !IsCoachSending}"/>
+                        <Button Grid.Column="2" Classes="ghost" Click="OnCoachAttach" VerticalAlignment="Bottom"
+                                IsEnabled="{Binding !IsCoachSending}" ToolTip.Tip="{l:T coach.attach.tip}">
+                            <ui:SymbolIcon Symbol="Attach"/>
+                        </Button>
+                        <Panel Grid.Column="3" Margin="8,0,0,0" VerticalAlignment="Bottom">
+                            <Button Classes="accent" Command="{Binding SendCoachCommand}" IsVisible="{Binding !IsCoachSending}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Send"/><TextBlock Text="{l:T coach.send}"/></StackPanel>
+                            </Button>
+                            <Button Classes="ghost" Command="{Binding StopCoachCommand}" IsVisible="{Binding IsCoachSending}">
+                                <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Stop"/><TextBlock Text="{l:T coach.stop}"/></StackPanel>
+                            </Button>
+                        </Panel>
+                    </Grid>
                 </StackPanel>
 
                 <!-- ============ SETTINGS ============ -->
