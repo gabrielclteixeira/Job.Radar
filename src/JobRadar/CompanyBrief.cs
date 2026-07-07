@@ -13,6 +13,7 @@ public class CompanyBrief
     public string BottomLine { get; set; } = "";
     public string RawFallback { get; set; } = "";          // set when JSON parsing failed
     public List<SourceRef> Sources { get; set; } = new();
+    public string AsOfUtc { get; set; } = "";              // ISO8601 when this briefing was built (cache TTL)
 
     public bool HasPros => Pros.Count > 0;
     public bool HasCons => Cons.Count > 0;

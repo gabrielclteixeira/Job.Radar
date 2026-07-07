@@ -42,6 +42,8 @@ career-plan.reasoning.txt
 career-research.json
 # per-company employer-health cache (machine-local)
 company-reports.json
+# per-company job-card briefing cache (machine-local)
+company-briefs.json
 
 # app / dev scratch
 app-err.log

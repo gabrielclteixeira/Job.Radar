@@ -467,7 +467,12 @@
                                             </Button>
                                             <Button Classes="ghost" Command="{Binding ResearchCommand}" ToolTip.Tip="{l:T job.research.tip}">
                                                 <Panel>
-                                                    <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding !IsResearching}"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T job.research}"/></StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T job.research}"/>
+                                                        <StackPanel.IsVisible><MultiBinding Converter="{x:Static BoolConverters.And}"><Binding Path="!IsResearching"/><Binding Path="!HasBrief"/></MultiBinding></StackPanel.IsVisible>
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T job.research.again}"/>
+                                                        <StackPanel.IsVisible><MultiBinding Converter="{x:Static BoolConverters.And}"><Binding Path="!IsResearching"/><Binding Path="HasBrief"/></MultiBinding></StackPanel.IsVisible>
+                                                    </StackPanel>
                                                     <StackPanel Orientation="Horizontal" Spacing="7" IsVisible="{Binding IsResearching}"><ui:SymbolIcon Symbol="Dismiss" FontSize="14" VerticalAlignment="Center"/><TextBlock Text="{l:T job.research.cancel}"/></StackPanel>
                                                 </Panel>
                                             </Button>
@@ -483,6 +488,7 @@
                                         <Border IsVisible="{Binding HasBrief}" Background="{DynamicResource Panel2}" BorderBrush="{DynamicResource Line}"
                                                 BorderThickness="1" CornerRadius="10" Padding="14">
                                             <StackPanel Spacing="9">
+                                                <TextBlock Text="{Binding BriefAsOf}" FontSize="10.5" Foreground="{DynamicResource Muted}" IsVisible="{Binding HasBriefAsOf}"/>
                                                 <!-- Reputação -->
                                                 <StackPanel IsVisible="{Binding Brief.HasReputation}" Spacing="6">
                                                     <StackPanel Orientation="Horizontal" Spacing="8">

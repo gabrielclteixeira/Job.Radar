@@ -25,6 +25,7 @@ public partial class MainViewModel : ObservableObject
     private readonly string _planReasoningPath;
     private readonly string _careerResearchPath;
     private readonly string _companyCachePath;
+    private readonly string _briefCachePath;
     private AppConfig _cfg;
 
     /// <summary>Set by the view: shows a cost-confirmation dialog before a paid (Apify) search.</summary>
@@ -49,6 +50,7 @@ public partial class MainViewModel : ObservableObject
         _planReasoningPath = Path.Combine(_root, "career-plan.reasoning.txt");
         _careerResearchPath = Path.Combine(_root, "career-research.json");
         _companyCachePath = Path.Combine(_root, "company-reports.json");
+        _briefCachePath = Path.Combine(_root, "company-briefs.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
         ApplyApifyOverride();
@@ -62,6 +64,7 @@ public partial class MainViewModel : ObservableObject
         LoadPlan();
         LoadPlanHistory();
         _companyCache = CompanyCache.Load(_companyCachePath);
+        _briefCache = BriefCache.Load(_briefCachePath);
         LinkedInImportedCount = LinkedInImport.CountSaved(LinkedInJobsFile);
         _langInitialised = true;
     }
@@ -1815,13 +1818,33 @@ public partial class MainViewModel : ObservableObject
     }
 
     // ---- helpers ----
-    /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
-    private Task<(CompanyBrief? brief, string? error)> ResearchCompanyAsync(JobEntity j, IProgress<string> progress, CancellationToken ct)
-        => CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location, progress, ct);
+    /// <summary>Per-company briefing cache (machine-local, 7-day TTL) so re-opening a job re-uses the analysis.</summary>
+    private Dictionary<string, CompanyBrief> _briefCache = new();
 
-    private void AddStreamed(JobEntity j)
+    private async Task<(CompanyBrief? brief, string? error)> ResearchCompanyAsync(JobEntity j, IProgress<string> progress, CancellationToken ct)
+    {
+        var (brief, error) = await CompanyResearch.ResearchAsync(_cfg.Claude, _profile, j.Company, j.Title, j.Location, progress, ct);
+        if (brief is not null && !string.IsNullOrWhiteSpace(j.Company))
+        {
+            _briefCache[CompanyCache.Key(j.Company)] = brief;
+            BriefCache.Save(_briefCachePath, _briefCache);
+        }
+        return (brief, error);
+    }
+
+    /// <summary>Creates the presentation VM for a job, restoring a cached (≤7-day-old) employer briefing.</summary>
+    private JobVm NewJobVm(JobEntity j)
     {
         var vm = new JobVm(j, ResearchCompanyAsync);
+        if (!string.IsNullOrWhiteSpace(j.Company) && _briefCache.TryGetValue(CompanyCache.Key(j.Company), out var cached))
+            vm.Brief = cached;
+        return vm;
+    }
+
+    /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
+    private void AddStreamed(JobEntity j)
+    {
+        var vm = NewJobVm(j);
         int idx = _all.FindIndex(x => x.Score < vm.Score);
         if (idx < 0) _all.Add(vm); else _all.Insert(idx, vm);
         TotalCount = _all.Count;
@@ -1848,7 +1871,7 @@ public partial class MainViewModel : ObservableObject
         }
         ResultsTitle = result.Demo ? L("title.demo") : L("title.jobs");
         _all = _all.Count == 0 && result.Jobs.Count > 0
-            ? result.Jobs.Select(j => new JobVm(j, ResearchCompanyAsync)).ToList()
+            ? result.Jobs.Select(NewJobVm).ToList()
             : _all.OrderByDescending(v => v.Score).ToList();
         ApplyFilter();
     }

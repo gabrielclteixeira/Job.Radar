@@ -27,14 +27,26 @@ public partial class JobVm : ObservableObject
     [ObservableProperty] private string _researchStatus = "";
     [ObservableProperty] private string _researchError = "";
     public bool HasBrief => Brief is not null;
-    partial void OnBriefChanged(CompanyBrief? value) => OnPropertyChanged(nameof(HasBrief));
+    public string BriefAsOf => Brief?.AsOfUtc is string s
+        && DateTime.TryParse(s, null, System.Globalization.DateTimeStyles.RoundtripKind, out var d)
+        ? Loc.Instance.F("brief.asof", d.ToLocalTime().ToString("yyyy-MM-dd")) : "";
+    public bool HasBriefAsOf => !string.IsNullOrEmpty(BriefAsOf);
+    partial void OnBriefChanged(CompanyBrief? value)
+    {
+        OnPropertyChanged(nameof(HasBrief));
+        OnPropertyChanged(nameof(BriefAsOf));
+        OnPropertyChanged(nameof(HasBriefAsOf));
+    }
 
-    /// <summary>Researches the employer (reviews + comparable salaries) via the web-search step.</summary>
+    /// <summary>Researches the employer (reviews + comparable salaries) via the web-search step.
+    /// With a briefing already shown (cached or fresh), the same command re-researches; if the new
+    /// attempt is cancelled or fails, the previous briefing is put back.</summary>
     [RelayCommand]
     private async Task Research()
     {
         if (_research is null) return;
         if (IsResearching) { _researchCts?.Cancel(); return; }   // clicking again cancels
+        var previous = Brief;
         IsResearching = true; ResearchError = ""; Brief = null;
         ResearchStatus = Loc.Instance.T("research.starting");
         _researchCts = new CancellationTokenSource();
@@ -43,10 +55,10 @@ public partial class JobVm : ObservableObject
         {
             var (b, err) = await _research(_j, progress, _researchCts.Token);
             if (b is null) ResearchError = string.IsNullOrWhiteSpace(err) ? Loc.Instance.T("research.failed") : err;
-            else Brief = b;
+            Brief = b ?? previous;
         }
-        catch (OperationCanceledException) { /* cancelled by the user — no error */ }
-        catch { ResearchError = Loc.Instance.T("research.failed"); }
+        catch (OperationCanceledException) { Brief = previous; /* cancelled by the user — no error */ }
+        catch { ResearchError = Loc.Instance.T("research.failed"); Brief = previous; }
         finally { IsResearching = false; }
     }
 

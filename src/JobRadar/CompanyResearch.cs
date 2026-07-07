@@ -75,6 +75,7 @@ Role: {role} · {cand} · location {location ?? "—"}
         }
 
         var brief = Parse(text) ?? new CompanyBrief { RawFallback = text!.Trim() };
+        brief.AsOfUtc = DateTime.UtcNow.ToString("o");
 
         // Attach sources from the search results (not from the model).
         for (int i = 0; i < results.Count; i++)
