@@ -1659,25 +1659,13 @@ public partial class MainViewModel : ObservableObject
         finally { Busy = false; }
     }
 
+    /// <summary>Profile-page "Create CV…" — CV Studio supersedes the old one-page CvPdf export.</summary>
     [RelayCommand]
-    private async Task ExportCv()
+    private Task OpenCvStudioFromProfile()
     {
         CommitFormToProfile();
-        Busy = true;
-        try
-        {
-            string outDir = Path.Combine(_root, "output");
-            string stamp = DateTime.Now.ToString("yyyy-MM-dd-HHmm");
-            string? path = await Task.Run(() => CvPdf.Export(_profile, outDir, stamp));
-            if (path is not null)
-            {
-                Status = "CV gerado: " + path;
-                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = path, UseShellExecute = true }); }
-                catch { /* opening is best-effort */ }
-            }
-            else Status = "Não consegui gerar o CV.";
-        }
-        finally { Busy = false; }
+        SaveProfile();
+        return Navigate("cv");
     }
 
     /// <summary>Exports the current career plan to a styled PDF (reuses the CV/report HTML→PDF path).</summary>
@@ -2371,6 +2359,7 @@ public partial class MainViewModel : ObservableObject
             _cvLoaded = true;
         }
         LoadCvChat();
+        _ = RefreshCvJobsAsync();
         ShowOnly(cv: true);
     }
 
@@ -2585,6 +2574,40 @@ public partial class MainViewModel : ObservableObject
         SaveCvDoc(false);
         CvChangeNote = L("cv.chat.undone");
         OnPropertyChanged(nameof(CanUndoCv));
+    }
+
+    // ---- tailor: tune the CV to one of the scored jobs (the app has the full posting text) ----
+    public ObservableCollection<string> CvJobOptions { get; } = new();
+    private List<JobEntity> _cvJobs = new();
+    [ObservableProperty] private int _cvJobIndex;
+    public bool HasCvJobs => _cvJobs.Count > 0;
+
+    /// <summary>Job picker = loaded jobs, else the scored cache (best score first, capped at 40).</summary>
+    private async Task RefreshCvJobsAsync()
+    {
+        List<JobEntity> jobs;
+        if (_all.Count > 0)
+            jobs = _all.Select(v => v.Entity).ToList();
+        else
+        {
+            try { jobs = (await Pipeline.LoadCachedAsync(_cfg, _root, null)).Jobs; }
+            catch { jobs = new(); }
+        }
+        _cvJobs = jobs.Where(j => !string.IsNullOrWhiteSpace(j.Title))
+            .OrderByDescending(j => j.FinalScore).Take(40).ToList();
+        CvJobOptions.Clear();
+        foreach (var j in _cvJobs) CvJobOptions.Add($"{j.Title} @ {j.Company}");
+        if (CvJobOptions.Count == 0) CvJobOptions.Add(L("cv.tailor.none"));
+        CvJobIndex = 0;
+        OnPropertyChanged(nameof(HasCvJobs));
+    }
+
+    [RelayCommand]
+    private Task TailorCvToJob()
+    {
+        if (_cvJobs.Count == 0 || CvJobIndex < 0 || CvJobIndex >= _cvJobs.Count) return Task.CompletedTask;
+        var job = _cvJobs[CvJobIndex];
+        return SendCvChatCore(L("cv.tailor.msg"), CvStudio.BuildTailorJobBlock(job), job.Company);
     }
 
     // ---- CV assistant chat: critiques AND applies edits ({"reply","cv"} contract) ----

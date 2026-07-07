@@ -156,8 +156,8 @@ internal static class Strings
         ["profile.summary"] = "RESUMO",
         ["profile.classification"] = "CLASSIFICAÇÃO",
         ["profile.classHint"] = "IA = 0–100 com justificação. Keywords = rápido, sem IA.",
-        ["profile.genCv"] = "Gerar CV (PDF)",
-        ["profile.genCv.tip"] = "Gera um CV em PDF a partir deste perfil",
+        ["profile.genCv"] = "Criar CV…",
+        ["profile.genCv.tip"] = "Abre o CV Studio — o teu CV completo, com modelos, assistente de IA e exportação em PDF.",
         ["profile.reset"] = "Recomeçar",
 
         // results
@@ -759,8 +759,8 @@ internal static class Strings
         ["profile.summary"] = "SUMMARY",
         ["profile.classification"] = "SCORING",
         ["profile.classHint"] = "AI = 0–100 with reasoning. Keywords = fast, no AI.",
-        ["profile.genCv"] = "Generate CV (PDF)",
-        ["profile.genCv.tip"] = "Generate a PDF CV from this profile",
+        ["profile.genCv"] = "Create CV…",
+        ["profile.genCv.tip"] = "Opens CV Studio — your full CV with templates, an AI assistant and PDF export.",
         ["profile.reset"] = "Start over",
 
         ["results.of"] = " of ",

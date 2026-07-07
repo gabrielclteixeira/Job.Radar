@@ -98,27 +98,33 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   them natively). Conversations are **per-company threads** — the company dropdown doubles as the thread
   selector — persisted across restarts (machine-local, with the pasted screenshots); "clear conversation"
   wipes only the active company's thread.
+- **CV Studio** — an 8th view superseding the old one-page profile PDF: a **fully structured CV** (header +
+  links, summary, work history, education, projects, certifications, skill groups, languages) imported from
+  the CV PDF by the user's own engine ("copy facts exactly — never invent") or seeded from the profile, with a
+  **section editor** (add/remove/reorder entries, one bullet per line). Two **typography-led, ATS-safe
+  templates** (Clean serif · Accent colour — single column, real text, standard headers, no icons/photos/skill
+  bars), six accent colours, and a **per-CV language** (PT/EN section headers, independent of the UI language).
+  Preview in the browser, export A4 PDF via the existing Edge path. The star: an **AI assistant chat inside
+  the view that critiques AND applies edits** — the model returns the full updated document, the app applies
+  it with an **undo stack** and a "changes applied — sections" note, facts are never invented — plus a
+  **"tune for this job" action** that tailors summary/bullets/skills to any scored job's full posting text
+  (the tailored company lands in the PDF filename). CV data + assistant transcript are machine-local.
 
 ---
 
 ## 🔭 Planned
 
-### 1. CV Studio — build & refine your CV
+### 1. CV Studio — deepen it
 
-A dedicated area to **create and improve a CV**, not just consume one.
+The core **CV Studio shipped** (see above): structured document + import from the CV PDF, section editor,
+2 templates + accent colours + per-CV language, PDF export, the edit-applying AI assistant with undo, and
+per-job tailoring. Remaining ideas:
 
-- **Import experience from elsewhere**
-  - Pull roles, dates and highlights from **LinkedIn** (ToS-safe: a profile export / manual paste, no scraping)
-    and **GitHub** (repos, languages, notable contributions) to seed or enrich the CV.
-  - Merge with the existing CV-derived profile so nothing is re-typed.
-- **Generate a fresh PDF** ✅ *(basic version shipped)*
-  - Richer output once work history is imported (below).
-- **Front-end customization & refinement**
-  - Pick a **template/theme** and tune the look (layout, accent colour, density, fonts).
-  - **Rich content control** so the user shapes each section: **highlight/emphasize text**, insert a
-    **table** (e.g. skills matrix, project list), reorder/show/hide sections, add callouts.
-  - **AI-assisted refinement**: rewrite a bullet, tighten the summary, tailor the CV to a specific job —
-    with the user always in control of the final text.
+- **Import experience from elsewhere** — pull roles/highlights from **LinkedIn** (ToS-safe: profile export /
+  manual paste) and **GitHub** (repos, languages, notable contributions) to enrich the work history.
+- **Richer content control** — highlight/emphasize text, insert a table (skills matrix), show/hide sections,
+  drag-drop reordering, more templates (incl. a two-column "Compact" flagged less ATS-safe), DOCX export,
+  multiple saved CV versions (one per application).
 
 ### 2. Improvement — deepen it
 
