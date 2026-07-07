@@ -49,6 +49,209 @@ public static class LlmClient
             ? OpenAiStreamingAsync(cfg, prompt, onReasoning, json, ct)
             : CompleteAsync(cfg, prompt, ct, json);
 
+    /// <summary>
+    /// Multi-turn chat with a system prompt and optional per-message images (the Coach view).
+    /// OpenAI-compatible backends get a real messages array (system + transcript, images as
+    /// base64 content parts) with answer tokens streamed to <paramref name="onDelta"/>; the
+    /// Claude CLI gets the transcript flattened into one -p prompt (no token stream — the CLI
+    /// reads attached images itself via absolute paths).
+    /// </summary>
+    public static Task<string?> ChatAsync(ClaudeConfig cfg, string system,
+        IReadOnlyList<ChatMessage> messages, IProgress<string>? onDelta, CancellationToken ct = default)
+        => (cfg.Provider?.Trim().ToLowerInvariant()) switch
+        {
+            "openai" or "local" or "http" => OpenAiChatAsync(cfg, system, messages, onDelta, ct),
+            _ => ClaudeCliChatAsync(cfg, system, messages, ct),
+        };
+
+    /// <summary>Chat sibling of <see cref="OpenAiStreamingAsync"/> with a different streaming contract:
+    /// ANSWER deltas go to <paramref name="onDelta"/> (reasoning is swallowed), and the transcript is a
+    /// real messages array instead of a single prompt.</summary>
+    private static async Task<string?> OpenAiChatAsync(ClaudeConfig cfg, string system,
+        IReadOnlyList<ChatMessage> messages, IProgress<string>? onDelta, CancellationToken ct)
+    {
+        int cap = cfg.MaxTokens > 0 ? cfg.MaxTokens : 4096;
+        int promptChars = system.Length + messages.Sum(m => m.Text.Length);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            if (string.IsNullOrWhiteSpace(cfg.BaseUrl) || string.IsNullOrWhiteSpace(cfg.Model))
+            { LastError = "no base URL / model set"; return null; }
+            string url = cfg.BaseUrl.TrimEnd('/') + "/chat/completions";
+
+            var msgs = new List<object> { new { role = "system", content = system } };
+            foreach (var m in messages) msgs.Add(BuildOpenAiMessage(m));
+            var body = new Dictionary<string, object?>
+            {
+                ["model"] = cfg.Model,
+                ["messages"] = msgs,
+                ["stream"] = true,
+                ["temperature"] = 0.3,   // chat: slightly warmer than the 0 used for scoring
+                ["max_tokens"] = cap,
+            };
+            using var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json"),
+            };
+            if (!string.IsNullOrWhiteSpace(cfg.ApiKey))
+                req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + cfg.ApiKey);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(cfg.TimeoutSeconds * 1000);
+            using var resp = await Http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+            {
+                LastError = $"HTTP {(int)resp.StatusCode}";
+                LogCall("openai-chat", cfg.Model, cap, promptChars, "", "", sw.ElapsedMilliseconds, $"HTTP {(int)resp.StatusCode}");
+                return null;
+            }
+
+            await using var stream = await resp.Content.ReadAsStreamAsync(cts.Token);
+            using var reader = new StreamReader(stream);
+            var answer = new StringBuilder();      // streamed to the caller
+            var reasoning = new StringBuilder();    // swallowed (kept only for diagnostics/fallback)
+            int flushed = 0;
+            bool inThink = false;
+            string carry = "";
+            string finish = "";
+            string usage = "";
+            string? line;
+
+            void Flush()
+            {
+                if (onDelta is not null && answer.Length > flushed)
+                { onDelta.Report(answer.ToString(flushed, answer.Length - flushed)); flushed = answer.Length; }
+            }
+
+            while ((line = await reader.ReadLineAsync(cts.Token)) is not null)
+            {
+                if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
+                string data = line[5..].Trim();
+                if (data.Length == 0) continue;
+                if (data == "[DONE]") break;
+                try
+                {
+                    using var doc = JsonDocument.Parse(data);
+                    string u = ParseUsage(doc.RootElement);
+                    if (u.Length > 0) usage = u;
+                    if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
+                        choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0) continue;
+                    var ch = choices[0];
+                    if (ch.TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
+                        finish = fr.GetString() ?? finish;
+                    if (ch.TryGetProperty("delta", out var delta) && delta.ValueKind == JsonValueKind.Object)
+                    {
+                        string rc = FirstField(delta, "reasoning_content", "reasoning", "thinking");
+                        if (rc.Length > 0) reasoning.Append(rc);
+                        string c = Field(delta, "content");   // may carry inline <think>…</think>
+                        if (c.Length > 0) RouteThink(c, ref inThink, ref carry, answer, reasoning);
+                    }
+                }
+                catch { /* ignore a partial / non-JSON SSE line */ }
+                if (answer.Length - flushed >= 16) Flush();   // coalesce UI updates
+            }
+            if (carry.Length > 0) (inThink ? reasoning : answer).Append(carry);
+            Flush();
+
+            string text = StripThink(answer.ToString());
+            if (string.IsNullOrWhiteSpace(text)) text = reasoning.ToString().Trim();
+            string sizes = $"think_chars={reasoning.Length} ans_chars={answer.Length}";
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                LastError = null;
+                LogCall("openai-chat", cfg.Model, cap, promptChars, finish, usage, sw.ElapsedMilliseconds, "ok " + sizes);
+                return text;
+            }
+
+            bool truncated = string.Equals(finish, "length", StringComparison.OrdinalIgnoreCase);
+            LastError = truncated ? Loc.Instance.T("llm.truncated") : Loc.Instance.T("llm.empty");
+            LogCall("openai-chat", cfg.Model, cap, promptChars, finish, usage, sw.ElapsedMilliseconds, (truncated ? "truncated " : "empty ") + sizes);
+            return null;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (OperationCanceledException)
+        {
+            LastError = Loc.Instance.F("llm.timeout", cfg.TimeoutSeconds);
+            LogCall("openai-chat", cfg.Model, cap, promptChars, "", "", sw.ElapsedMilliseconds, $"timeout {cfg.TimeoutSeconds}s");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            LastError = FriendlyConnError(cfg.BaseUrl, ex) ?? Trim(ex.Message);
+            LogCall("openai-chat", cfg.Model, cap, promptChars, "", "", sw.ElapsedMilliseconds, "error: " + Trim(ex.Message));
+            return null;
+        }
+    }
+
+    /// <summary>Maps one chat turn to the OpenAI message shape — plain string content, or a content
+    /// array with base64 image parts when the turn carries screenshots.</summary>
+    private static object BuildOpenAiMessage(ChatMessage m)
+    {
+        if (!m.HasImages) return new { role = m.Role, content = m.Text };
+        var parts = new List<object>();
+        if (!string.IsNullOrWhiteSpace(m.Text)) parts.Add(new { type = "text", text = m.Text });
+        foreach (var p in m.ImagePaths!)
+        {
+            byte[] bytes;
+            try { bytes = File.ReadAllBytes(p); } catch { continue; }
+            string mime = Path.GetExtension(p).ToLowerInvariant() switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".webp" => "image/webp",
+                _ => "image/png",
+            };
+            parts.Add(new { type = "image_url", image_url = new { url = $"data:{mime};base64,{Convert.ToBase64String(bytes)}" } });
+        }
+        return new { role = m.Role, content = parts };
+    }
+
+    /// <summary>Flattens system + transcript into one -p prompt for the Claude CLI. Attached images are
+    /// referenced by absolute path with an instruction to read them (the CLI's Read tool handles images).</summary>
+    private static Task<string?> ClaudeCliChatAsync(ClaudeConfig cfg, string system,
+        IReadOnlyList<ChatMessage> messages, CancellationToken ct)
+    {
+        var sb = new StringBuilder(system.TrimEnd());
+        sb.AppendLine().AppendLine().AppendLine("== CONVERSATION SO FAR ==");
+        foreach (var m in messages)
+        {
+            sb.AppendLine(m.Role == "assistant" ? "Assistant:" : "User:");
+            if (!string.IsNullOrWhiteSpace(m.Text)) sb.AppendLine(m.Text.Trim());
+            if (m.HasImages)
+            {
+                sb.AppendLine("[The user attached image(s). Read each file with your Read tool before answering:]");
+                foreach (var p in m.ImagePaths!) sb.AppendLine(p);
+            }
+            sb.AppendLine();
+        }
+        sb.AppendLine("Reply to the LAST user message only, as the coach. Do not prefix your reply with \"Assistant:\".");
+        return ClaudeCliAsync(cfg, sb.ToString(), ct);
+    }
+
+    /// <summary>Best-effort vision-capability check via Ollama's `POST /api/show` "capabilities" array
+    /// (recent Ollama returns e.g. ["completion","vision"]). Returns null = unknown (LM Studio has no
+    /// /api/show; older Ollama has no capabilities array; runtime offline). Never throws.</summary>
+    public static async Task<bool?> DetectVisionAsync(string baseUrl, string model, CancellationToken ct = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(model)) return null;
+            using var req = new HttpRequestMessage(HttpMethod.Post, OllamaRoot(baseUrl) + "/api/show")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { model = model.Trim() }), Encoding.UTF8, "application/json"),
+            };
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(5_000);
+            using var resp = await Http.SendAsync(req, cts.Token);
+            if (!resp.IsSuccessStatusCode) return null;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(cts.Token));
+            if (doc.RootElement.TryGetProperty("capabilities", out var caps) && caps.ValueKind == JsonValueKind.Array)
+                return caps.EnumerateArray().Any(c => c.ValueKind == JsonValueKind.String &&
+                    string.Equals(c.GetString(), "vision", StringComparison.OrdinalIgnoreCase));
+            return null;
+        }
+        catch { return null; }
+    }
+
     /// <summary>Runs `claude -p &lt;prompt&gt; --output-format json` and unwraps the "result" envelope.</summary>
     private static async Task<string?> ClaudeCliAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
     {
