@@ -75,7 +75,7 @@ public partial class MainWindow : Window
                 {
                     if (await cb.GetDataAsync(f) is byte[] png && png.Length > 8)
                     {
-                        string path = System.IO.Path.Combine(vm.CoachTempDir, $"paste-{System.DateTime.Now:HHmmss-fff}.png");
+                        string path = System.IO.Path.Combine(vm.CoachImagesDir, $"paste-{System.DateTime.Now:HHmmss-fff}.png");
                         await System.IO.File.WriteAllBytesAsync(path, png);
                         vm.AddCoachImage(path);
                         return;
@@ -92,7 +92,7 @@ public partial class MainWindow : Window
                     {
                         // Re-encode to PNG via Avalonia so downstream mime/base64 handling stays PNG-only.
                         using var b = new Avalonia.Media.Imaging.Bitmap(new System.IO.MemoryStream(bmp));
-                        string path = System.IO.Path.Combine(vm.CoachTempDir, $"paste-{System.DateTime.Now:HHmmss-fff}.png");
+                        string path = System.IO.Path.Combine(vm.CoachImagesDir, $"paste-{System.DateTime.Now:HHmmss-fff}.png");
                         b.Save(path);
                         vm.AddCoachImage(path);
                         return;

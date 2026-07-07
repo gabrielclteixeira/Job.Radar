@@ -26,6 +26,7 @@ public partial class MainViewModel : ObservableObject
     private readonly string _careerResearchPath;
     private readonly string _companyCachePath;
     private readonly string _briefCachePath;
+    private readonly string _coachHistoryPath;
     private AppConfig _cfg;
 
     /// <summary>Set by the view: shows a cost-confirmation dialog before a paid (Apify) search.</summary>
@@ -51,6 +52,7 @@ public partial class MainViewModel : ObservableObject
         _careerResearchPath = Path.Combine(_root, "career-research.json");
         _companyCachePath = Path.Combine(_root, "company-reports.json");
         _briefCachePath = Path.Combine(_root, "company-briefs.json");
+        _coachHistoryPath = Path.Combine(_root, "coach-history.json");
         _cfg = LoadConfig();
         ApplyLlmOverride();
         ApplyApifyOverride();
@@ -65,6 +67,7 @@ public partial class MainViewModel : ObservableObject
         LoadPlanHistory();
         _companyCache = CompanyCache.Load(_companyCachePath);
         _briefCache = BriefCache.Load(_briefCachePath);
+        _coachThreads = CoachHistory.Load(_coachHistoryPath);
         LinkedInImportedCount = LinkedInImport.CountSaved(LinkedInJobsFile);
         _langInitialised = true;
     }
@@ -2095,30 +2098,79 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _coachVisionWarning = "";
     private CancellationTokenSource? _coachCts;
     private string _coachMarket = "";                                 // pinned on view open
-    private string? _coachTempDir;
     /// <summary>Set by the view: scrolls the transcript to the newest message (after layout).</summary>
     public Action? ScrollCoachToEnd;
-    /// <summary>Per-session folder for pasted screenshots (deleted by "Limpar conversa").</summary>
-    public string CoachTempDir => _coachTempDir ??= Directory.CreateDirectory(
-        Path.Combine(Path.GetTempPath(), "JobRadar", $"coach-{Environment.ProcessId}")).FullName;
+    /// <summary>Persistent folder for pasted screenshots (they're referenced by the saved history).</summary>
+    public string CoachImagesDir => Directory.CreateDirectory(Path.Combine(_root, "coach-images")).FullName;
+
+    // One conversation thread per company ("" = the general "(sem empresa)" thread). The company
+    // dropdown doubles as the thread selector; everything persists to coach-history.json.
+    private Dictionary<string, List<CoachStoredMessage>> _coachThreads = new(StringComparer.OrdinalIgnoreCase);
+    private string _coachThreadKey = "";
+    private bool _coachSwitching;                                     // guards index churn while rebuilding options
+
+    private string CoachKeyForIndex(int idx)
+        => idx > 0 && idx < CoachCompanyOptions.Count ? CompanyCache.Key(CoachCompanyOptions[idx]) : "";
 
     private void OpenCoach()
     {
-        // Company picker = union of the two research caches. Reports carry a display name; briefs
-        // are keyed lowercase only (no name field) — cosmetic, the lookup key is the same.
+        // Company picker = research caches ∪ companies that already have a conversation thread.
+        // Reports carry a display name; briefs/threads are keyed lowercase only — cosmetic.
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in _companyCache.Values)
             if (!string.IsNullOrWhiteSpace(r.Company)) names.Add(r.Company.Trim());
         foreach (var k in _briefCache.Keys)
             if (!names.Contains(k)) names.Add(k);
-        string current = CoachCompanyIndex > 0 && CoachCompanyIndex < CoachCompanyOptions.Count
-            ? CoachCompanyOptions[CoachCompanyIndex] : "";
-        CoachCompanyOptions.Clear();
-        CoachCompanyOptions.Add(L("coach.company.none"));
-        foreach (var n in names) CoachCompanyOptions.Add(n);
-        CoachCompanyIndex = Math.Max(0, CoachCompanyOptions.IndexOf(current));
+        foreach (var k in _coachThreads.Keys)
+            if (k.Length > 0 && !names.Contains(k)) names.Add(k);
+
+        _coachSwitching = true;
+        try
+        {
+            string current = CoachCompanyIndex > 0 && CoachCompanyIndex < CoachCompanyOptions.Count
+                ? CoachCompanyOptions[CoachCompanyIndex] : "";
+            CoachCompanyOptions.Clear();
+            CoachCompanyOptions.Add(L("coach.company.none"));
+            foreach (var n in names) CoachCompanyOptions.Add(n);
+            CoachCompanyIndex = Math.Max(0, CoachCompanyOptions.IndexOf(current));
+        }
+        finally { _coachSwitching = false; }
+
+        if (!IsCoachSending) LoadCoachThread(CoachKeyForIndex(CoachCompanyIndex));
         _ = RefreshCoachMarketAsync();
         ShowOnly(coach: true);
+    }
+
+    /// <summary>Dropdown change = conversation switch: stash the current thread, load the new one.</summary>
+    partial void OnCoachCompanyIndexChanged(int value)
+    {
+        if (_coachSwitching || IsCoachSending) return;
+        StashCoachThread();
+        LoadCoachThread(CoachKeyForIndex(value));
+    }
+
+    /// <summary>Writes the on-screen transcript into the thread map + disk (in-flight bubbles skipped).</summary>
+    private void StashCoachThread()
+    {
+        var msgs = CoachTranscript
+            .Where(m => !m.IsStreaming && (m.Text.Length > 0 || m.ImagePaths is { Count: > 0 }))
+            .Select(m => new CoachStoredMessage { IsUser = m.IsUser, Text = m.Text, Images = m.ImagePaths?.ToList() })
+            .ToList();
+        if (msgs.Count > 0) _coachThreads[_coachThreadKey] = msgs;
+        else _coachThreads.Remove(_coachThreadKey);
+        CoachHistory.Save(_coachHistoryPath, _coachThreads);
+    }
+
+    private void LoadCoachThread(string key)
+    {
+        _coachThreadKey = key;
+        CoachTranscript.Clear();
+        if (_coachThreads.TryGetValue(key, out var msgs))
+            foreach (var m in msgs)
+                CoachTranscript.Add(new CoachMessageVm(m.IsUser, m.Text, m.Images));
+        CoachError = "";
+        OnPropertyChanged(nameof(CoachEmpty));
+        ScrollCoachToEnd?.Invoke();
     }
 
     private async Task RefreshCoachMarketAsync()
@@ -2190,22 +2242,37 @@ public partial class MainViewModel : ObservableObject
             IsCoachSending = false;
             OnPropertyChanged(nameof(CoachEmpty));
             ScrollCoachToEnd?.Invoke();
+            StashCoachThread();   // persist the turn (user msg + any answer) to coach-history.json
         }
     }
 
     [RelayCommand] private void StopCoach() => _coachCts?.Cancel();
 
+    /// <summary>Clears the ACTIVE company's conversation only (threads are per-company). Pasted
+    /// screenshots referenced only by this thread are deleted; picker-attached originals are never touched.</summary>
     [RelayCommand]
     private void ClearCoach()
     {
         _coachCts?.Cancel();
-        CoachTranscript.Clear();
         CoachError = ""; CoachVisionWarning = "";
         foreach (var a in CoachAttachments) a.Dispose();
         CoachAttachments.Clear();
         OnPropertyChanged(nameof(HasCoachAttachments));
-        try { if (_coachTempDir is not null) Directory.Delete(_coachTempDir, true); } catch { }
-        _coachTempDir = null;
+
+        var mine = CoachTranscript.SelectMany(m => m.ImagePaths ?? (IReadOnlyList<string>)Array.Empty<string>())
+            .Where(p => p.StartsWith(CoachImagesDir, StringComparison.OrdinalIgnoreCase))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        CoachTranscript.Clear();
+        _coachThreads.Remove(_coachThreadKey);
+        CoachHistory.Save(_coachHistoryPath, _coachThreads);
+
+        var elsewhere = _coachThreads.Values.SelectMany(t => t)
+            .SelectMany(m => m.Images ?? new List<string>())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in mine)
+            if (!elsewhere.Contains(p))
+                try { File.Delete(p); } catch { }
+
         OnPropertyChanged(nameof(CoachEmpty));
     }
 

@@ -44,6 +44,9 @@ career-research.json
 company-reports.json
 # per-company job-card briefing cache (machine-local)
 company-briefs.json
+# coach conversation history + pasted screenshots (personal data, machine-local)
+coach-history.json
+coach-images/
 
 # app / dev scratch
 app-err.log

@@ -1310,7 +1310,7 @@
                     <Grid ColumnDefinitions="Auto,8,260,*,Auto" Margin="0,2,0,0">
                         <TextBlock Grid.Column="0" FontSize="10" FontWeight="Bold" LetterSpacing="1" Foreground="{DynamicResource Muted}"
                                    VerticalAlignment="Center" Text="{l:T coach.company}"/>
-                        <ComboBox Grid.Column="2" HorizontalAlignment="Stretch"
+                        <ComboBox Grid.Column="2" HorizontalAlignment="Stretch" IsEnabled="{Binding !IsCoachSending}"
                                   ItemsSource="{Binding CoachCompanyOptions}" SelectedIndex="{Binding CoachCompanyIndex}"/>
                         <Button Grid.Column="4" Classes="ghost" Command="{Binding ClearCoachCommand}" IsVisible="{Binding !CoachEmpty}">
                             <StackPanel Orientation="Horizontal" Spacing="7"><ui:SymbolIcon Symbol="Delete"/><TextBlock Text="{l:T coach.clear}"/></StackPanel>
