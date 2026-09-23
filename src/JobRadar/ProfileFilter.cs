@@ -71,38 +71,40 @@ public static class ProfileFilter
         if (!locOk) return (false, 0, "", "");
 
         // Weighted pre-score with a breakdown.
+        // Explanation + verdict are shown in the UI, so they follow the UI language (re-evaluated every search).
+        var L = Loc.Instance;
         var parts = new List<string>();
         int score = matched.Count * 5;
-        parts.Add($"{matched.Count} termo(s) ({Trunc(string.Join(", ", matched), 60)}) +{matched.Count * 5}");
+        parts.Add(L.F("filter.terms", matched.Count, Trunc(string.Join(", ", matched), 60), matched.Count * 5));
 
         var coreHits = core.SelectMany(s => SkillTerms(s).Where(t => WordIn(TermScope(t, hay, title), t)).Take(1)).ToList();
-        if (coreHits.Count > 0) { score += cfg.StackBonus; parts.Add($"competências-chave ({Trunc(string.Join(", ", coreHits), 60)}) +{cfg.StackBonus}"); }
-        else { score -= cfg.OffStackPenalty; parts.Add($"sem competência-chave −{cfg.OffStackPenalty}"); }
+        if (coreHits.Count > 0) { score += cfg.StackBonus; parts.Add(L.F("filter.core", Trunc(string.Join(", ", coreHits), 60), cfg.StackBonus)); }
+        else { score -= cfg.OffStackPenalty; parts.Add(L.F("filter.noCore", cfg.OffStackPenalty)); }
 
-        if (isRemote) { score += 12; parts.Add("remoto +12"); }
-        else if (isHybrid) { score += 8; parts.Add("híbrido +8"); }
-        if (locMatch) { score += 10; parts.Add("localização +10"); }
+        if (isRemote) { score += 12; parts.Add(L.F("filter.remote", 12)); }
+        else if (isHybrid) { score += 8; parts.Add(L.F("filter.hybrid", 8)); }
+        if (locMatch) { score += 10; parts.Add(L.F("filter.location", 10)); }
 
         int floor = profile.SalaryFloorEur > 0 ? profile.SalaryFloorEur : cfg.Salary.FloorEur;
         int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
         string salaryNote;
         if (j.SalaryAnnualEur is int eur)
         {
-            if (eur >= target) { score += cfg.Salary.AboveTargetBoost; parts.Add($"salário ≥ alvo +{cfg.Salary.AboveTargetBoost}"); salaryNote = "paga ≥ o teu alvo"; }
-            else if (eur < floor) { score -= cfg.Salary.BelowFloorPenalty; parts.Add($"salário < mínimo −{cfg.Salary.BelowFloorPenalty}"); salaryNote = "abaixo do teu mínimo"; }
-            else { salaryNote = "salário no intervalo"; }
+            if (eur >= target) { score += cfg.Salary.AboveTargetBoost; parts.Add(L.F("filter.salaryAbove", cfg.Salary.AboveTargetBoost)); salaryNote = L.T("verdict.payAbove"); }
+            else if (eur < floor) { score -= cfg.Salary.BelowFloorPenalty; parts.Add(L.F("filter.salaryBelow", cfg.Salary.BelowFloorPenalty)); salaryNote = L.T("verdict.payBelow"); }
+            else { salaryNote = L.T("verdict.payInRange"); }
         }
-        else { score -= cfg.Salary.NoSalaryPenalty; parts.Add($"sem salário −{cfg.Salary.NoSalaryPenalty}"); salaryNote = "sem salário indicado"; }
+        else { score -= cfg.Salary.NoSalaryPenalty; parts.Add(L.F("filter.noSalary", cfg.Salary.NoSalaryPenalty)); salaryNote = L.T("verdict.noPay"); }
 
         int final = Math.Clamp(score, 1, 100);
         string explanation = string.Join(" · ", parts) + $"  =  {final}";
 
         // Deterministic "base" classification for keyword mode (no LLM), salary included.
-        string tier = final >= 70 ? "Forte correspondência" : final >= 50 ? "Boa correspondência" : "Correspondência possível";
-        var bits = new List<string> { coreHits.Count > 0 ? "usa competências-chave" : "sem competência-chave" };
-        if (isRemote) bits.Add("remoto");
-        else if (isHybrid) bits.Add("híbrido");
-        if (locMatch) bits.Add("localização preferida");
+        string tier = L.T(final >= 70 ? "verdict.strong" : final >= 50 ? "verdict.good" : "verdict.possible");
+        var bits = new List<string> { L.T(coreHits.Count > 0 ? "verdict.core" : "verdict.noCore") };
+        if (isRemote) bits.Add(L.T("verdict.remote"));
+        else if (isHybrid) bits.Add(L.T("verdict.hybrid"));
+        if (locMatch) bits.Add(L.T("verdict.location"));
         bits.Add(salaryNote);
         string baseVerdict = $"{tier} — {string.Join("; ", bits)}.";
 

@@ -291,7 +291,7 @@ public partial class MainWindow : Window
 
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Escolhe o teu CV (PDF)",
+            Title = JobRadar.Loc.Instance.T("home.pickCv.title"),
             AllowMultiple = false,
             FileTypeFilter = new[] { new FilePickerFileType("PDF") { Patterns = new[] { "*.pdf" } } },
         });
@@ -324,7 +324,7 @@ public partial class MainWindow : Window
 
         var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Escolhe o teu CV (PDF)",
+            Title = JobRadar.Loc.Instance.T("home.pickCv.title"),
             AllowMultiple = false,
             FileTypeFilter = new[] { new FilePickerFileType("PDF") { Patterns = new[] { "*.pdf" } } },
         });

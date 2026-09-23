@@ -34,6 +34,7 @@ $@"You are a STRICT, skeptical recruiter. Score how well EACH job below fits the
 JSON ARRAY and nothing else (no markdown, no prose). One object per job, shaped EXACTLY:
 {{""i"":1,""score"":73,""verdict"":""one short sentence"",""reasons"":[""...""],""redFlags"":[""...""]}}
 ""i"" is the JOB number below. Keep it tight: verdict one sentence, at most 2 reasons, at most 2 redFlags.
+Write the verdict, reasons and redFlags in {Loc.Instance.T("ai.lang")} (the JSON keys stay in English).
 
 PRIMARY CRITERION — FIELD & CORE SKILLS (by far the most important): the job's REQUIRED skills must explicitly
 overlap the candidate's CORE skills — adjacent or merely-mentioned tech does NOT count. Be conservative: WHEN

@@ -50,8 +50,9 @@ public class ProfileFilterTests
         var (relevant, _, explanation, _) = ProfileFilter.Evaluate(
             Job("Software Engineer", "We build APIs in C# and ASP.NET Core with PostgreSQL."), Gabriel(), Cfg());
         Assert.True(relevant);
-        Assert.Contains("competências-chave", explanation);
-        Assert.DoesNotContain("sem competência-chave", explanation);
+        // Language-independent: the explanation follows the UI language (Loc).
+        Assert.Contains(Loc.Instance.F("filter.core", "c#", Cfg().StackBonus), explanation);
+        Assert.DoesNotContain(Loc.Instance.F("filter.noCore", Cfg().OffStackPenalty), explanation);
     }
 
     [Fact]

@@ -52,7 +52,7 @@ public static class FetcherRunner
         try
         {
             using var p = Process.Start(psi);
-            if (p is null) { L("Não foi possível iniciar o fetcher."); return; }
+            if (p is null) { L(Loc.Instance.T("pipe.fetcherStartFail")); return; }
             var stdout = p.StandardOutput.ReadToEndAsync();
             var stderr = p.StandardError.ReadToEndAsync();
             await p.WaitForExitAsync(ct);
@@ -63,7 +63,7 @@ public static class FetcherRunner
         }
         catch (Exception ex)
         {
-            L($"Fetcher falhou ({ex.Message}) — a usar jobs.raw.json existente, se houver.");
+            L(Loc.Instance.F("pipe.fetcherFailed", ex.Message));
             Diag.Warn("fetcher failed — falling back to existing jobs.raw.json | " + ex.Message);
         }
     }

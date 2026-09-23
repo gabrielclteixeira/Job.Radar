@@ -1203,8 +1203,11 @@ public partial class MainViewModel : ObservableObject
     }
 
     public ObservableCollection<string> ModelOptions { get; } = new();
-    private const string DefaultClaudeModel = "(predefinido)";   // maps to empty → CLI's own default
-    private static readonly string[] ClaudeModels = { DefaultClaudeModel, "sonnet", "opus", "haiku" };
+    // "(default)" entry = empty model → the CLI's own default. Shown in the UI language, but it is also a sentinel
+    // compared on save, so every language's spelling counts (the window is rebuilt on a language switch).
+    private string DefaultClaudeModel => L("settings.model.default");
+    private static bool IsDefaultModel(string? m) => m is "(predefinido)" or "(default)";
+    private string[] ClaudeModels => new[] { DefaultClaudeModel, "sonnet", "opus", "haiku" };
 
     partial void OnUseLocalModelChanged(bool value)
     {
@@ -1230,7 +1233,16 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _onsite;
     [ObservableProperty] private bool _useAi = true; // scoring mode toggle (AI vs keywords)
 
-    public string[] SeniorityOptions { get; } = { "junior", "mid", "senior" };
+    private static readonly string[] SeniorityValues = { "junior", "mid", "senior" };
+    /// <summary>Localized labels for the level combo (computed so a language switch re-reads them).</summary>
+    public string[] SeniorityOptions => SeniorityValues.Select(v => L("opt.level." + v)).ToArray();
+    /// <summary>Index view of <see cref="Seniority"/> for the combo; the profile keeps the raw value.</summary>
+    public int SeniorityIndex
+    {
+        get => Math.Max(0, Array.IndexOf(SeniorityValues, Seniority));
+        set { if (value >= 0 && value < SeniorityValues.Length) Seniority = SeniorityValues[value]; }
+    }
+    partial void OnSeniorityChanged(string value) => OnPropertyChanged(nameof(SeniorityIndex));
     public int[] MinScoreOptions { get; } = { 0, 40, 60, 70 };
 
     // ---- results ----
@@ -1518,7 +1530,7 @@ public partial class MainViewModel : ObservableObject
     {
         _cfg.Claude.Provider = UseLocalModel ? "openai" : "claude-cli";
         _cfg.Claude.BaseUrl = string.IsNullOrWhiteSpace(LlmBaseUrl) ? "http://localhost:11434/v1" : LlmBaseUrl.Trim();
-        _cfg.Claude.Model = LlmModel == DefaultClaudeModel ? "" : (LlmModel ?? "").Trim();
+        _cfg.Claude.Model = IsDefaultModel(LlmModel) ? "" : (LlmModel ?? "").Trim();
         _cfg.Claude.MaxTokens = LlmMaxTokens > 0 ? (int)(Math.Round(LlmMaxTokens / 1024.0) * 1024) : 4096;
         _cfg.Claude.TimeoutSeconds = LlmTimeoutSeconds >= 30 ? LlmTimeoutSeconds : 300;
         _cfg.Claude.ApiKey = LlmApiKey.Trim();
@@ -1572,7 +1584,7 @@ public partial class MainViewModel : ObservableObject
             foreach (var m in models) ModelOptions.Add(m);
             if (!string.IsNullOrWhiteSpace(current) && !ModelOptions.Contains(current)) ModelOptions.Add(current);
             if (models.Count == 0) Status = L("models.none");
-            else { Status = $"{models.Count} modelo(s) encontrados."; if (string.IsNullOrWhiteSpace(LlmModel)) LlmModel = models[0]; }
+            else { Status = Loc.Instance.F("models.found", models.Count); if (string.IsNullOrWhiteSpace(LlmModel)) LlmModel = models[0]; }
         }
         finally { Busy = false; }
     }
@@ -1697,9 +1709,9 @@ public partial class MainViewModel : ObservableObject
             Reports.WriteHtml(html, jobs, jobs.Count, day);
             string? edge = Reports.FindEdge();
             bool ok = edge is not null && await Task.Run(() => Reports.WritePdf(html, pdf, edge));
-            ExportMsg = ok ? $"Exportado: {pdf}" : $"Exportado CSV+HTML em {outDir} (PDF: Edge não encontrado).";
+            ExportMsg = ok ? Loc.Instance.F("export.done", pdf) : Loc.Instance.F("export.doneNoPdf", outDir);
         }
-        catch (Exception ex) { ExportMsg = "Falha a exportar: " + ex.Message; }
+        catch (Exception ex) { ExportMsg = Loc.Instance.F("export.failed", ex.Message); }
         finally { Busy = false; }
     }
 

@@ -150,7 +150,7 @@ public static class Pipeline
                               : loc.Contains("Híbrid", StringComparison.OrdinalIgnoreCase) || loc.Contains("Hybrid", StringComparison.OrdinalIgnoreCase) ? "hybrid" : "";
                 raw.Add(new RawJob(l.Title ?? "", l.Company ?? "", loc, remote, l.Url ?? "", l.Description ?? "", "linkedin", ""));
             }
-            L($"{li.Count} vagas do LinkedIn fundidas.");
+            L(Loc.Instance.F("pipe.linkedinMerged", li.Count));
         }
 
         // Optional paid LinkedIn connector (Apify). Cost is confirmed in the UI before the search runs.
@@ -241,7 +241,7 @@ public static class Pipeline
             added++;
         }
         await db.SaveChangesAsync(ct);
-        L($"{added} novas · {await db.Jobs.CountAsync(j => j.Relevant, ct)} relevantes.");
+        L(Loc.Instance.F("pipe.addedRelevant", added, await db.Jobs.CountAsync(j => j.Relevant, ct)));
 
         // 2) Decide what to score. In AI mode, only the top unscored candidates go to Claude;
         //    everything already classified is remembered from the DB (no re-scoring, no cost).
@@ -254,10 +254,10 @@ public static class Pipeline
             toScore = allRelevant.Where(j => j.AiScore == null)
                 .OrderByDescending(j => j.PreScore).Take(cfg.ScoreTopN).ToList();
         else
-            L("Modo keywords — sem IA. Ranking pelo pré-score.");
+            L(Loc.Instance.T("pipe.keywordMode"));
 
         int cached = allRelevant.Count(j => j.AiScore != null);
-        if (cached > 0) L($"{cached} vagas já classificadas reaproveitadas (sem novo custo).");
+        if (cached > 0) L(Loc.Instance.F("pipe.reused", cached));
 
         // Stream everything we already know right away, so the user has something to interact with
         // while the new candidates are still being scored.
@@ -324,7 +324,7 @@ public static class Pipeline
         string marker = dbPath + ".schema";
         if (!File.Exists(dbPath) || !File.Exists(marker) || File.ReadAllText(marker) != SchemaVersion)
         {
-            L("Sem vagas guardadas para reclassificar — usa \"Procurar vagas\" primeiro.");
+            L(Loc.Instance.T("empty.noSavedRescore"));
             return new PipelineResult(new(), 0, false);
         }
 
@@ -334,7 +334,7 @@ public static class Pipeline
 
         if (!cfg.Claude.Enabled)
         {
-            L("IA desativada — nada a reclassificar.");
+            L(Loc.Instance.T("pipe.aiOff"));
             foreach (var j in allRelevant) onJob?.Report(j);
             return new PipelineResult(allRelevant, allRelevant.Count, false);
         }
@@ -410,8 +410,8 @@ public static class Pipeline
             if (root["adzuna"] is null) root["adzuna"] = new JsonObject { ["appId"] = "", ["appKey"] = "", ["country"] = "pt" };
 
             SafeFile.WriteAllText(cfgPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-            log?.Report($"Pesquisa: {string.Join(", ", profile.RoleQueries())}");
+            log?.Report(Loc.Instance.F("pipe.queries", string.Join(", ", profile.RoleQueries())));
         }
-        catch (Exception ex) { log?.Report($"(aviso) não consegui gerar a config do fetcher: {ex.Message}"); }
+        catch (Exception ex) { log?.Report(Loc.Instance.F("pipe.configWarn", ex.Message)); }
     }
 }

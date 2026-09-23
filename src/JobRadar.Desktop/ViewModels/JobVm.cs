@@ -72,13 +72,47 @@ public partial class JobVm : ObservableObject
 
     public JobEntity Entity => _j;
     public int Score => _j.AiScore ?? _j.PreScore;
-    public string ScoreLabel => _j.AiScore.HasValue ? "AI" : "KW";
+    public string ScoreLabel => Loc.Instance.T(_j.AiScore.HasValue ? "score.ai" : "score.kw");
     public string Title => _j.Title;
     public string Company => _j.Company;
     public string Location => _j.Location;
     public string Remote => _j.Remote;
+    /// <summary>Work mode as the user reads it ("Remoto", "Hybrid"…), not the raw stored value ("remote").</summary>
+    public string RemoteLabel => _j.Remote switch
+    {
+        "remote" => Loc.Instance.T("profile.remote"),
+        "hybrid" => Loc.Instance.T("profile.hybrid"),
+        "onsite" => Loc.Instance.T("profile.onsite"),
+        var other => other,
+    };
     public string Url => _j.Url;
+    /// <summary>Raw source id — kept for filtering and search.</summary>
     public string Source => _j.Source;
+    /// <summary>Source as a proper name ("LinkedIn", "Greenhouse · feedzai") instead of the internal id.</summary>
+    public string SourceLabel => SourceName(_j.Source);
+
+    internal static string SourceName(string? source)
+    {
+        string s = source ?? "";
+        int colon = s.IndexOf(':');
+        string head = colon >= 0 ? s[..colon] : s, tail = colon >= 0 ? s[(colon + 1)..] : "";
+        string name = head.ToLowerInvariant() switch
+        {
+            "linkedin" => "LinkedIn",
+            "apify" => "LinkedIn (Apify)",
+            "remoteok" => "RemoteOK",
+            "remotive" => "Remotive",
+            "arbeitnow" => "Arbeitnow",
+            "adzuna" => "Adzuna",
+            "jsearch" => "JSearch",
+            "jobicy" => "Jobicy",
+            "himalayas" => "Himalayas",
+            "greenhouse" => "Greenhouse",
+            "lever" => "Lever",
+            _ => head,
+        };
+        return tail.Length > 0 ? $"{name} · {tail}" : name;
+    }
     public string Salary => _j.SalaryText;
     public bool HasSalary => !string.IsNullOrEmpty(_j.SalaryText);
     public bool HasRemote => !string.IsNullOrEmpty(_j.Remote);
