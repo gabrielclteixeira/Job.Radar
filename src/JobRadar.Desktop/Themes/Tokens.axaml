@@ -24,6 +24,28 @@
             <SolidColorBrush x:Key="DangerSoft"   Color="#2C191E"/>
             <SolidColorBrush x:Key="DialTrack"    Color="#2A2A38"/>
             <Color x:Key="GlowColor">#5C7C5CFF</Color>
+
+            <!-- FluentAvalonia derives its accent fills from CustomAccentColor, and in DARK it picks a LIGHT tint
+                 (lavender + dark text) for accent buttons, checkboxes and toggles, so the primary CTA didn't match
+                 the brand violet of the sidebar. Pin its fills to our tokens so every accent surface is one colour. -->
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush"   Color="#7C5CFF"/>
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#8E72FF"/>
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush"  Color="#6B4DEB"/>
+            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush"   Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#F0ECFF"/>
+            <!-- Checked checkbox / ON toggle: FluentAvalonia keys these separately from the accent fills. -->
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked"            Color="#7C5CFF"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="#8E72FF"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed"     Color="#6B4DEB"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked"          Color="#7C5CFF"/>
+            <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked"           Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOn"             Color="#7C5CFF"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver"  Color="#8E72FF"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOnPressed"      Color="#6B4DEB"/>
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOn"           Color="#7C5CFF"/>
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOn"         Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed"  Color="#FFFFFF"/>
         </ResourceDictionary>
 
         <!-- ============ LIGHT ============ -->
@@ -47,6 +69,25 @@
             <SolidColorBrush x:Key="DangerSoft"   Color="#FBECEC"/>
             <SolidColorBrush x:Key="DialTrack"    Color="#E6E4F0"/>
             <Color x:Key="GlowColor">#1A5B3DF5</Color>
+
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush"   Color="#5B3DF5"/>
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#4A2FD6"/>
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush"  Color="#3F27BD"/>
+            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush"   Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#F0ECFF"/>
+            <!-- Checked checkbox / ON toggle: FluentAvalonia keys these separately from the accent fills. -->
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillChecked"            Color="#5B3DF5"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPointerOver" Color="#4A2FD6"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundFillCheckedPressed"     Color="#3F27BD"/>
+            <SolidColorBrush x:Key="CheckBoxCheckBackgroundStrokeChecked"          Color="#5B3DF5"/>
+            <SolidColorBrush x:Key="CheckBoxCheckGlyphForegroundChecked"           Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOn"             Color="#5B3DF5"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOnPointerOver"  Color="#4A2FD6"/>
+            <SolidColorBrush x:Key="ToggleSwitchFillOnPressed"      Color="#3F27BD"/>
+            <SolidColorBrush x:Key="ToggleSwitchStrokeOn"           Color="#5B3DF5"/>
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOn"         Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPointerOver" Color="#FFFFFF"/>
+            <SolidColorBrush x:Key="ToggleSwitchKnobFillOnPressed"  Color="#FFFFFF"/>
         </ResourceDictionary>
 
     </ResourceDictionary.ThemeDictionaries>
@@ -55,11 +96,21 @@
     <CornerRadius x:Key="CardRadius">14</CornerRadius>
     <CornerRadius x:Key="CtrlRadius">8</CornerRadius>
     <CornerRadius x:Key="PillRadius">7</CornerRadius>
-    <x:Double x:Key="FontH1">28</x:Double>
-    <x:Double x:Key="FontH2">20</x:Double>
-    <x:Double x:Key="FontBody">14</x:Double>
-    <x:Double x:Key="FontSmall">12</x:Double>
-    <x:Double x:Key="FontMicro">10.5</x:Double>
+
+    <!-- Type scale: the ONLY font sizes the UI uses (no inline numbers). Body = Fluent's default 14. -->
+    <x:Double x:Key="FontDisplay">38</x:Double>  <!-- home hero -->
+    <x:Double x:Key="FontH1">28</x:Double>       <!-- page title -->
+    <x:Double x:Key="FontH2">20</x:Double>       <!-- section title, key figures -->
+    <x:Double x:Key="FontTitle">16</x:Double>    <!-- card title, emphasized values -->
+    <x:Double x:Key="FontBody">14</x:Double>     <!-- default text, controls -->
+    <x:Double x:Key="FontMeta">13</x:Double>     <!-- secondary lines, nav, list items -->
+    <x:Double x:Key="FontSmall">12</x:Double>    <!-- subtitles, help text, meta -->
+    <x:Double x:Key="FontMicro">11</x:Double>    <!-- labels, chips, badges (floor for legibility) -->
+
+    <!-- Control sizing: every button / input / combo in a row shares this height. -->
+    <x:Double x:Key="CtrlHeight">36</x:Double>
+    <!-- One content width for every page (was 655–860 depending on the view). -->
+    <x:Double x:Key="PageMaxWidth">860</x:Double>
     <FontFamily x:Key="MonoFont">Cascadia Code,Consolas,JetBrains Mono,monospace</FontFamily>
 
 </ResourceDictionary>

@@ -8,7 +8,7 @@
                 <ui:SymbolIcon x:Name="Icon" Symbol="Find" FontSize="26" Foreground="{DynamicResource AccentText}"
                                HorizontalAlignment="Center" VerticalAlignment="Center"/>
             </Border>
-            <TextBlock x:Name="TitleText" FontWeight="SemiBold" FontSize="14" HorizontalAlignment="Center"
+            <TextBlock x:Name="TitleText" FontWeight="SemiBold" FontSize="{DynamicResource FontBody}" HorizontalAlignment="Center"
                        TextAlignment="Center" Foreground="{DynamicResource Text}"/>
             <TextBlock x:Name="BodyText" Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="440"
                        HorizontalAlignment="Center"/>

@@ -16,9 +16,11 @@
     <Style Selector="TextBlock.sub">
         <Setter Property="FontSize" Value="{DynamicResource FontSmall}"/>
         <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+        <!-- Subtitles are sentences: without wrap they were clipped at the page edge (Companies). -->
+        <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
     <Style Selector="TextBlock.fld">
-        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontMicro}"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
         <Setter Property="Margin" Value="0,12,0,4"/>
@@ -34,18 +36,38 @@
         <Setter Property="CornerRadius" Value="{DynamicResource CardRadius}"/>
         <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
         <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="Padding" Value="22"/>
+        <Setter Property="Padding" Value="24"/>
     </Style>
 
     <!-- ============ Chips ============ -->
     <Style Selector="Border.chip">
         <Setter Property="Background" Value="{DynamicResource AccentSoft}"/>
         <Setter Property="CornerRadius" Value="{DynamicResource PillRadius}"/>
-        <Setter Property="Padding" Value="7,2"/>
+        <Setter Property="Padding" Value="8,2"/>
     </Style>
     <Style Selector="Border.chip > TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource AccentText}"/>
-        <Setter Property="FontSize" Value="10.5"/>
+        <Setter Property="FontSize" Value="{DynamicResource FontMicro}"/>
+    </Style>
+
+    <!-- ============ Form controls: one height for everything that sits in a row ============ -->
+    <!-- Combos were ~31px, buttons ~38px and text boxes 38-44px side by side; they now share CtrlHeight. -->
+    <Style Selector="TextBox">
+        <Setter Property="MinHeight" Value="{DynamicResource CtrlHeight}"/>
+    </Style>
+    <Style Selector="TextBox[AcceptsReturn=False]">
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="ComboBox">
+        <Setter Property="MinHeight" Value="{DynamicResource CtrlHeight}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="NumericUpDown">
+        <Setter Property="MinHeight" Value="{DynamicResource CtrlHeight}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+    <Style Selector="AutoCompleteBox">
+        <Setter Property="MinHeight" Value="{DynamicResource CtrlHeight}"/>
     </Style>
 
     <!-- ============ Buttons ============ -->
@@ -58,7 +80,10 @@
         <Setter Property="Background" Value="{DynamicResource Accent}"/>
         <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
         <Setter Property="CornerRadius" Value="{DynamicResource CtrlRadius}"/>
-        <Setter Property="Padding" Value="16,9"/>
+        <!-- Small vertical padding so CtrlHeight (not padding + text) sets the height: buttons match inputs exactly. -->
+        <Setter Property="Padding" Value="16,4"/>
+        <Setter Property="MinHeight" Value="{DynamicResource CtrlHeight}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <!-- Base value: without it the first press snaps (null->scale has nothing to transition from). -->
         <Setter Property="RenderTransform" Value="none"/>
@@ -66,7 +91,11 @@
             <Transitions><TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.08"/></Transitions>
         </Setter>
     </Style>
+    <!-- The resting colours go on the presenter too: FluentAvalonia's own "accent" class styles the presenter,
+         which beats a Background set on the Button (the dark theme rendered lavender + dark text). -->
     <Style Selector="Button.accent /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Accent}"/>
+        <Setter Property="Foreground" Value="{DynamicResource OnAccent}"/>
         <Setter Property="Transitions">
             <Transitions>
                 <BrushTransition Property="Background" Duration="0:0:0.13"/>
@@ -81,6 +110,11 @@
     <Style Selector="Button.accent:pressed">
         <Setter Property="RenderTransform" Value="scale(0.97)"/>
     </Style>
+    <!-- Must follow the resting presenter style above, or a disabled primary button would look clickable. -->
+    <Style Selector="Button.accent:disabled /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource Panel2}"/>
+        <Setter Property="Foreground" Value="{DynamicResource Muted}"/>
+    </Style>
 
     <Style Selector="Button.ghost">
         <Setter Property="Background" Value="{DynamicResource Panel2}"/>
@@ -88,7 +122,10 @@
         <Setter Property="BorderBrush" Value="{DynamicResource Line}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="{DynamicResource CtrlRadius}"/>
-        <Setter Property="Padding" Value="14,9"/>
+        <!-- Small vertical padding so CtrlHeight (not padding + text) sets the height: buttons match inputs exactly. -->
+        <Setter Property="Padding" Value="16,4"/>
+        <Setter Property="MinHeight" Value="{DynamicResource CtrlHeight}"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="RenderTransform" Value="none"/>
         <Setter Property="Transitions">
             <Transitions><TransformOperationsTransition Property="RenderTransform" Duration="0:0:0.08"/></Transitions>
@@ -110,6 +147,14 @@
     </Style>
     <Style Selector="Button.ghost:pressed">
         <Setter Property="RenderTransform" Value="scale(0.97)"/>
+    </Style>
+
+    <!-- Icon-only buttons (move up/down, remove, attach): square, same height as every other control. -->
+    <Style Selector="Button.icon">
+        <Setter Property="Width" Value="{DynamicResource CtrlHeight}"/>
+        <Setter Property="Height" Value="{DynamicResource CtrlHeight}"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="HorizontalContentAlignment" Value="Center"/>
     </Style>
 
     <Style Selector="Button.link">

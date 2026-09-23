@@ -114,7 +114,12 @@ public partial class MainViewModel : ObservableObject
             case "profile": EditProfile(); break;          // loads the form + shows profile
             case "results":                                  // show loaded jobs, or load from cache if none yet
                 if (_all.Count == 0 && !IsScoring) _ = ViewJobs();
-                else ShowOnly(results: true);
+                else
+                {
+                    // Jobs loaded in the background (Companies/Coach/CV) never set a title, so the page opened blank.
+                    if (string.IsNullOrEmpty(ResultsTitle)) ResultsTitle = L("title.saved");
+                    ShowOnly(results: true);
+                }
                 break;
             case "improve": ShowOnly(improve: true); _ = RefreshPlanGroundingAsync(); break;  // career-growth area
             case "researcher": OpenResearcher(); break;       // employer-health signals across matched jobs
