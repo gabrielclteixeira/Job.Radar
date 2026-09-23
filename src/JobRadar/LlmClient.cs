@@ -261,7 +261,11 @@ public static class LlmClient
             sb.AppendLine();
         }
         sb.AppendLine("Reply to the LAST user message only, as the coach. Do not prefix your reply with \"Assistant:\".");
-        return ClaudeCliAsync(cfg, sb.ToString(), ct);
+        // Only the folders holding attached screenshots are readable; with no images the CLI gets no tools at all.
+        var dirs = messages.Where(m => m.HasImages).SelectMany(m => m.ImagePaths!)
+            .Select(Path.GetDirectoryName).Where(d => !string.IsNullOrWhiteSpace(d))
+            .Select(d => d!).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        return ClaudeCliAsync(cfg, sb.ToString(), ct, dirs);
     }
 
     /// <summary>Best-effort vision-capability check via Ollama's `POST /api/show` "capabilities" array
@@ -289,76 +293,139 @@ public static class LlmClient
         catch { return null; }
     }
 
-    /// <summary>Runs `claude -p &lt;prompt&gt; --output-format json` and unwraps the "result" envelope.</summary>
-    private static async Task<string?> ClaudeCliAsync(ClaudeConfig cfg, string prompt, CancellationToken ct)
+    /// <summary>Set once the installed CLI rejects the lean flags (older versions): later calls use plain args.</summary>
+    private static volatile bool _leanUnsupported;
+
+    /// <summary>Empty working directory for CLI calls, so the CLI doesn't pick up the app/repo folder's CLAUDE.md,
+    /// memories or project settings as context.</summary>
+    private static string CliSandboxDir()
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        string dir = Path.Combine(Path.GetTempPath(), "JobRadar-claude");
+        try { Directory.CreateDirectory(dir); } catch { /* fall back to the temp root */ return Path.GetTempPath(); }
+        return dir;
+    }
+
+    /// <summary>
+    /// Arguments for one `claude -p` call. LEAN (default) turns the CLI into a plain completion call: no tools
+    /// (or only Read, for images in <paramref name="readDirs"/>), no MCP servers, no user/project settings and no
+    /// saved session. A default call otherwise boots a full Claude Code agent: ~28k input tokens of context per
+    /// call (vs ~2.6k measured) and tool access that untrusted job-posting text could try to steer.
+    /// </summary>
+    internal static List<string> BuildCliArgs(ClaudeConfig cfg, string prompt, IReadOnlyCollection<string>? readDirs, bool lean)
+    {
+        var a = new List<string> { "-p", prompt, "--output-format", "json" };
+        if (!string.IsNullOrWhiteSpace(cfg.Model)) { a.Add("--model"); a.Add(cfg.Model); } // empty → CLI's default
+        if (!lean) return a;
+        bool read = readDirs is { Count: > 0 };
+        a.Add("--tools"); a.Add(read ? "Read" : "");
+        if (read)
+            foreach (var d in readDirs!) { a.Add("--add-dir"); a.Add(d); }
+        a.Add("--strict-mcp-config");
+        a.Add("--no-session-persistence");
+        a.Add("--setting-sources"); a.Add("");
+        return a;
+    }
+
+    /// <summary>
+    /// Interprets the CLI's output. The JSON envelope carries <c>is_error</c>: a usage-limit / auth / API error
+    /// arrives as <c>{"is_error": true, "result": "…limit…"}</c> with a normal-looking result string, and used to be
+    /// returned as if it were the model's answer (then parsed as a score, a plan, a coach reply…).
+    /// Returns (text, null) on success or (null, error).
+    /// </summary>
+    internal static (string? text, string? error) ParseCliOutput(string raw, string stderr, int exitCode)
+    {
         try
         {
-            var psi = new ProcessStartInfo
+            using var env = JsonDocument.Parse(raw);
+            var root = env.RootElement;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("type", out var t) && t.GetString() == "result")
             {
-                FileName = cfg.Exe,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                // The CLI emits UTF-8; without this it's decoded with the console codepage and
-                // mangles accents/em-dashes in verdicts, reasons and company research.
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8,
-            };
-            psi.ArgumentList.Add("-p");
-            psi.ArgumentList.Add(prompt);
-            psi.ArgumentList.Add("--output-format");
-            psi.ArgumentList.Add("json");
-            if (!string.IsNullOrWhiteSpace(cfg.Model)) // empty → CLI's configured default
-            {
-                psi.ArgumentList.Add("--model");
-                psi.ArgumentList.Add(cfg.Model);
-            }
-
-            using var p = Process.Start(psi);
-            if (p is null) { LastError = "could not start the Claude CLI"; return null; }
-            p.StandardInput.Close(); // signal EOF so the CLI doesn't wait for piped stdin
-
-            var stdout = p.StandardOutput.ReadToEndAsync();
-            var stderr = p.StandardError.ReadToEndAsync();
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(cfg.TimeoutSeconds * 1000);
-            try { await p.WaitForExitAsync(cts.Token); }
-            catch (OperationCanceledException)
-            {
-                try { p.Kill(true); } catch { }
-                LastError = $"timeout ({cfg.TimeoutSeconds}s)";
-                LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, $"timeout {cfg.TimeoutSeconds}s");
-                return null;
-            }
-
-            string raw = await stdout;
-            string err = await stderr;
-            try
-            {
-                using var env = JsonDocument.Parse(raw);
-                if (env.RootElement.ValueKind == JsonValueKind.Object &&
-                    env.RootElement.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.String)
+                string? result = root.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.String ? r.GetString() : null;
+                bool isError = root.TryGetProperty("is_error", out var ie) && ie.ValueKind == JsonValueKind.True;
+                if (isError || exitCode != 0)
                 {
-                    LastError = null;
-                    LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, "ok");
-                    return r.GetString();
+                    string sub = root.TryGetProperty("subtype", out var st) && st.ValueKind == JsonValueKind.String ? st.GetString() ?? "" : "";
+                    return (null, Trim(result) ?? Trim(stderr) ?? (sub.Length > 0 ? sub : $"exit {exitCode}"));
                 }
+                return string.IsNullOrWhiteSpace(result) ? (null, Loc.Instance.T("llm.empty")) : (result, null);
             }
-            catch { /* not an envelope — return raw text */ }
-            if (string.IsNullOrWhiteSpace(raw))
-            {
-                LastError = Trim(err) ?? $"exit {p.ExitCode}";
-                LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, "error: " + (LastError ?? "?"));
-                return null;
-            }
-            LastError = null;
-            LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, "ok (raw)");
-            return raw;
         }
+        catch { /* not an envelope */ }
+        if (exitCode != 0 || string.IsNullOrWhiteSpace(raw))
+            return (null, Trim(stderr) ?? $"exit {exitCode}");
+        return (raw, null);   // plain text from an unusual CLI build — still usable
+    }
+
+    /// <summary>Runs one `claude -p` call (lean by default, see <see cref="BuildCliArgs"/>) and unwraps the result.
+    /// <paramref name="readDirs"/> grants the Read tool on those folders only (coach screenshots). A cancel by the
+    /// caller is re-thrown (it used to surface as a fake "timeout"); the own timeout returns null + LastError.</summary>
+    private static async Task<string?> ClaudeCliAsync(ClaudeConfig cfg, string prompt, CancellationToken ct,
+        IReadOnlyCollection<string>? readDirs = null)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool lean = !_leanUnsupported;
+        try
+        {
+            while (true)
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = cfg.Exe,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    // The CLI emits UTF-8; without this it's decoded with the console codepage and
+                    // mangles accents/em-dashes in verdicts, reasons and company research.
+                    StandardOutputEncoding = Encoding.UTF8,
+                    StandardErrorEncoding = Encoding.UTF8,
+                };
+                if (lean) psi.WorkingDirectory = CliSandboxDir();
+                foreach (var arg in BuildCliArgs(cfg, prompt, readDirs, lean)) psi.ArgumentList.Add(arg);
+
+                using var p = Process.Start(psi);
+                if (p is null) { LastError = "could not start the Claude CLI"; return null; }
+                p.StandardInput.Close(); // signal EOF so the CLI doesn't wait for piped stdin
+
+                var stdout = p.StandardOutput.ReadToEndAsync();
+                var stderr = p.StandardError.ReadToEndAsync();
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(cfg.TimeoutSeconds * 1000);
+                try { await p.WaitForExitAsync(cts.Token); }
+                catch (OperationCanceledException)
+                {
+                    try { p.Kill(true); } catch { }
+                    if (ct.IsCancellationRequested)
+                    {
+                        LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, "cancelled");
+                        throw;   // the user cancelled: let Pause/Stop see it, don't report a timeout
+                    }
+                    LastError = Loc.Instance.F("llm.timeout", cfg.TimeoutSeconds);
+                    LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds, $"timeout {cfg.TimeoutSeconds}s");
+                    return null;
+                }
+
+                string raw = await stdout;
+                string err = await stderr;
+
+                // Older CLI without the lean flags: remember it and retry once with plain arguments.
+                if (lean && p.ExitCode != 0 && err.Contains("unknown option", StringComparison.OrdinalIgnoreCase))
+                {
+                    _leanUnsupported = true;
+                    lean = false;
+                    Diag.Warn("claude-cli: lean flags not supported by this CLI version — using plain arguments (" + Trim(err) + ")");
+                    continue;
+                }
+
+                var (text, error) = ParseCliOutput(raw, err, p.ExitCode);
+                LastError = error;
+                LogCall("claude-cli", cfg.Model, 0, prompt.Length, "", "", sw.ElapsedMilliseconds,
+                    (error is null ? "ok" : "error: " + error) + (lean ? " lean" : " plain"));
+                return text;
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception ex)
         {
             LastError = Trim(ex.Message);

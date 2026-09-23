@@ -578,6 +578,7 @@ Write in {lang}.
 
             return plan;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }   // Pause must stop the run
         catch
         {
             return plan;   // never let the critique break plan delivery
@@ -630,6 +631,7 @@ precise web-search queries that would fetch the MISSING factual data — above a
                 }
             return results;
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch { return new(); }
     }
 
@@ -774,6 +776,7 @@ trajectory, hiring trends). Reply with ONLY a JSON object: {{""queries"":[""..."
             return (dto?.Queries ?? new())
                 .Where(q => !string.IsNullOrWhiteSpace(q)).Select(q => q.Trim()).Distinct().Take(3).ToList();
         }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch { return new(); }
     }
 

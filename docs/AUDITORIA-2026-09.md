@@ -44,7 +44,7 @@ Cada item tem um ID estável para ser referido em commits e conversas. Atualiza 
 
 | U3 | UI: fluxos e usabilidade | ✅ 9/10 feitos (U3.8 parcial), por commitar | `sessao/2026-09-23-integridade-dados` |
 
-| B | Claude CLI / camada LLM | ⏳ | — |
+| B | Claude CLI / camada LLM | ✅ B1–B3 feitos (B4 pendente), por commitar | `sessao/2026-09-23-integridade-dados` |
 
 | C | Estado e concorrência na UI | ⏳ (C1 e C8 feitos no U3) | — |
 
@@ -602,19 +602,43 @@ Proposta de mensagem: `feat(ux): engine status, one primary action per page, sec
 - O combo "Modelo" do Claude CLI aparece vazio nas Definições em vez de "(predefinido)". O problema já existia antes; confirmar se o `RefreshModelOptions` corre ao carregar.
 - Ainda não há um botão "Cancelar" separado ao lado da ProgressRing da investigação por vaga (continua o clicar outra vez, que agora funciona).
 
-## Lote B: Claude CLI / camada LLM ⏳
+## Lote B: Claude CLI ✅ (B1–B3) · B4 pendente
 
+**Âmbito:** só o caminho do **Claude CLI**, que é o motor que o utilizador usa. Os modelos locais ficaram de fora por decisão do utilizador (2026-09-23).
+**Branch:** `sessao/2026-09-23-integridade-dados`. Proposta de mensagem: `perf(llm): lean Claude CLI calls, honour is_error, real cancel (B1–B3)`.
 
+**Verificação:**
+- Build limpo e 49 testes, 7 deles novos em `ClaudeCliTests` (argumentos e leitura do envelope).
+- Consola de teste com o CLI real (2.1.x), passando pelo código da app:
+  1. Chamada normal: "pong" em 3,4 s.
+  2. Cancelar a 1,5 s: `OperationCanceledException`, sem o falso "timeout".
+  3. Coach com imagem: lê "SALARY 55000 EUR" com `Read` limitado à pasta da imagem.
+  4. Envelope `is_error` (limite de uso): tratado como erro com a mensagem, e não como resposta.
+  5. CLI antigo sem as flags novas: volta sozinho aos argumentos simples e continua a funcionar.
 
-- **B1 Chamadas "lean" ao CLI** *(verificado e medido)*. Cada `claude -p` arranca um Claude Code completo, com CLAUDE.md, memórias, servidores MCP e ferramentas: ~28k tokens de input e 4,5 s. Com `--tools "" --strict-mcp-config --no-session-persistence --setting-sources ""` e um diretório de trabalho temporário fica em ~2,6k tokens e 3,2 s, e o texto das vagas deixa de poder dar ordens às ferramentas. O Coach precisa de `--tools Read` para ver imagens.
+### B1 · Chamadas "lean" ao CLI ✅ *medido e verificado*
+- **Problema.** Cada `claude -p` arrancava um Claude Code completo, com CLAUDE.md, memórias, servidores MCP, ferramentas e sessão gravada.
+  - Medido: ~28k tokens de input de contexto por chamada, contra ~2,6k em modo lean, e cerca de 1,2 s mais lento.
+  - Um lote de pontuação (~2k tokens de prompt) passa de ~30k para ~4,6k tokens de input por chamada.
+  - Além disso, o texto das vagas (não confiável) chegava a um agente com ferramentas.
+- **Correção** (`LlmClient.BuildCliArgs`):
+  - flags `--tools ""` (ou `--tools Read --add-dir <pasta das imagens>` no Coach com screenshots), `--strict-mcp-config`, `--no-session-persistence`, `--setting-sources ""`;
+  - pasta de trabalho vazia (`%TEMP%\JobRadar-claude`), para não apanhar o CLAUDE.md nem as memórias do repositório.
+- **Compatibilidade.** Se o CLI instalado não conhecer as flags ("unknown option"), a app regista um aviso, repete a chamada sem elas e memoriza a escolha para as chamadas seguintes.
+- **Nota.** `--setting-sources ""` ignora os settings do utilizador no CLI. Se o modelo por defeito estiver definido lá, deve ser escolhido nas Definições da app ("Modelo").
 
-- **B2 `is_error` ignorado** *(verificado)*. Um envelope de erro ("usage limit…") é tratado como resposta válida. Verificar `is_error` e o exit code.
+### B2 · `is_error` respeitado ✅ *verificado*
+- `LlmClient.ParseCliOutput` lê o envelope. Com `is_error: true` ou código de saída diferente de 0, a chamada falha com a mensagem. Antes, "usage limit reached" era devolvido como resposta do modelo.
+- Na pontuação, isto aciona a paragem limpa do lote A1 ("A pontuação com IA parou: …").
 
-- **B3 Cancelar vira "timeout (300s)"** *(reportado, código lido)*. No caminho do CLI falta o `when (!ct.IsCancellationRequested)`, por isso Pausar/Retomar do Grow não funciona com o motor por defeito.
+### B3 · Cancelar é mesmo cancelar ✅ *verificado*
+- O processo do CLI é terminado e a `OperationCanceledException` é relançada. Antes, o cancelamento era convertido num falso "timeout (300s)".
+- Pausar/Retomar do Evoluir, Parar no Coach e no chat do CV e Cancelar nas investigações passam a funcionar com o CLI.
+- `CareerPlan`: três `catch` genéricos (crítica, leitura de páginas, perguntas de aprofundamento) passaram a relançar o cancelamento, porque senão a geração continuava depois de pausada.
+- O timeout próprio da chamada usa a mensagem localizada `llm.timeout`.
 
-- **B4 `LlmClient.LastError` é estático e partilhado** *(verificado)*. Com operações em paralelo, os erros aparecem no sítio errado. Devolver o erro junto com o resultado.
-
-
+### B4 · `LlmClient.LastError` partilhado ⏳
+- Continua estático e partilhado entre operações em paralelo. Exige mudar a assinatura para devolver o erro com o resultado em cerca de 15 sítios. Fica para outro lote.
 
 ## Lote C: estado e concorrência na UI ⏳ *(reportado pela revisão, a confirmar um a um)*
 
