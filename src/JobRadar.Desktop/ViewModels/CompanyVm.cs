@@ -68,8 +68,9 @@ public partial class CompanyVm : ObservableObject
     }
     partial void OnErrorChanged(string value) => OnPropertyChanged(nameof(HasError));
 
-    /// <summary>Researches the employer; clicking again while running cancels.</summary>
-    [RelayCommand]
+    /// <summary>Researches the employer; clicking again while running cancels. AllowConcurrentExecutions lets that
+    /// second click through — a plain [RelayCommand] disables the button while it runs, so "cancel" was unreachable.</summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task Research()
     {
         if (_research is null) return;
@@ -90,6 +91,9 @@ public partial class CompanyVm : ObservableObject
     }
 
     [RelayCommand] private void Toggle() => Expanded = !Expanded;
+
+    /// <summary>Cancels an in-flight research (used by "Stop" on the Research-all batch).</summary>
+    public void CancelResearch() { if (IsResearching) _cts?.Cancel(); }
 
     [RelayCommand]
     private void OpenUrl(string? url)

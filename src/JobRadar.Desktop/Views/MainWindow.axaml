@@ -159,6 +159,21 @@
                     <TextBlock Classes="sub" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="470" Margin="0,9,0,0" FontSize="{DynamicResource FontBody}"
                                Text="{l:T home.tagline}"/>
 
+                    <!-- AI engine status: a first run without Claude CLI / a local model used to dead-end on a raw error -->
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center" Margin="0,16,0,0" IsVisible="{Binding !ShowEngineMissing}">
+                        <ui:SymbolIcon Symbol="Checkmark" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Signal}" IsVisible="{Binding EngineReady}" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding EngineStatusText}" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Muted}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <Border Classes="banner danger" Margin="0,16,0,0" IsVisible="{Binding ShowEngineMissing}">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <ui:SymbolIcon Grid.Column="0" Symbol="Important" Foreground="{DynamicResource Danger}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Grid.Column="1" Text="{Binding EngineStatusText}" TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                            <Button AutomationProperties.Name="{l:T home.engine.setup}" Grid.Column="2" Classes="ghost" Margin="12,0,0,0" Command="{Binding NavigateCommand}" CommandParameter="settings">
+                                <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Settings"/><TextBlock Text="{l:T home.engine.setup}"/></StackPanel>
+                            </Button>
+                        </Grid>
+                    </Border>
+
                     <!-- Returning user -->
                     <Border Classes="card" Margin="0,28,0,0" IsVisible="{Binding HasSavedProfile}">
                         <StackPanel Spacing="16" HorizontalAlignment="Center">
@@ -202,7 +217,7 @@
                                TextAlignment="Center" Margin="0,12,0,0"
                                IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
-                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,20,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center" Margin="0,20,0,0" IsVisible="{Binding !HasSavedProfile}">
                         <Button AutomationProperties.Name="{l:T home.demoCv}" Classes="ghost" Command="{Binding LoadDemoCvCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T home.demoCv.tip}">
                             <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Document"/><TextBlock Text="{l:T home.demoCv}"/></StackPanel>
                         </Button>
@@ -283,38 +298,48 @@
                 <StackPanel Classes="page" IsVisible="{Binding IsResults}" Spacing="12">
                     <TextBlock Classes="h1" Text="{Binding ResultsTitle}"/>
 
+                    <!-- One primary action (search again) + local filtering; everything else lives in the "more" menu.
+                         The old bar had nine equal-weight buttons and no way to run a new search from here. -->
                     <WrapPanel Orientation="Horizontal" Margin="0,2,0,0">
-                        <Border Classes="chip" Padding="8,4" Margin="0,0,10,8" VerticalAlignment="Center">
+                        <Button AutomationProperties.Name="{l:T home.search}" Classes="accent" Command="{Binding StartSearchCommand}" IsEnabled="{Binding !Busy}"
+                                Margin="0,0,12,8" ToolTip.Tip="{l:T home.search.tip}">
+                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Find"/><TextBlock Text="{l:T home.search}"/></StackPanel>
+                        </Button>
+                        <Border Classes="chip" Padding="8,4" Margin="0,0,12,8" VerticalAlignment="Center">
                             <TextBlock FontSize="{DynamicResource FontSmall}" FontFamily="{DynamicResource MonoFont}"><Run Text="{Binding Jobs.Count}" FontWeight="Bold"/><Run Text="{l:T results.of}"/><Run Text="{Binding TotalCount}"/></TextBlock>
                         </Border>
-                        <TextBox Width="220" Margin="0,0,10,8" Watermark="{l:T results.search.wm}" Text="{Binding SearchText}">
-                            <TextBox.InnerLeftContent><ui:SymbolIcon Symbol="Find" Margin="8,0,0,0" Foreground="{DynamicResource Muted}"/></TextBox.InnerLeftContent>
+                        <TextBox Width="220" Margin="0,0,8,8" Watermark="{l:T results.search.wm}" Text="{Binding SearchText}">
+                            <TextBox.InnerLeftContent><ui:SymbolIcon Symbol="Filter" Margin="8,0,0,0" Foreground="{DynamicResource Muted}"/></TextBox.InnerLeftContent>
                         </TextBox>
-                        <Button AutomationProperties.Name="{l:T results.filter}" Classes="ghost" Command="{Binding AddFilterCommand}" Margin="0,0,10,8" ToolTip.Tip="{l:T results.filter.tip}">
+                        <Button AutomationProperties.Name="{l:T results.filter}" Classes="ghost" Command="{Binding AddFilterCommand}" Margin="0,0,12,8" ToolTip.Tip="{l:T results.filter.tip}">
                             <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Add"/><TextBlock Text="{l:T results.filter}"/></StackPanel>
                         </Button>
                         <TextBlock Classes="sub" VerticalAlignment="Center" Text="{l:T results.minScore}" Margin="0,0,8,8"/>
-                        <ComboBox ItemsSource="{Binding MinScoreOptions}" SelectedItem="{Binding MinScore}" Width="84" Margin="0,0,10,8"/>
-                        <Button AutomationProperties.Name="{l:T results.rescore}" Classes="ghost" Command="{Binding RescoreCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,8,8" ToolTip.Tip="{l:T results.rescore.tip}">
-                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Refresh"/><TextBlock Text="{l:T results.rescore}"/></StackPanel>
-                        </Button>
-                        <Button AutomationProperties.Name="{l:T results.export}" Classes="ghost" Command="{Binding ExportCommand}" IsEnabled="{Binding !Busy}" Margin="0,0,8,8">
-                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T results.export}"/></StackPanel>
-                        </Button>
-                        <Button AutomationProperties.Name="{l:T results.linkedin.tip}" Classes="ghost" Command="{Binding OpenLinkedInCommand}" Margin="0,0,8,8" ToolTip.Tip="{l:T results.linkedin.tip}">
-                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="LinkedIn"/></StackPanel>
-                        </Button>
-                        <Button AutomationProperties.Name="{l:T linkedin.import}" Classes="ghost" Command="{Binding ToggleLinkedInImportCommand}" Margin="0,0,8,8" ToolTip.Tip="{l:T linkedin.import.tip}">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T linkedin.import}"/>
-                                <Border Classes="chip" VerticalAlignment="Center" IsVisible="{Binding HasLinkedInImported}">
-                                    <TextBlock Text="{Binding LinkedInImportedCount}"/>
-                                </Border>
-                            </StackPanel>
-                        </Button>
-                        <Button AutomationProperties.Name="{l:T results.delete}" Classes="ghost" Command="{Binding DeleteJobsCommand}" IsEnabled="{Binding !Busy}" IsVisible="{Binding HasJobs}"
-                                Margin="0,0,8,8" Foreground="{DynamicResource Danger}" ToolTip.Tip="{l:T results.delete.tip}">
-                            <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Delete"/><TextBlock Text="{l:T results.delete}"/></StackPanel>
+                        <ComboBox ItemsSource="{Binding MinScoreOptions}" SelectedItem="{Binding MinScore}" Width="84" Margin="0,0,8,8"/>
+                        <Button AutomationProperties.Name="{l:T results.more}" Classes="ghost icon" Margin="0,0,8,8" ToolTip.Tip="{l:T results.more}">
+                            <ui:SymbolIcon Symbol="More"/>
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuItem Header="{l:T results.rescore}" Command="{Binding RescoreCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T results.rescore.tip}">
+                                        <MenuItem.Icon><ui:SymbolIcon Symbol="Refresh"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="{l:T results.export}" Command="{Binding ExportCommand}" IsEnabled="{Binding !Busy}">
+                                        <MenuItem.Icon><ui:SymbolIcon Symbol="Save"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator/>
+                                    <MenuItem Header="{l:T linkedin.import.open}" Command="{Binding OpenLinkedInCommand}" ToolTip.Tip="{l:T results.linkedin.tip}">
+                                        <MenuItem.Icon><ui:SymbolIcon Symbol="Globe"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem Header="{Binding LinkedInImportMenuLabel}" Command="{Binding ToggleLinkedInImportCommand}" ToolTip.Tip="{l:T linkedin.import.tip}">
+                                        <MenuItem.Icon><ui:SymbolIcon Symbol="Download"/></MenuItem.Icon>
+                                    </MenuItem>
+                                    <Separator/>
+                                    <MenuItem Header="{l:T results.delete}" Command="{Binding DeleteJobsCommand}" IsEnabled="{Binding !Busy}" IsVisible="{Binding HasJobs}"
+                                              Foreground="{DynamicResource Danger}" ToolTip.Tip="{l:T results.delete.tip}">
+                                        <MenuItem.Icon><ui:SymbolIcon Symbol="Delete" Foreground="{DynamicResource Danger}"/></MenuItem.Icon>
+                                    </MenuItem>
+                                </MenuFlyout>
+                            </Button.Flyout>
                         </Button>
                     </WrapPanel>
 
@@ -606,12 +631,19 @@
                             <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding HasCompanies}">
                                 <TextBlock Text="{l:T researcher.sortBy}" VerticalAlignment="Center" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Muted}"/>
                                 <ComboBox ItemsSource="{Binding CompanySorts}" SelectedIndex="{Binding CompanySortIndex}" MinWidth="150"/>
-                                <Button AutomationProperties.Name="{l:T researcher.researchAll}" Classes="ghost" Command="{Binding ResearchAllCompaniesCommand}" ToolTip.Tip="{l:T researcher.researchAll.tip}">
+                                <Button AutomationProperties.Name="{l:T researcher.researchAll}" Classes="ghost" Command="{Binding ResearchAllCompaniesCommand}" IsVisible="{Binding !IsResearchingAll}" ToolTip.Tip="{l:T researcher.researchAll.tip}">
                                     <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Globe"/><TextBlock Text="{l:T researcher.researchAll}"/></StackPanel>
+                                </Button>
+                                <Button AutomationProperties.Name="{l:T researcher.stop}" Classes="ghost" Command="{Binding StopResearchAllCommand}" IsVisible="{Binding IsResearchingAll}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Stop"/><TextBlock Text="{l:T researcher.stop}"/></StackPanel>
                                 </Button>
                                 <Button AutomationProperties.Name="{l:T researcher.export}" Classes="ghost" Command="{Binding ExportCompaniesCommand}" IsEnabled="{Binding !Busy}" ToolTip.Tip="{l:T researcher.export.tip}">
                                     <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Save"/><TextBlock Text="{l:T researcher.export}"/></StackPanel>
                                 </Button>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding ResearchAllStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <ui:ProgressRing IsIndeterminate="{Binding IsResearchingAll}" IsVisible="{Binding IsResearchingAll}" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding ResearchAllStatus}" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center"/>
                             </StackPanel>
                             <TextBlock Classes="sub" FontSize="{DynamicResource FontMicro}" TextWrapping="Wrap" Text="{l:T researcher.byok}"/>
                             <TextBlock Classes="sub" Text="{Binding ExportMsg}" IsVisible="{Binding ExportMsg, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
@@ -859,18 +891,6 @@
                     <TextBlock Classes="h1" Text="{l:T nav.improve}"/>
                     <TextBlock Classes="sub" Text="{l:T improve.sub}"/>
 
-                    <!-- Adversarial review: how hard the AI challenges its own plan after generating -->
-                    <Border Classes="card" Margin="0,8,0,0" Padding="12,12">
-                        <StackPanel Spacing="8">
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <ui:SymbolIcon Symbol="Find" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center"/>
-                                <TextBlock Text="{l:T improve.critiqueMode}" FontSize="{DynamicResource FontMeta}" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Text}"/>
-                                <ComboBox ItemsSource="{Binding CritiqueModes}" SelectedIndex="{Binding CritiqueModeIndex}" MinWidth="170"/>
-                            </StackPanel>
-                            <TextBlock Classes="sub" FontSize="{DynamicResource FontSmall}" TextWrapping="Wrap" Text="{l:T improve.critiqueMode.why}"/>
-                        </StackPanel>
-                    </Border>
-
                     <!-- Generate (no plan yet) -->
                     <Border Classes="card" Margin="0,12,0,0" IsVisible="{Binding ShowGenerateIntro}">
                         <StackPanel Spacing="12">
@@ -886,6 +906,18 @@
                                     Command="{Binding GoToTokenSettingCommand}">
                                 <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Settings"/><TextBlock Text="{l:T plan.error.fixTokens}"/></StackPanel>
                             </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Adversarial review: how hard the AI challenges its own plan after generating -->
+                    <Border Classes="card" Margin="0,12,0,0" Padding="12,12">
+                        <StackPanel Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <ui:SymbolIcon Symbol="Find" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center"/>
+                                <TextBlock Text="{l:T improve.critiqueMode}" FontSize="{DynamicResource FontMeta}" FontWeight="SemiBold" VerticalAlignment="Center" Foreground="{DynamicResource Text}"/>
+                                <ComboBox ItemsSource="{Binding CritiqueModes}" SelectedIndex="{Binding CritiqueModeIndex}" MinWidth="170"/>
+                            </StackPanel>
+                            <TextBlock Classes="sub" FontSize="{DynamicResource FontSmall}" TextWrapping="Wrap" Text="{l:T improve.critiqueMode.why}"/>
                         </StackPanel>
                     </Border>
 
@@ -1418,7 +1450,10 @@
                         <ctl:EmptyState Symbol="Document" Title="{l:T cv.empty.title}" Body="{l:T cv.empty.body}">
                             <ctl:EmptyState.ActionContent>
                                 <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                                    <Button AutomationProperties.Name="{l:T cv.import}" Classes="accent" Click="OnPickCvForStudio" ToolTip.Tip="{l:T cv.import.tip}">
+                                    <Button AutomationProperties.Name="{Binding UseLastCvLabel}" Classes="accent" Command="{Binding UseLastCvCommand}" IsVisible="{Binding HasLastCvPdf}" ToolTip.Tip="{l:T cv.useLoaded.tip}">
+                                        <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Document"/><TextBlock Text="{Binding UseLastCvLabel}"/></StackPanel>
+                                    </Button>
+                                    <Button AutomationProperties.Name="{l:T cv.import}" Classes.accent="{Binding !HasLastCvPdf}" Classes.ghost="{Binding HasLastCvPdf}" Click="OnPickCvForStudio" ToolTip.Tip="{l:T cv.import.tip}">
                                         <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="OpenFile"/><TextBlock Text="{l:T cv.import}"/></StackPanel>
                                     </Button>
                                     <Button AutomationProperties.Name="{l:T cv.seed}" Classes="ghost" Command="{Binding SeedCvFromProfileCommand}" IsEnabled="{Binding HasSavedProfile}" ToolTip.Tip="{l:T cv.seed.tip}">
@@ -1726,8 +1761,14 @@
 
                 <!-- ============ SETTINGS ============ -->
                 <StackPanel Classes="page" IsVisible="{Binding IsSettings}" Spacing="8">
-                    <TextBlock Classes="h1" Text="{l:T nav.settings}"/>
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Classes="h1" Text="{l:T nav.settings}"/>
+                        <!-- Save is also at the top: the page is long and the only Save used to be at the very bottom -->
+                        <Button Grid.Column="1" Classes="accent" VerticalAlignment="Center" Content="{l:T settings.save}" Command="{Binding SaveSettingsCommand}"/>
+                    </Grid>
                     <TextBlock Classes="sub" Text="{l:T settings.sub}"/>
+
+                    <TextBlock Classes="h2" Text="{l:T settings.section.general}" Margin="0,16,0,0"/>
 
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel Spacing="12">
@@ -1751,10 +1792,15 @@
                         </StackPanel>
                     </Border>
 
+                    <TextBlock Classes="h2" Text="{l:T settings.section.engine}" Margin="0,24,0,0"/>
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel Spacing="12">
                             <TextBlock Classes="fld" Text="{l:T settings.aiEngine}" Margin="0,0,0,2"/>
-                            <ToggleSwitch IsChecked="{Binding UseLocalModel}" OnContent="{l:T settings.localModel}" OffContent="Claude CLI"/>
+                            <!-- An explicit choice: the old ToggleSwitch read "Claude CLI" when OFF, which looked like "disabled". -->
+                            <StackPanel Orientation="Horizontal" Spacing="24">
+                                <RadioButton GroupName="engine" Content="{l:T engine.name.claude}" IsChecked="{Binding UseClaudeCli}"/>
+                                <RadioButton GroupName="engine" Content="{l:T settings.localModel}" IsChecked="{Binding UseLocalModel}"/>
+                            </StackPanel>
                             <TextBlock Classes="sub" TextWrapping="Wrap"
                                        Text="{l:T settings.aiEngine.hint}"/>
 
@@ -1916,9 +1962,11 @@
                                 <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding ModelOptions}" SelectedItem="{Binding LlmModel}"/>
                             </StackPanel>
 
-                            <!-- Advanced (local) — Base URL / API key / manual load, kept visible -->
-                            <StackPanel IsVisible="{Binding UseLocalModel}" Spacing="4">
-                                <TextBlock Classes="fld" Text="{l:T settings.advanced}" Margin="0,10,0,2"/>
+                            <!-- Advanced (local) — Base URL / API key / active model / limits. Collapsed: the model manager above
+                                 covers the usual path; it opens itself when another view sends the user to the token limit. -->
+                            <Expander IsVisible="{Binding UseLocalModel}" IsExpanded="{Binding AdvancedExpanded}" HorizontalAlignment="Stretch"
+                                      Header="{l:T settings.advanced.header}" Margin="0,8,0,0">
+                            <StackPanel Spacing="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
                                     <TextBlock Classes="sub" VerticalAlignment="Center" Text="{l:T settings.presets}"/>
                                     <Button Classes="ghost" Content="LM Studio" Command="{Binding UseLmStudioPresetCommand}"/>
@@ -1952,7 +2000,80 @@
                                                FormatString="0" Width="160" HorizontalAlignment="Left"/>
                                 <TextBlock Classes="sub" FontSize="{DynamicResource FontMicro}" TextWrapping="Wrap" Text="{l:T settings.timeout.hint}"/>
                             </StackPanel>
+                            </Expander>
 
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Classes="h2" Text="{l:T settings.section.sources}" Margin="0,24,0,0"/>
+                    <TextBlock Classes="sub" Text="{l:T settings.section.sources.sub}"/>
+
+                    <!-- Jobicy (keyless, free) — remote jobs -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                <TextBlock Classes="fld" Text="{l:T settings.jobicy}" Margin="0" VerticalAlignment="Center"/>
+                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="{DynamicResource PillRadius}" Padding="8,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{l:T connector.keyless}" Foreground="{DynamicResource Signal}" FontSize="{DynamicResource FontMicro}" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding UseJobicy}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
+                            <StackPanel IsVisible="{Binding UseJobicy}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.region}"/>
+                                <ComboBox ItemsSource="{Binding JobicyRegions}" SelectedIndex="{Binding JobicyRegionIndex}" HorizontalAlignment="Left" MinWidth="160"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.max}"/>
+                                <TextBox Text="{Binding JobicyMax}" Watermark="50" Width="100" HorizontalAlignment="Left"/>
+                                <TextBlock Classes="sub" FontSize="{DynamicResource FontMicro}" TextWrapping="Wrap" Text="{l:T settings.jobicy.hint}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Himalayas (keyless, free) — remote jobs -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                <TextBlock Classes="fld" Text="{l:T settings.himalayas}" Margin="0" VerticalAlignment="Center"/>
+                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="{DynamicResource PillRadius}" Padding="8,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{l:T connector.keyless}" Foreground="{DynamicResource Signal}" FontSize="{DynamicResource FontMicro}" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding UseHimalayas}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
+                            <StackPanel IsVisible="{Binding UseHimalayas}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.max}"/>
+                                <TextBox Text="{Binding HimalayasMax}" Watermark="40" Width="100" HorizontalAlignment="Left"/>
+                                <TextBlock Classes="sub" FontSize="{DynamicResource FontMicro}" TextWrapping="Wrap" Text="{l:T settings.himalayas.hint}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- JSearch (RapidAPI) connector -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch}" Margin="0" VerticalAlignment="Center"/>
+                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="{DynamicResource PillRadius}" Padding="8,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{l:T connector.freeTier}" Foreground="{DynamicResource Signal}" FontSize="{DynamicResource FontMicro}" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+                            <ToggleSwitch IsChecked="{Binding UseJSearch}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
+                            <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" Background="{DynamicResource Panel2}" CornerRadius="{DynamicResource CtrlRadius}" Padding="12">
+                                <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Amber}">
+                                    <Run Text="{l:T settings.jsearch.warnBold}" FontWeight="Bold"/><Run Text="{l:T settings.jsearch.warn}"/>
+                                </TextBlock>
+                            </Border>
+                            <StackPanel IsVisible="{Binding UseJSearch}" Spacing="4">
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.provider}"/>
+                                <ComboBox ItemsSource="{Binding JSearchProviders}" SelectedIndex="{Binding JSearchProviderIndex}" HorizontalAlignment="Left" MinWidth="200"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.key}" Margin="0,4,0,0"/>
+                                <TextBox Text="{Binding JSearchKey}" PasswordChar="•" Watermark="API key…"/>
+                                <Button Classes="link" Content="{l:T connector.getKey}" HorizontalAlignment="Left"
+                                        Command="{Binding OpenUrlCommand}" CommandParameter="{Binding JSearchKeyUrl}"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.country}"/>
+                                <TextBox Text="{Binding JSearchCountry}" Watermark="pt" MaxLength="2" Width="80" HorizontalAlignment="Left"/>
+                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.max}"/>
+                                <TextBox Text="{Binding JSearchMax}" Watermark="20"/>
+                                <TextBlock Classes="sub" FontSize="{DynamicResource FontMicro}" TextWrapping="Wrap" Text="{l:T settings.jsearch.hint}"/>
+                            </StackPanel>
                         </StackPanel>
                     </Border>
 
@@ -1994,74 +2115,7 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- JSearch (RapidAPI) connector -->
-                    <Border Classes="card" Margin="0,12,0,0">
-                        <StackPanel Spacing="12">
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
-                                <TextBlock Classes="fld" Text="{l:T settings.jsearch}" Margin="0" VerticalAlignment="Center"/>
-                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="{DynamicResource PillRadius}" Padding="8,2" VerticalAlignment="Center">
-                                    <TextBlock Text="{l:T connector.free}" Foreground="{DynamicResource Signal}" FontSize="{DynamicResource FontMicro}" FontWeight="SemiBold"/>
-                                </Border>
-                            </StackPanel>
-                            <ToggleSwitch IsChecked="{Binding UseJSearch}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
-                            <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" Background="{DynamicResource Panel2}" CornerRadius="{DynamicResource CtrlRadius}" Padding="12">
-                                <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Amber}">
-                                    <Run Text="{l:T settings.apify.warnBold}" FontWeight="Bold"/><Run Text="{l:T settings.jsearch.warn}"/>
-                                </TextBlock>
-                            </Border>
-                            <StackPanel IsVisible="{Binding UseJSearch}" Spacing="4">
-                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.provider}"/>
-                                <ComboBox ItemsSource="{Binding JSearchProviders}" SelectedIndex="{Binding JSearchProviderIndex}" HorizontalAlignment="Left" MinWidth="200"/>
-                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.key}" Margin="0,4,0,0"/>
-                                <TextBox Text="{Binding JSearchKey}" PasswordChar="•" Watermark="API key…"/>
-                                <Button Classes="link" Content="{l:T connector.getKey}" HorizontalAlignment="Left"
-                                        Command="{Binding OpenUrlCommand}" CommandParameter="{Binding JSearchKeyUrl}"/>
-                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.country}"/>
-                                <TextBox Text="{Binding JSearchCountry}" Watermark="pt" MaxLength="2" Width="80" HorizontalAlignment="Left"/>
-                                <TextBlock Classes="fld" Text="{l:T settings.jsearch.max}"/>
-                                <TextBox Text="{Binding JSearchMax}" Watermark="20"/>
-                                <TextBlock Classes="sub" FontSize="{DynamicResource FontMicro}" TextWrapping="Wrap" Text="{l:T settings.jsearch.hint}"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Jobicy (keyless, free) — remote jobs -->
-                    <Border Classes="card" Margin="0,12,0,0">
-                        <StackPanel Spacing="12">
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
-                                <TextBlock Classes="fld" Text="{l:T settings.jobicy}" Margin="0" VerticalAlignment="Center"/>
-                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="{DynamicResource PillRadius}" Padding="8,2" VerticalAlignment="Center">
-                                    <TextBlock Text="{l:T connector.keyless}" Foreground="{DynamicResource Signal}" FontSize="{DynamicResource FontMicro}" FontWeight="SemiBold"/>
-                                </Border>
-                            </StackPanel>
-                            <ToggleSwitch IsChecked="{Binding UseJobicy}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
-                            <StackPanel IsVisible="{Binding UseJobicy}" Spacing="4">
-                                <TextBlock Classes="fld" Text="{l:T settings.region}"/>
-                                <ComboBox ItemsSource="{Binding JobicyRegions}" SelectedIndex="{Binding JobicyRegionIndex}" HorizontalAlignment="Left" MinWidth="160"/>
-                                <TextBlock Classes="fld" Text="{l:T settings.max}"/>
-                                <TextBox Text="{Binding JobicyMax}" Watermark="50" Width="100" HorizontalAlignment="Left"/>
-                                <TextBlock Classes="sub" FontSize="{DynamicResource FontMicro}" TextWrapping="Wrap" Text="{l:T settings.jobicy.hint}"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-
-                    <!-- Himalayas (keyless, free) — remote jobs -->
-                    <Border Classes="card" Margin="0,12,0,0">
-                        <StackPanel Spacing="12">
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
-                                <TextBlock Classes="fld" Text="{l:T settings.himalayas}" Margin="0" VerticalAlignment="Center"/>
-                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="{DynamicResource PillRadius}" Padding="8,2" VerticalAlignment="Center">
-                                    <TextBlock Text="{l:T connector.keyless}" Foreground="{DynamicResource Signal}" FontSize="{DynamicResource FontMicro}" FontWeight="SemiBold"/>
-                                </Border>
-                            </StackPanel>
-                            <ToggleSwitch IsChecked="{Binding UseHimalayas}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}"/>
-                            <StackPanel IsVisible="{Binding UseHimalayas}" Spacing="4">
-                                <TextBlock Classes="fld" Text="{l:T settings.max}"/>
-                                <TextBox Text="{Binding HimalayasMax}" Watermark="40" Width="100" HorizontalAlignment="Left"/>
-                                <TextBlock Classes="sub" FontSize="{DynamicResource FontMicro}" TextWrapping="Wrap" Text="{l:T settings.himalayas.hint}"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
+                    <TextBlock Classes="h2" Text="{l:T settings.section.system}" Margin="0,24,0,0"/>
 
                     <!-- Usage & limits -->
                     <Border Classes="card" Margin="0,12,0,0">

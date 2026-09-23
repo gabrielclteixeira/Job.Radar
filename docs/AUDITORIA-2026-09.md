@@ -42,11 +42,11 @@ Cada item tem um ID estável para ser referido em commits e conversas. Atualiza 
 
 | U2 | UI: textos, i18n, acessibilidade | ✅ 9/9 feitos, por commitar | `sessao/2026-09-23-integridade-dados` |
 
-| U3 | UI: fluxos e usabilidade | ⏳ | — |
+| U3 | UI: fluxos e usabilidade | ✅ 9/10 feitos (U3.8 parcial), por commitar | `sessao/2026-09-23-integridade-dados` |
 
 | B | Claude CLI / camada LLM | ⏳ | — |
 
-| C | Estado e concorrência na UI | ⏳ | — |
+| C | Estado e concorrência na UI | ⏳ (C1 e C8 feitos no U3) | — |
 
 | S | Serviços externos | ⏳ | — |
 
@@ -537,53 +537,70 @@ Proposta de mensagem: `fix(i18n,a11y): honest privacy copy, one glossary, locali
 - Vagas já pontuadas mantêm o veredicto da IA no idioma em que foram geradas. As próximas pontuações seguem o idioma da UI.
 - A linha de contexto enviada ao modelo em `MainViewModel.cs` (~604, "vagas vistas…") é texto de prompt, não de UI.
 
-## Lote U3: fluxos e usabilidade ⏳
+## Lote U3: fluxos e usabilidade ✅
 
+**Branch:** `sessao/2026-09-23-integridade-dados`, ainda sem commit.
+Proposta de mensagem: `feat(ux): engine status, one primary action per page, sectioned settings, confirmations (U3)`.
 
+**Verificação:**
+- Build limpo: 0 erros, 13 avisos anteriores. 42 testes a passar.
+- Screenshots em PT: Início, Vagas, Definições (as 5 páginas), Evoluir, Coach e Perfil com o diálogo aberto.
+- Menu "⋯" do Jobs verificado com UI Automation: abre com Pontuar de novo · Exportar · Abrir LinkedIn Jobs · Importar do LinkedIn (24) · Apagar vagas.
 
-- **U3.1 Estado do motor de IA no Home** *(reportado)*. Hoje, sem motor configurado, o primeiro uso acaba num erro técnico sem saída. Mostrar "Motor de IA: pronto / não encontrado" e um botão "Configurar".
+### U3.1 · Estado do motor de IA no Início ✅ *verificado ao vivo*
+- `LlmClient.CheckEngineAsync` confirma que o motor está utilizável sem enviar nenhum prompt:
+  - Claude CLI: `claude --version` sai com código 0 (timeout de 15 s);
+  - modelo local: o servidor lista modelos, incluindo o configurado.
+- O resultado aparece no Início como "✓ Motor de IA pronto: Claude CLI". Se falhar, aparece um banner vermelho com o motivo e o botão **Configurar**, que abre as Definições.
+- A verificação corre no arranque e depois de cada "Guardar" nas Definições.
 
-- **U3.2 Edições ao perfil perdem-se** *(reportado)*. Gravar ao sair da página e pedir confirmação no "Start over" (que devia chamar-se "Descartar alterações").
+### U3.2 · O perfil é gravado ao sair da página ✅ *verificado no código e com o diálogo*
+- Sair do Perfil grava as alterações, como já acontecia no CV Studio. Antes, só "Procurar vagas" ou "Criar CV" gravavam.
+- Um formulário vazio no primeiro uso não é gravado, para o Início não mudar para o modo "já tens perfil" por engano.
+- "Recomeçar" passou a **"Descartar alterações"**. Pede confirmação ("Cancelar" é o botão por defeito), volta ao perfil guardado e fica na página. Antes, limpava a lista de vagas e saltava para o Início sem perguntar.
 
-- **U3.3 Página Jobs** *(verificado)*. Tem 9 botões ghost com o mesmo peso e nenhum "Procurar vagas" quando já há vagas. Pôr um CTA principal e juntar as ações secundárias (Exportar, Reclassificar, Apagar, LinkedIn) num menu "⋯".
+### U3.3 · Página Vagas: uma ação principal ✅ *verificado no ecrã e via UIA*
+- A barra tem agora: **Procurar vagas** (accent) · contagem · "Filtrar vagas…" · Filtro · Pontuação mín. · **⋯**.
+- O menu "⋯" junta Pontuar de novo, Exportar, Abrir LinkedIn Jobs, Importar do LinkedIn (com a contagem) e Apagar vagas, este último a vermelho.
+- Antes eram 9 botões com o mesmo peso, em duas linhas, e não havia forma de lançar uma nova pesquisa a partir desta página.
 
-- **U3.4 Definições** *(verificado)*:
+### U3.4 · Definições organizadas ✅ *verificado no ecrã*
+- Secções com título: **Geral** · **Motor de IA** · **Fontes de vagas** ("as gratuitas primeiro…") · **Sistema**.
+- Botão **Guardar** também no topo da página.
+- O motor passou a escolher-se com botões de opção **Claude CLI / Modelo local**. O ToggleSwitch antigo mostrava "Claude CLI" quando estava desligado.
+- A secção "Avançado" do modelo local (URL base, chave de API, modelo ativo, limites) fica num Expander fechado. Abre sozinha quando o Evoluir manda o utilizador ajustar o limite de tokens.
+- Ordem das fontes: Jobicy e Himalayas (sem chave) → JSearch ("Grátis com limite", aviso de **quota**) → Apify (pago).
 
-  - 9 cartões numa só página, com o Save no fundo;
+### U3.5 · O CV Studio reutiliza o PDF do CV ✅ *verificado no código*
+- O caminho do PDF usado para criar o perfil fica guardado em `ui-settings.json` (`lastCv`).
+- O estado vazio do CV Studio mostra "Usar o CV que carregaste (nome.pdf)" como ação principal. "Importar de PDF…" passa a secundário.
 
-  - o Apify (pago) antes das fontes grátis;
+### U3.6 · Operações longas ✅ *verificado no código*
+- "Investigar todas" mostra o progresso ("A investigar 3 de 12 — Empresa…") e um botão **Parar**, que para o lote e cancela a empresa em curso. Se não houver nada por investigar, diz isso em vez de não fazer nada.
+- **C1 corrigido:** os botões Investigar (vaga e empresa) passam a usar `AllowConcurrentExecutions`. Antes ficavam desativados durante a execução, por isso "clicar outra vez para cancelar" era impossível.
 
-  - o motor escolhido com um ToggleSwitch cujo rótulo diz "Claude CLI" quando está desligado;
+### U3.7 · Confirmação em ações destrutivas ✅ *verificado com o diálogo*
+- Novo `ConfirmAsync`, um diálogo genérico com "Cancelar" por defeito.
+- Passam a pedir confirmação: limpar a conversa do Coach, limpar o chat do CV (só quando não estão vazios), limpar o histórico de planos, limpar as importações do LinkedIn e remover uma entrada do CV (experiência, formação, projeto).
 
-  - o JSearch com o selo "Free" e um aviso de custos logo abaixo.
+### U3.8 · Coach com a altura da janela ◐ *parcial*
+- A conversa do Coach passa a ocupar a altura disponível (ajusta-se ao redimensionar e ao zoom) em vez de ficar numa caixa fixa de 460 px.
+- O chat do CV continua no fundo do formulário e fica para um redesenho em duas colunas.
 
+### U3.9 · Início para quem regressa ✅ *verificado no ecrã*
+- "Usar CV de exemplo" e "Ver demonstração" só aparecem a quem ainda não tem perfil.
 
+### U3.10 · Evoluir ✅ *verificado*
+- O cartão "Gerar plano de carreira" aparece antes da "Revisão crítica".
+- Sem perfil, gerar o plano dá a mensagem `improve.needProfile` em vez de gerar um plano vazio.
+- O aviso "gerado por IA…" passa a aparecer sempre no idioma atual da UI (estava gravado no idioma em que o plano foi gerado).
 
-  Proposta: dividir em secções (Geral · Motor de IA · Fontes · Sistema), trocar o toggle por uma escolha explícita entre os dois motores, pôr o Avançado num Expander fechado e fixar o Save (ou gravar automaticamente).
+**Extra (C8):** o handler `ScrollToMaxTokensRequested` é removido quando a janela fecha. A troca de idioma já não acumula subscrições.
 
-- **U3.5 O CV Studio volta a pedir o PDF** *(reportado)*. Oferecer "Usar o CV que já carregaste".
-
-- **U3.6 Operações longas** *(reportado)*:
-
-  - o "Research all" não mostra progresso global nem se pode parar;
-
-  - não há estimativa de tempo;
-
-  - os botões de pesquisa passam a "Cancelar" no mesmo sítio, por isso um duplo clique cancela.
-
-- **U3.7 Ações destrutivas sem confirmação** *(reportado)*: limpar conversa (Coach e CV), limpar histórico do plano, limpar importações, remover uma entrada do CV.
-
-- **U3.8 Scroll dentro de scroll** *(reportado)*. Coach e chat do CV: a conversa deve ocupar a altura disponível, com a caixa de texto fixa em baixo.
-
-- **U3.9 Home para quem regressa** *(reportado)*. Esconder "Usar CV de exemplo" e "Ver demonstração" quando já existe perfil.
-
-- **U3.10 Grow** *(reportado)*. O seletor "Revisão crítica" aparece antes da ação principal, e é possível gerar um plano sem perfil.
-
-
-
----
-
-
+**O que fica para depois:**
+- Chat do CV em duas colunas (U3.8).
+- O combo "Modelo" do Claude CLI aparece vazio nas Definições em vez de "(predefinido)". O problema já existia antes; confirmar se o `RefreshModelOptions` corre ao carregar.
+- Ainda não há um botão "Cancelar" separado ao lado da ProgressRing da investigação por vaga (continua o clicar outra vez, que agora funciona).
 
 ## Lote B: Claude CLI / camada LLM ⏳
 
@@ -603,7 +620,7 @@ Proposta de mensagem: `fix(i18n,a11y): honest privacy copy, one glossary, locali
 
 
 
-- **C1** O botão Research do Jobs e do Companies fica desativado enquanto corre (`[RelayCommand]` sem `AllowConcurrentExecutions`), por isso "clicar outra vez para cancelar" não funciona.
+- ✅ **C1** (feito no U3.6) O botão Research do Jobs e do Companies ficava desativado enquanto corria, por isso "clicar outra vez para cancelar" não funcionava.
 
 - **C2** A flag `Busy` é partilhada e não reentrante: importar um CV durante uma pesquisa volta a ativar o "Reclassificar", que lança um segundo pipeline em paralelo.
 
@@ -617,7 +634,7 @@ Proposta de mensagem: `fix(i18n,a11y): honest privacy copy, one glossary, locali
 
 - **C7** Carregar em Settings estando já em Settings descarta as edições sem aviso.
 
-- **C8** O `ScrollToMaxTokensRequested` fica subscrito a cada troca de idioma (fuga de handlers).
+- ✅ **C8** (feito no U3) O `ScrollToMaxTokensRequested` ficava subscrito a cada troca de idioma (fuga de handlers).
 
 
 

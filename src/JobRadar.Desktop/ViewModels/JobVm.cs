@@ -41,7 +41,7 @@ public partial class JobVm : ObservableObject
     /// <summary>Researches the employer (reviews + comparable salaries) via the web-search step.
     /// With a briefing already shown (cached or fresh), the same command re-researches; if the new
     /// attempt is cancelled or fails, the previous briefing is put back.</summary>
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]   // second click must reach the handler to cancel
     private async Task Research()
     {
         if (_research is null) return;

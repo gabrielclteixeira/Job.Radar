@@ -30,6 +30,38 @@ public static class LlmClient
         return s.Length > 200 ? s[..200] + "…" : s;
     }
 
+    /// <summary>Quick reachability check of the configured engine for the Home status line (no prompt is sent):
+    /// Claude CLI → `claude --version` exits 0; local → the server lists at least one model (and the configured
+    /// one, when set). Returns a short reason when it isn't usable. Never throws.</summary>
+    public static async Task<(bool ok, string detail)> CheckEngineAsync(ClaudeConfig cfg, CancellationToken ct = default)
+    {
+        try
+        {
+            if (IsLocal(cfg))
+            {
+                var models = await ListOpenAiModelsAsync(cfg.BaseUrl, cfg.ApiKey, ct);
+                if (models.Count == 0) return (false, cfg.BaseUrl);
+                if (!string.IsNullOrWhiteSpace(cfg.Model) && !models.Contains(cfg.Model, StringComparer.OrdinalIgnoreCase))
+                    return (false, cfg.Model);
+                return (true, "");
+            }
+            var psi = new ProcessStartInfo
+            {
+                FileName = string.IsNullOrWhiteSpace(cfg.Exe) ? "claude" : cfg.Exe,
+                RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true,
+            };
+            psi.ArgumentList.Add("--version");
+            using var p = Process.Start(psi);
+            if (p is null) return (false, "");
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(15));
+            try { await p.WaitForExitAsync(cts.Token); }
+            catch (OperationCanceledException) { try { p.Kill(true); } catch { } return (false, "timeout"); }
+            return p.ExitCode == 0 ? (true, "") : (false, $"exit {p.ExitCode}");
+        }
+        catch (Exception ex) { return (false, Trim(ex.Message) ?? ""); }
+    }
+
     /// <summary>True when <paramref name="cfg"/> routes to the OpenAI-compatible (local) path. The one definition of
     /// the provider aliases — checking only "openai" elsewhere mislabelled "local"/"http" as the Claude CLI.</summary>
     public static bool IsLocal(ClaudeConfig cfg)

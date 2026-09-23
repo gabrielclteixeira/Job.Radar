@@ -74,6 +74,36 @@ public partial class MainViewModel : ObservableObject
         _coachThreads = CoachHistory.Load(_coachHistoryPath);
         LinkedInImportedCount = LinkedInImport.CountSaved(LinkedInJobsFile);
         _langInitialised = true;
+        _ = CheckEngineAsync();
+    }
+
+    // ---- U3.7: one confirmation helper for destructive actions (the view supplies the dialog) ----
+    /// <summary>Set by the view: (title, body, primary button) → true when the user confirms.</summary>
+    public Func<string, string, string, Task<bool>>? ConfirmAsync;
+    private async Task<bool> Confirm(string titleKey, string bodyKey, string primaryKey)
+        => ConfirmAsync is null || await ConfirmAsync(L(titleKey), L(bodyKey), L(primaryKey));
+
+    // ---- U3.1: is the AI engine usable? Shown on Home so a first run can't dead-end on a raw error ----
+    [ObservableProperty] private bool _engineChecked;
+    [ObservableProperty] private bool _engineReady;
+    [ObservableProperty] private string _engineStatusText = "";
+    public bool ShowEngineMissing => EngineChecked && !EngineReady;
+    partial void OnEngineCheckedChanged(bool value) => OnPropertyChanged(nameof(ShowEngineMissing));
+    partial void OnEngineReadyChanged(bool value) => OnPropertyChanged(nameof(ShowEngineMissing));
+
+    private async Task CheckEngineAsync()
+    {
+        EngineChecked = false;
+        EngineStatusText = L("home.engine.checking");
+        var cfg = _cfg.Claude;
+        string name = LlmClient.IsLocal(cfg)
+            ? Loc.Instance.F("engine.name.local", string.IsNullOrWhiteSpace(cfg.Model) ? cfg.BaseUrl : cfg.Model)
+            : L("engine.name.claude");
+        var (ok, detail) = await LlmClient.CheckEngineAsync(cfg);
+        EngineReady = ok;
+        EngineStatusText = ok ? Loc.Instance.F("home.engine.ready", name)
+                              : Loc.Instance.F("home.engine.missing", name) + (string.IsNullOrWhiteSpace(detail) ? "" : $" — {detail}");
+        EngineChecked = true;
     }
 
     // ---- navigation (sidebar) ----
@@ -108,6 +138,13 @@ public partial class MainViewModel : ObservableObject
 
         // Leaving the CV editor implicitly commits + saves (profile-form convention).
         if (Nav == "cv" && page != "cv" && _cvDoc is not null) { CommitCvEditors(); SaveCvDoc(false); }
+        // Leaving the profile form saves it too: edits used to vanish when switching views (only Search/Create CV
+        // saved). A blank first-run form isn't written, so Home doesn't switch to "returning user" by accident.
+        if (Nav == "profile" && page != "profile" && !_isDemoProfile)
+        {
+            CommitFormToProfile();
+            if (HasSavedProfile || !string.IsNullOrWhiteSpace(_profile.Name) || _profile.JobTitles.Count > 0) SaveProfile();
+        }
 
         switch (page)
         {
@@ -235,6 +272,8 @@ public partial class MainViewModel : ObservableObject
                 _critiqueModeIndex = Math.Clamp(cmv, 0, 2);
             if (doc.RootElement.TryGetProperty("pdfProgress", out var pp) && pp.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 _includeProgressInPdf = pp.GetBoolean();
+            if (doc.RootElement.TryGetProperty("lastCv", out var lc) && lc.ValueKind == JsonValueKind.String)
+                _lastCvPath = lc.GetString();
         }
         catch { /* ignore */ }
     }
@@ -244,7 +283,7 @@ public partial class MainViewModel : ObservableObject
         try
         {
             SafeFile.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(
-                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)], critique = CritiqueModeIndex, pdfProgress = IncludeProgressInPdf },
+                new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)], critique = CritiqueModeIndex, pdfProgress = IncludeProgressInPdf, lastCv = _lastCvPath },
                 new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* best-effort */ }
@@ -343,7 +382,8 @@ public partial class MainViewModel : ObservableObject
     public IReadOnlyList<CritiquePoint>? PlanCritique => Plan?.Critique;
     public bool HasPlanCritique => Plan?.HasCritique == true;
     public bool PlanRevised => Plan?.Revised == true;
-    public string PlanCaveat => Plan?.CritiqueCaveat ?? "";
+    // The caveat is stored with the plan in the language it was generated in; show it in the current UI language.
+    public string PlanCaveat => string.IsNullOrWhiteSpace(Plan?.CritiqueCaveat) ? "" : L("plan.caveat");
     private void NotifyCritique()
     {
         OnPropertyChanged(nameof(PlanCritique)); OnPropertyChanged(nameof(HasPlanCritique));
@@ -427,6 +467,7 @@ public partial class MainViewModel : ObservableObject
     private async Task RunPlanAsync(bool resume)
     {
         if (IsPlanning || IsCritiquing) return;
+        if (!HasSavedProfile && !_isDemoProfile) { PlanError = L("improve.needProfile"); return; }
         IsPlanning = true;   // claim the run BEFORE the first await, so a second click can't start a parallel one
 
         // Ground the plan in the user's own scored jobs (strong-fit only — poisoning-aware) and refresh the panel.
@@ -664,8 +705,9 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ClearPlanHistory()
+    private async Task ClearPlanHistory()
     {
+        if (!await Confirm("dlg.clearHistory.title", "dlg.clearHistory.body", "dlg.clear")) return;
         _planHistoryStore.Clear();
         RefreshPlanHistory();
         try { if (File.Exists(_planHistoryPath)) File.Delete(_planHistoryPath); }
@@ -725,6 +767,7 @@ public partial class MainViewModel : ObservableObject
     {
         await Navigate("settings");
         if (!IsSettings) return;   // user cancelled an unsaved-changes prompt
+        AdvancedExpanded = true;   // the token limit lives in the (collapsed) Advanced section
         ScrollToMaxTokensRequested?.Invoke();
         HighlightMaxTokens = true;
         await Task.Delay(2800);
@@ -1209,8 +1252,18 @@ public partial class MainViewModel : ObservableObject
     private static bool IsDefaultModel(string? m) => m is "(predefinido)" or "(default)";
     private string[] ClaudeModels => new[] { DefaultClaudeModel, "sonnet", "opus", "haiku" };
 
+    /// <summary>Radio-button view of the engine choice (Claude CLI ⇄ local model).</summary>
+    public bool UseClaudeCli
+    {
+        get => !UseLocalModel;
+        set { if (value) UseLocalModel = false; }
+    }
+    /// <summary>Settings → AI engine → "Advanced" expander state (opened programmatically for the token limit).</summary>
+    [ObservableProperty] private bool _advancedExpanded;
+
     partial void OnUseLocalModelChanged(bool value)
     {
+        OnPropertyChanged(nameof(UseClaudeCli));
         LlmModel = value ? "" : DefaultClaudeModel; // local needs an explicit model; Claude defaults
         RefreshModelOptions();
         if (value) { _ = RefreshInstalledModels(); _ = DebouncedRegistrySearch(); }
@@ -1292,6 +1345,7 @@ public partial class MainViewModel : ObservableObject
             _isDemoProfile = false; // a real CV the user picked
             LoadFormFromProfile();
             SaveProfile(); // persist so we don't re-parse the CV (and spend tokens) next time
+            _lastCvPath = path; SaveUiSettings(); OnPropertyChanged(nameof(HasLastCvPdf)); OnPropertyChanged(nameof(UseLastCvLabel));
             ShowOnly(profile: true);
         }
         finally { Busy = false; }
@@ -1557,6 +1611,7 @@ public partial class MainViewModel : ObservableObject
         _settingsSnapshot = SettingsSignature();
         OnPropertyChanged(nameof(UsingLocalEngine));
         Status = L("settings.saved");
+        _ = CheckEngineAsync();
         ShowOnly(welcome: true);
     }
 
@@ -1612,7 +1667,14 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _linkedInImportStatus = "";
     [ObservableProperty] private int _linkedInImportedCount;
     public bool HasLinkedInImported => LinkedInImportedCount > 0;
-    partial void OnLinkedInImportedCountChanged(int value) => OnPropertyChanged(nameof(HasLinkedInImported));
+    /// <summary>Menu label for the import action, with the count of jobs already imported (the chip it replaced).</summary>
+    public string LinkedInImportMenuLabel => HasLinkedInImported
+        ? $"{L("linkedin.import")} ({LinkedInImportedCount})" : L("linkedin.import");
+    partial void OnLinkedInImportedCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasLinkedInImported));
+        OnPropertyChanged(nameof(LinkedInImportMenuLabel));
+    }
 
     private string LinkedInJobsFile => Path.IsPathRooted(_cfg.LinkedInJobsPath)
         ? _cfg.LinkedInJobsPath : Path.Combine(_root, _cfg.LinkedInJobsPath);
@@ -1646,8 +1708,9 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ClearLinkedInImports()
+    private async Task ClearLinkedInImports()
     {
+        if (!await Confirm("dlg.clearImports.title", "dlg.clearImports.body", "dlg.clear")) return;
         LinkedInImport.Clear(LinkedInJobsFile);
         LinkedInImportedCount = 0;
         LinkedInImportStatus = L("linkedin.import.cleared");
@@ -1683,13 +1746,14 @@ public partial class MainViewModel : ObservableObject
         finally { IsScoring = false; Busy = false; }
     }
 
+    /// <summary>"Discard changes": reloads the form from the saved profile (after confirmation). It used to be
+    /// "Start over", which also wiped the jobs list and jumped to Home without asking.</summary>
     [RelayCommand]
-    private void Reset()
+    private async Task Reset()
     {
-        // Keep the saved profile; just clear results and go back to the start.
-        _all = new(); Jobs.Clear(); ExportMsg = ""; Status = "";
+        if (!await Confirm("dlg.discardProfile.title", "dlg.discardProfile.body", "dlg.discard")) return;
+        Status = "";
         LoadFormFromProfile();
-        ShowOnly(welcome: true);
     }
 
     [RelayCommand]
@@ -2127,17 +2191,43 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>Research every not-yet-researched company. Each is one model call (metered on Claude CLI),
     /// so confirm the batch first. Sequential — a single local model serializes requests anyway.</summary>
+    [ObservableProperty] private bool _isResearchingAll;
+    [ObservableProperty] private string _researchAllStatus = "";
+    private CancellationTokenSource? _researchAllCts;
+    private CompanyVm? _researchAllCurrent;
+
     [RelayCommand]
     private async Task ResearchAllCompanies()
     {
         var todo = _companyMaster.Where(c => !c.HasReport && !c.IsResearching).ToList();
-        if (todo.Count == 0) return;
+        if (todo.Count == 0) { ResearchAllStatus = L("researcher.researchAll.none"); return; }
         if (ConfirmResearchAllAsync is not null && !await ConfirmResearchAllAsync(todo.Count)) return;
-        foreach (var c in todo)
+        _researchAllCts = new CancellationTokenSource();
+        IsResearchingAll = true;
+        try
         {
-            if (c.HasReport || c.IsResearching) continue;
-            await c.ResearchCommand.ExecuteAsync(null);
+            for (int i = 0; i < todo.Count && !_researchAllCts.IsCancellationRequested; i++)
+            {
+                var c = todo[i];
+                if (c.HasReport || c.IsResearching) continue;
+                ResearchAllStatus = Loc.Instance.F("researcher.researchAll.progress", i + 1, todo.Count, c.Name);
+                _researchAllCurrent = c;
+                await c.ResearchCommand.ExecuteAsync(null);
+            }
         }
+        finally
+        {
+            _researchAllCurrent = null; IsResearchingAll = false; ResearchAllStatus = "";
+            _researchAllCts.Dispose(); _researchAllCts = null;
+        }
+    }
+
+    /// <summary>Stops the batch: no further companies start, and the one in flight is cancelled.</summary>
+    [RelayCommand]
+    private void StopResearchAll()
+    {
+        _researchAllCts?.Cancel();
+        _researchAllCurrent?.CancelResearch();
     }
 
     /// <summary>Exports the researched companies to CSV + HTML + PDF (mirrors the jobs export).</summary>
@@ -2342,8 +2432,9 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Clears the ACTIVE company's conversation only (threads are per-company). Pasted
     /// screenshots referenced only by this thread are deleted; picker-attached originals are never touched.</summary>
     [RelayCommand]
-    private void ClearCoach()
+    private async Task ClearCoach()
     {
+        if (!CoachEmpty && !await Confirm("dlg.clearCoach.title", "dlg.clearCoach.body", "dlg.clear")) return;
         _coachCts?.Cancel();
         CoachError = ""; CoachVisionWarning = "";
         foreach (var a in CoachAttachments) a.Dispose();
@@ -2541,6 +2632,13 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Called by the view after the PDF picker: extract text + LLM-import the full document.</summary>
+    // ---- U3.5: CV Studio reuses the PDF already given on first run instead of asking for it again ----
+    private string? _lastCvPath;
+    public bool HasLastCvPdf => !string.IsNullOrWhiteSpace(_lastCvPath) && File.Exists(_lastCvPath);
+    public string UseLastCvLabel => Loc.Instance.F("cv.useLoaded", Path.GetFileName(_lastCvPath ?? ""));
+    [RelayCommand]
+    private Task UseLastCv() => HasLastCvPdf ? ImportCvForStudioAsync(_lastCvPath!) : Task.CompletedTask;
+
     public async Task ImportCvForStudioAsync(string path)
     {
         Busy = true; CvStatus = L("cv.importing");
@@ -2678,15 +2776,27 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand] private void AddCvExperience() => CvExperience.Add(new CvExperienceVm());
-    [RelayCommand] private void RemoveCvExperience(CvExperienceVm? v) { if (v is not null) CvExperience.Remove(v); }
+    [RelayCommand]
+    private async Task RemoveCvExperience(CvExperienceVm? v)
+    {
+        if (v is not null && await Confirm("dlg.removeRow.title", "dlg.removeRow.body", "dlg.remove")) CvExperience.Remove(v);
+    }
     [RelayCommand] private void MoveCvExperienceUp(CvExperienceVm? v) => MoveRow(CvExperience, v, -1);
     [RelayCommand] private void MoveCvExperienceDown(CvExperienceVm? v) => MoveRow(CvExperience, v, +1);
     [RelayCommand] private void AddCvEducation() => CvEducation.Add(new CvEducationVm());
-    [RelayCommand] private void RemoveCvEducation(CvEducationVm? v) { if (v is not null) CvEducation.Remove(v); }
+    [RelayCommand]
+    private async Task RemoveCvEducation(CvEducationVm? v)
+    {
+        if (v is not null && await Confirm("dlg.removeRow.title", "dlg.removeRow.body", "dlg.remove")) CvEducation.Remove(v);
+    }
     [RelayCommand] private void MoveCvEducationUp(CvEducationVm? v) => MoveRow(CvEducation, v, -1);
     [RelayCommand] private void MoveCvEducationDown(CvEducationVm? v) => MoveRow(CvEducation, v, +1);
     [RelayCommand] private void AddCvProject() => CvProjects.Add(new CvProjectVm());
-    [RelayCommand] private void RemoveCvProject(CvProjectVm? v) { if (v is not null) CvProjects.Remove(v); }
+    [RelayCommand]
+    private async Task RemoveCvProject(CvProjectVm? v)
+    {
+        if (v is not null && await Confirm("dlg.removeRow.title", "dlg.removeRow.body", "dlg.remove")) CvProjects.Remove(v);
+    }
     [RelayCommand] private void MoveCvProjectUp(CvProjectVm? v) => MoveRow(CvProjects, v, -1);
     [RelayCommand] private void MoveCvProjectDown(CvProjectVm? v) => MoveRow(CvProjects, v, +1);
 
@@ -2795,8 +2905,9 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private void StopCvChat() => _cvChatCts?.Cancel();
 
     [RelayCommand]
-    private void ClearCvChat()
+    private async Task ClearCvChat()
     {
+        if (!CvChatEmpty && !await Confirm("dlg.clearCvChat.title", "dlg.clearCvChat.body", "dlg.clear")) return;
         _cvChatCts?.Cancel();
         CvChatTranscript.Clear();
         CvChatError = "";

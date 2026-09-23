@@ -18,6 +18,10 @@ public partial class MainWindow : Window
         // bubble handler never sees it — tunneling fires first and e.Handled stops the newline.
         CoachInputBox.AddHandler(KeyDownEvent, OnCoachInputKeyDown, RoutingStrategies.Tunnel);
         CvChatInputBox.AddHandler(KeyDownEvent, OnCvChatInputKeyDown, RoutingStrategies.Tunnel);
+        SizeChanged += (_, _) => FitCoachHeight();
+        // The window is rebuilt on a language switch: drop this window's VM subscription so closed windows don't
+        // keep receiving (and leaking) ScrollToMaxTokens events.
+        Closed += (_, _) => { if (DataContext is MainViewModel v) v.ScrollToMaxTokensRequested -= ScrollToMaxTokens; };
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainViewModel vm)
@@ -27,7 +31,9 @@ public partial class MainWindow : Window
                 vm.ConfirmRemoveAsync = ConfirmRemoveModelAsync;
                 vm.ConfirmLeaveSettingsAsync = ConfirmLeaveSettingsAsync;
                 vm.ConfirmDeleteJobsAsync = ConfirmDeleteJobsAsync;
+                vm.ConfirmAsync = ConfirmActionAsync;
                 vm.ScrollToMaxTokensRequested += ScrollToMaxTokens;
+                FitCoachHeight();
                 vm.CopyToClipboardAsync = async text =>
                 {
                     if (TopLevel.GetTopLevel(this)?.Clipboard is { } cb) await cb.SetTextAsync(text);
@@ -181,6 +187,30 @@ public partial class MainWindow : Window
         }, DispatcherPriority.Background);
 
     /// <summary>Confirmation before deleting all saved jobs (destructive, clears the cache).</summary>
+    /// <summary>Generic confirmation for destructive actions (clear conversation/history, remove a CV entry…).
+    /// Cancel is the default button so a stray Enter never deletes anything.</summary>
+    private async Task<bool> ConfirmActionAsync(string title, string body, string primary)
+    {
+        var dlg = new ContentDialog
+        {
+            Title = title,
+            Content = body,
+            PrimaryButtonText = primary,
+            CloseButtonText = JobRadar.Loc.Instance.T("dlg.cancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        return await dlg.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    /// <summary>The Coach transcript fills the window instead of a fixed 460px box, so the input stays near the
+    /// bottom and long answers need less scrolling. Recomputed on resize (zoom-aware).</summary>
+    private void FitCoachHeight()
+    {
+        if (CoachScroll is null) return;
+        double zoom = DataContext is MainViewModel vm && vm.Zoom > 0 ? vm.Zoom : 1;
+        CoachScroll.MaxHeight = Math.Max(260, Bounds.Height / zoom - 330);
+    }
+
     private async Task<bool> ConfirmDeleteJobsAsync()
     {
         var dlg = new ContentDialog
