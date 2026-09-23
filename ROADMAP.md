@@ -84,7 +84,7 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   the user's own engine extracts the listings into `linkedin-jobs.json` — merged, deduped and scored like any
   other source. Nothing is automated against the account, and the import card over-explains exactly that
   (optional, 100% manual, extraction runs locally). Honest caveat: copied text carries no links, so imported
-  jobs may have no clickable URL. A Playwright-assisted pass (the user logs in) remains a future idea.
+  jobs may have no clickable URL. (The automated option is now **LinkedIn (browser)** — see below.)
 - **Per-job company briefing cached 7 days** — the in-card employer analysis now persists (machine-local)
   and survives restarts/new searches; the button flips to "research again" for an explicit refresh, the card
   shows the "as of" date, and a cancelled/failed re-research restores the previous briefing. The salary
@@ -109,6 +109,21 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   it with an **undo stack** and a "changes applied — sections" note, facts are never invented — plus a
   **"tune for this job" action** that tailors summary/bullets/skills to any scored job's full posting text
   (the tailored company lands in the PDF filename). CV data + assistant transcript are machine-local.
+- **LinkedIn (browser) via Playwright** *(v0.10.0)* — an opt-in source that drives the user's installed
+  Edge/Chrome and reads LinkedIn's **public** job pages (no login, the account is never touched): the profile's
+  titles × location, paged, human-paced with jitter, optional per-job descriptions, canonical job URLs so the
+  dedupe applies, and an automatic stop on rate-limit/authwall. The Playwright component is **installed from
+  Settings on demand** (Node from nodejs.org + playwright-core from npm, checksum-verified; the build ships no
+  driver), with Test/Remove buttons and an options area (max per title, titles, posted window, pace,
+  descriptions, visible browser). A ToS warning stays on the card.
+- **Quality pass (Sept 2026 audit)** *(v0.10.0)* — a full audit, tracked item by item in
+  `docs/AUDITORIA-2026-09.md`: honest AI-score retries (no fake "AI" scores), bracket-aware profile lists,
+  atomic writes + quarantine of corrupt files, salary-range parsing; one type scale, one control height and the
+  brand accent everywhere; localized labels, one glossary and accessible names; engine status on Home, one
+  primary action per page, sectioned Settings and confirmations; lean Claude CLI calls (~28k → 2.6k tokens of
+  context), `is_error` honoured and real cancel; canonical job identity with DB dedupe (no double-listed jobs);
+  a busy counter and no lost CV edits; safe CSV export, cross-platform PDF and a stricter location filter. A
+  test project now covers it (76 tests).
 
 ---
 
@@ -152,12 +167,11 @@ Data Labs / Crunchbase) for users who want hard data instead of best-effort snip
 
 ## 💡 Backlog / ideas
 
-- **Premium UI polish** — *(first surgical pass shipped: motion, hero, error/empty states, icons — see
-  Shipped)*. Remaining: normalize typography/spacing/radii to the token scale (the half-point font sweep),
-  virtualize the jobs/companies lists (ItemsControl → virtualizing list), and richer loading states.
-- **LinkedIn aggregation** — *(paste + AI import shipped — see Shipped)*. Remaining idea: a
-  Playwright-assisted pass where the **user logs in** and the app pulls the results best-effort — opt-in and
-  clearly explained, given LinkedIn's bot defenses and the account-restriction risk.
+- **Premium UI polish** — *(motion, hero, error/empty states, icons, and the type/spacing/height token
+  scale shipped — see Shipped)*. Remaining: virtualize the jobs/companies lists (ItemsControl → virtualizing
+  list) and richer loading states.
+- **LinkedIn aggregation** — *(paste + AI import and the no-login Playwright source shipped — see Shipped)*.
+  Remaining idea: an optional logged-in pass for results the public pages don't show — only if users ask.
 - **Deeper company research** — *(promoted to "Company Researcher", Planned #4)*. Remaining sub-idea: optional
   use of the **Claude CLI's native web search** to ground the extracted signals more richly.
 - More job sources (Careerjet, Jooble) behind the existing pluggable `Source` interface.

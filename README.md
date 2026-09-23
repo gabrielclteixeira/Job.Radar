@@ -64,8 +64,11 @@ the **Claude CLI** or point it at a local model in **Definições** (without one
 - 🌐 **Bilingual (PT/EN)** — the whole UI and the AI-generated text are localized; auto-detects the OS
   language and switches live from **Definições / Settings**.
 - 📄 **CV PDF + export** — generate a styled one-page CV from your profile; export results to CSV / HTML / PDF.
-- 🔗 **More sources** — open a pre-filled LinkedIn Jobs search; an optional (paid, opt-in) **Apify** LinkedIn
-  connector with one-click token validation and cost warnings; and an optional free **JSearch** job source
+- 🔗 **More sources** — **LinkedIn (browser)**: an opt-in source that drives your installed Edge/Chrome with
+  Playwright to read LinkedIn's *public* job pages (no login — your account is never used), paced and capped,
+  with the descriptions; the Playwright component is **installed from Settings on demand** (~40 MB, verified
+  downloads) so the installer stays small. Plus a pre-filled LinkedIn Jobs search, paste + AI import, an
+  optional (paid, opt-in) **Apify** LinkedIn connector, and an optional free **JSearch** job source
   (Google-for-Jobs aggregator) via **OpenWeb Ninja** or **RapidAPI**.
 - 🧭 **Reliable, key-free web search** — company research and the career plan search the web through
   **Jina Reader** (renders the results server-side, so it isn't blocked like a raw scrape) — no key, no setup.
@@ -109,7 +112,8 @@ workers-feeding-a-core split. The LLM backend is pluggable; web search powers th
 ## Tech
 
 .NET 10 · Avalonia 11 + FluentAvalonia (MVVM, dark/light tokens) · Go 1.23 · EF Core + SQLite · PdfPig ·
-Markdown.Avalonia · Claude CLI / OpenAI-compatible local models · Edge headless (PDF)
+Markdown.Avalonia · Claude CLI / OpenAI-compatible local models · Edge headless (PDF) · Playwright (optional
+LinkedIn source, installed on demand)
 
 ## Run
 
@@ -132,9 +136,15 @@ keyword scoring and a manual profile.
 - **LinkedIn via Apify** (optional, **paid**) — enable in **Definições**, paste your Apify token and use
   **“Testar / procurar”** (validates free + auto-fills the actor dropdown). The app warns about cost and
   confirms before each Apify-backed search.
+- **LinkedIn (browser)** (optional, free) — in **Definições → LinkedIn (browser)**: install the component, hit
+  **“Testar agora”**, then turn it on. Options: max jobs per title, how many profile titles, posted window
+  (24 h / week / month), pace (~2/4/8 s between requests), read descriptions, show the browser. It reads public
+  pages only and stops on its own if LinkedIn rate-limits — but LinkedIn's terms don't allow automated
+  collection, so it's off by default and you use it at your own risk.
 
 Machine-local settings and secrets stay out of git (`appsettings.local.json`, `profile.json`,
-`llm-settings.json`, `ui-settings.json`, `apify-settings.json`, `jsearch-settings.json`, `career-plan.json`).
+`llm-settings.json`, `ui-settings.json`, `apify-settings.json`, `jsearch-settings.json`,
+`linkedin-browser-settings.json`, `career-plan.json`).
 
 ### Local models (no Claude subscription)
 Point `provider` at `openai` and a local runtime — e.g. **LM Studio** (`http://localhost:1234/v1`) or
@@ -143,13 +153,14 @@ Point `provider` at `openai` and a local runtime — e.g. **LM Studio** (`http:/
 ## Limitations
 
 - Scanned/image-only PDFs have no extractable text → fill the profile manually.
-- LinkedIn isn't scraped directly (ToS); use the browser shortcut or the opt-in Apify connector.
+- The LinkedIn (browser) source depends on LinkedIn's public page markup — if LinkedIn changes it, the source
+  returns 0 jobs (no crash) until the parser is updated.
 - Demo mode uses a static sample to showcase the UI without spending tokens.
 
 ## Roadmap
 
-Next up: a **CV Studio** (refine the CV, import from LinkedIn/GitHub), a local-model manager, saved searches
-with alerts, and one-click installers. See [`ROADMAP.md`](ROADMAP.md).
+Next up: deepen the CV Studio and Evoluir, pause/resume classification, a fuller Company Researcher, saved
+searches with alerts, and signed installers with auto-update. See [`ROADMAP.md`](ROADMAP.md).
 
 ## License
 
