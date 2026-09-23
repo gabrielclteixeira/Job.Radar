@@ -46,9 +46,9 @@ Cada item tem um ID estável para ser referido em commits e conversas. Atualiza 
 
 | B | Claude CLI / camada LLM | ✅ B1–B3 feitos (B4 pendente), por commitar | `sessao/2026-09-23-integridade-dados` |
 
-| C | Estado e concorrência na UI | ⏳ (C1 e C8 feitos no U3) | — |
+| C | Estado e concorrência na UI | ⏳ (C1, C8 no U3 · C3 no S) | — |
 
-| S | Serviços externos | ⏳ | — |
+| S | Serviços externos | ✅ S2, S3 feitos · S1 (Ollama) adiado, por commitar | `sessao/2026-09-23-integridade-dados` |
 
 | P | Pequenos acertos | ⏳ | — |
 
@@ -648,7 +648,7 @@ Proposta de mensagem: `feat(ux): engine status, one primary action per page, sec
 
 - **C2** A flag `Busy` é partilhada e não reentrante: importar um CV durante uma pesquisa volta a ativar o "Reclassificar", que lança um segundo pipeline em paralelo.
 
-- **C3** "Ver vagas" pode duplicar cartões: o Progress e o `Dispatcher.Post` fazem um salto duplo para a thread de UI.
+- ✅ **C3** (feito no lote S) "Ver vagas" duplicava todos os cartões: o Progress e o `Dispatcher.Post` faziam um salto duplo para a thread de UI.
 
 - **C4** CV Studio: a resposta do assistente sobrepõe o que escreveste durante a chamada, e não há gravação ao fechar a janela.
 
@@ -662,19 +662,35 @@ Proposta de mensagem: `feat(ux): engine status, one primary action per page, sec
 
 
 
-## Lote S: serviços externos ⏳ *(verificado ao vivo em 2026-09-23)*
+## Lote S: serviços externos ✅ (S2, S3) · S1 adiado
 
+**Branch:** `sessao/2026-09-23-integridade-dados`. Proposta de mensagem: `fix(sources): canonical job identity + DB dedupe, one Remotive call, no double-listed jobs (S2, S3, C3)`.
 
+**Verificação:**
+- Build limpo e 58 testes, 9 deles novos em `JobKeysTests`, com URLs reais da BD.
+- Numa cópia da BD real, pelo caminho `LoadCachedAsync`: **1640 → 1508 linhas**, **269 → 203 relevantes**. Wolters Kluwer ficou com 1 linha (antes 3, que no ecrã eram 6). Deloitte ficou com 2 (Porto e Braga, legítimas).
+- No ecrã, a página Vagas mostra "203 de 203", sem cartões repetidos. Antes mostrava "537 de 537", com cada vaga duas vezes.
+- Fetcher Go recompilado (`fetcher.exe` na raiz) e executado: um só pedido ao Remotive, 396 vagas únicas.
 
-- **S1 O browser de modelos Ollama está partido.** O ollama.com removeu os atributos `x-test-*`, por isso a pesquisa devolve 0 resultados. Agora os cartões são `<li>` > `a[href=/library/…]`, com capacidades em spans da classe indigo e tamanhos em spans da classe blue (`ModelRegistry.cs`).
+### S1 · Browser de modelos do Ollama ⏸ adiado
+- Continua partido: o ollama.com removeu os atributos `x-test-*`. Fica fora porque o utilizador pediu para não investir no LLM local (2026-09-23). O seletor para quando for retomado está no lote S original: `<li>` > `a[href=/library/…]`, spans indigo para capacidades e blue para tamanhos.
 
-- **S2 A API do Remotive ignora `search`.** Devolve sempre as mesmas 18 vagas, por isso as queries por título são pedidos repetidos. Fazer um só pedido e filtrar localmente.
+### S2 · Remotive: um só pedido ✅ *verificado ao vivo*
+- A API pública ignora `search`, `category` e `limit`, e devolve sempre as ~19 vagas mais recentes.
+- O fetcher fazia um pedido por título de pesquisa, com o mesmo resultado. Agora faz um único pedido por execução, e a relevância é decidida pelo filtro do perfil.
+- **Limitação real:** o Remotive gratuito só dá cerca de 19 vagas por pesquisa.
 
-- **S3 Vagas duplicadas do LinkedIn.** A mesma vaga aparece com URLs diferentes (a Wolters Kluwer aparece 6 vezes). Normalizar a chave de dedupe tirando a query string e o tracking.
+### S3 · Identidade das vagas e dedupe ✅ *verificado*
+- **Causa.** A chave de dedupe era o URL completo. O LinkedIn acrescenta `position=…&refId=…`, diferentes em cada pesquisa, por isso a mesma vaga voltava a ser inserida a cada execução. As republicações com outro ID eram a outra metade do ruído.
+- **Correção** (`JobKeys`, novo):
+  - `CanonicalUrl`: no LinkedIn fica `linkedin.com/jobs/view/<id>`; nos outros sites saem os parâmetros de tracking (utm, ref, position…) e ficam os que identificam a vaga (ex.: `gh_jid` do Greenhouse).
+  - `FuzzyKey`: título + empresa + cidade. "Porto, Porto, Portugal" e "Porto, Portugal (Híbrido)" contam como a mesma cidade; Porto e Braga continuam diferentes.
+  - Ao inserir, uma vaga já existente com outro URL é ignorada e o log mostra "N vagas repetidas ignoradas".
+  - Ao abrir a BD, os duplicados antigos são removidos. Fica a linha em que o utilizador mexeu (status), depois a pontuada com o score mais alto, depois a de descrição mais completa, depois a mais recente.
 
-- **Ainda funcionam:** Arbeitnow, RemoteOK, Greenhouse, Jina Reader, API do Hugging Face, envelope `result` do Claude CLI 2.1.x. O Go 1.23.4 compila.
-
-
+### C3 · Cada vaga aparecia duas vezes na lista ✅ *verificado no ecrã*
+- **Causa.** O `Progress` já entrega os eventos na thread da UI, e cada evento fazia ainda um segundo `Dispatcher.Post`. Assim, os `AddStreamed` corriam depois do `FinalizeResults`, que já tinha montado a lista a partir do resultado, e cada vaga entrava duas vezes.
+- **Correção.** O `Progress` passou a chamar `AddStreamed` diretamente (em 4 sítios), e o `AddStreamed` ignora vagas que já estão na lista (mesma linha ou mesma chave).
 
 ## Lote P: pequenos acertos ⏳
 

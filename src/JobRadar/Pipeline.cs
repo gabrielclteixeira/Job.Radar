@@ -81,6 +81,15 @@ public static class Pipeline
         await db.Database.EnsureCreatedAsync(ct);
         await db.Database.ExecuteSqlRawAsync(
             "UPDATE Jobs SET AiScore = NULL, AiVerdict = NULL WHERE AiScore IS NOT NULL AND AiReasons IS NULL", ct);
+
+        // Remove duplicates stored before JobKeys existed (same posting under tracking-varied URLs or a repost).
+        var dupes = JobKeys.Duplicates(await db.Jobs.ToListAsync(ct));
+        if (dupes.Count > 0)
+        {
+            db.Jobs.RemoveRange(dupes);
+            await db.SaveChangesAsync(ct);
+            Diag.Info($"removed {dupes.Count} duplicate job rows");
+        }
         return db;
     }
 
@@ -195,7 +204,8 @@ public static class Pipeline
         // change (new stack, location, deal-breakers) or a filter fix never reached old rows: irrelevant jobs kept
         // showing and newly-relevant ones stayed hidden. Keyword-only and cheap; AI scores are left untouched.
         int reevaluated = 0;
-        foreach (var e in await db.Jobs.ToListAsync(ct))
+        var stored = await db.Jobs.ToListAsync(ct);
+        foreach (var e in stored)
         {
             ct.ThrowIfCancellationRequested();
             e.SalaryAnnualEur = null; e.SalaryText = "";
@@ -211,13 +221,18 @@ public static class Pipeline
         // at the end — so two raw jobs sharing a key (same URL across sources, or Himalayas pagination overlap)
         // would both be added and then violate the unique Key index. Track keys added this run.
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        // Same posting under another id/URL (reposts, tracking-varied links): title + company + city.
+        var seenPostings = new HashSet<string>(stored.Select(j => JobKeys.FuzzyKey(j.Title, j.Company, j.Location)), StringComparer.Ordinal);
+        int skippedDupes = 0;
         foreach (var r in raw)
         {
             ct.ThrowIfCancellationRequested();
-            string key = (string.IsNullOrWhiteSpace(r.Url) ? $"{r.Title}|{r.Company}" : r.Url).Trim().ToLowerInvariant();
+            string key = JobKeys.StorageKey(r.Url, r.Title, r.Company);
             if (string.IsNullOrWhiteSpace(key) || key == "|") continue;   // nothing to dedupe/identify on
             if (!seenKeys.Add(key)) continue;                              // duplicate within this batch
             if (await db.Jobs.AnyAsync(x => x.Key == key, ct)) continue;   // already persisted from a prior run
+            if (!seenPostings.Add(JobKeys.FuzzyKey(TextClean.Clean(r.Title), TextClean.Clean(r.Company), TextClean.Clean(r.Location))))
+            { skippedDupes++; continue; }                                  // a repost / same job, other URL
 
             var e = new JobEntity
             {
@@ -242,6 +257,7 @@ public static class Pipeline
         }
         await db.SaveChangesAsync(ct);
         L(Loc.Instance.F("pipe.addedRelevant", added, await db.Jobs.CountAsync(j => j.Relevant, ct)));
+        if (skippedDupes > 0) L(Loc.Instance.F("pipe.dupesSkipped", skippedDupes));
 
         // 2) Decide what to score. In AI mode, only the top unscored candidates go to Claude;
         //    everything already classified is remembered from the DB (no re-scoring, no cost).

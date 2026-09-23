@@ -327,7 +327,7 @@ public partial class MainViewModel : ObservableObject
         MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
         _scoreCts = new CancellationTokenSource();
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
-        var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
+        var jobProg = new Progress<JobEntity>(AddStreamed);
         try
         {
             var result = await Pipeline.ScoreRemainingAsync(_profile, _cfg, _root, logProg, jobProg, _scoreCts.Token);
@@ -1463,7 +1463,7 @@ public partial class MainViewModel : ObservableObject
         ScoringStatus = L("scoring.loadingSaved"); MinScore = 0; IsScoring = true; Paused = false;
         ShowOnly(results: true); Busy = true;
         _scoreCts = new CancellationTokenSource();
-        var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
+        var jobProg = new Progress<JobEntity>(AddStreamed);
         try
         {
             var result = await Pipeline.LoadCachedAsync(_cfg, _root, jobProg, _scoreCts.Token);
@@ -1501,7 +1501,7 @@ public partial class MainViewModel : ObservableObject
         MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); Busy = true;
         _scoreCts = new CancellationTokenSource();
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
-        var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
+        var jobProg = new Progress<JobEntity>(AddStreamed);
         try
         {
             var result = await Pipeline.RescoreAsync(_profile, _cfg, _root, logProg, jobProg, _scoreCts.Token);
@@ -1734,7 +1734,7 @@ public partial class MainViewModel : ObservableObject
         _scoreCts = new CancellationTokenSource();
 
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
-        var jobProg = new Progress<JobEntity>(j => Dispatcher.UIThread.Post(() => AddStreamed(j)));
+        var jobProg = new Progress<JobEntity>(AddStreamed);
         try
         {
             var result = await Pipeline.RunAsync(
@@ -1969,6 +1969,9 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Inserts one streamed job into the ranked lists (descending by score).</summary>
     private void AddStreamed(JobEntity j)
     {
+        // A job already in the list (same row or same key) is never added twice. FinalizeResults can build the list
+        // before late stream callbacks arrive; without this guard every job showed up twice ("537 of 537" for 269).
+        if (_all.Any(x => ReferenceEquals(x.Entity, j) || (j.Key.Length > 0 && x.Entity.Key == j.Key))) return;
         var vm = NewJobVm(j);
         int idx = _all.FindIndex(x => x.Score < vm.Score);
         if (idx < 0) _all.Add(vm); else _all.Insert(idx, vm);

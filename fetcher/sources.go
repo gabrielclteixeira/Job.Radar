@@ -83,7 +83,10 @@ type remotiveSource struct{ query string }
 
 func (s remotiveSource) Name() string { return "remotive" }
 func (s remotiveSource) Fetch(ctx context.Context, c *http.Client) ([]Job, error) {
-	u := "https://remotive.com/api/remote-jobs?limit=80&search=" + url.QueryEscape(s.query)
+	u := "https://remotive.com/api/remote-jobs?limit=100"
+	if s.query != "" {
+		u += "&search=" + url.QueryEscape(s.query)
+	}
 	var out struct {
 		Jobs []struct {
 			Title           string `json:"title"`
@@ -310,10 +313,13 @@ func (s leverSource) Fetch(ctx context.Context, c *http.Client) ([]Job, error) {
 // buildSources expands the config into concrete Source instances.
 func buildSources(cfg Config) []Source {
 	var srcs []Source
+	// Remotive's public API ignores ?search= (and category/limit): every call returns the same ~20 latest
+	// jobs, so one request per run gives the same data as one per query without the duplicate calls.
+	// Relevance is decided later by the profile filter.
+	if cfg.Remotive {
+		srcs = append(srcs, remotiveSource{})
+	}
 	for _, q := range cfg.Queries {
-		if cfg.Remotive {
-			srcs = append(srcs, remotiveSource{query: q})
-		}
 		if cfg.Adzuna.AppID != "" && cfg.Adzuna.AppKey != "" {
 			srcs = append(srcs, adzunaSource{
 				appID: cfg.Adzuna.AppID, appKey: cfg.Adzuna.AppKey,
