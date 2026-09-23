@@ -91,13 +91,13 @@ public static class CvStore
             Normalize(doc);
             return doc;
         }
-        catch { return null; }   // corrupt file → treated as "no CV yet"
+        catch (Exception ex) { SafeFile.Quarantine(path, ex); return null; } // corrupt → set aside, never overwritten
     }
 
     public static void Save(string? path, CvDocument doc)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        try { File.WriteAllText(path, JsonSerializer.Serialize(doc, J)); }
+        try { SafeFile.WriteAllText(path, JsonSerializer.Serialize(doc, J)); }
         catch { /* best-effort */ }
     }
 

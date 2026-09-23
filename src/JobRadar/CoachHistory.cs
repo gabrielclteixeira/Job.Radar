@@ -30,14 +30,14 @@ public static class CoachHistory
             foreach (var (k, v) in raw)
                 if (v is { Count: > 0 }) map[k] = v;
         }
-        catch { /* ignore a bad history file */ }
+        catch (Exception ex) { SafeFile.Quarantine(path, ex); } // set aside so the next save can't erase it
         return map;
     }
 
     public static void Save(string? path, Dictionary<string, List<CoachStoredMessage>> map)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        try { File.WriteAllText(path, JsonSerializer.Serialize(map, J)); }
+        try { SafeFile.WriteAllText(path, JsonSerializer.Serialize(map, J)); }
         catch { /* best-effort */ }
     }
 }

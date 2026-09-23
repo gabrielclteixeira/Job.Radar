@@ -51,10 +51,9 @@ public sealed class JobMarketSignal
     {
         string s = (skill ?? "").Trim().ToLowerInvariant();
         if (s.Length == 0) return 0;
-        bool titleOnly = TitleOnly(s);
         int n = 0;
         foreach (var (full, title) in _hay)
-            if (ProfileFilter.WordIn(titleOnly ? title : full, s)) n++;
+            if (ProfileFilter.SkillIn(full, title, s)) n++;
         return n;
     }
 
@@ -81,9 +80,6 @@ public sealed class JobMarketSignal
         }
         return sb.ToString();
     }
-
-    private static bool TitleOnly(string skillLower)
-        => skillLower.Length < 3 && !skillLower.Contains('#') && !skillLower.Contains('.') && !skillLower.Contains('+');
 
     private static string Trunc(string? s, int n)
     {
@@ -118,11 +114,9 @@ public static class JobMarket
         var demand = new List<SkillStat>();
         foreach (var s in allSkills)
         {
-            string sl = s.ToLowerInvariant();
-            bool titleOnly = sl.Length < 3 && !sl.Contains('#') && !sl.Contains('.') && !sl.Contains('+');
             int c = 0;
             foreach (var (full, title) in hay)
-                if (ProfileFilter.WordIn(titleOnly ? title : full, sl)) c++;
+                if (ProfileFilter.SkillIn(full, title, s)) c++;
             if (c > 0) demand.Add(new SkillStat(s, c, (double)c / strong.Count, core.Contains(s)));
         }
         demand = demand.OrderByDescending(d => d.Count).ThenByDescending(d => d.IsCore)

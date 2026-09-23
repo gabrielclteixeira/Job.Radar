@@ -30,6 +30,11 @@ public static class LlmClient
         return s.Length > 200 ? s[..200] + "…" : s;
     }
 
+    /// <summary>True when <paramref name="cfg"/> routes to the OpenAI-compatible (local) path. The one definition of
+    /// the provider aliases — checking only "openai" elsewhere mislabelled "local"/"http" as the Claude CLI.</summary>
+    public static bool IsLocal(ClaudeConfig cfg)
+        => (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http";
+
     public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, CancellationToken ct = default, bool json = false)
         => (cfg.Provider?.Trim().ToLowerInvariant()) switch
         {

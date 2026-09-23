@@ -95,8 +95,8 @@ public static class JSearchClient
                     FrontLoad(it, Str(it, "job_description")),
                     "jsearch",
                     Str(it, "job_posting_date", "job_posted_at_datetime_utc"),
-                    Num(it, "job_min_salary"),
-                    Num(it, "job_max_salary"),
+                    Num(it, "job_min_salary") * AnnualFactor(it),
+                    Num(it, "job_max_salary") * AnnualFactor(it),
                     Str(it, "job_salary_currency") is { Length: > 0 } cur ? cur : (HasSalary(it) ? "USD" : "")));
             }
             log?.Report(Loc.Instance.F("jsearch.count", jobs.Count));
@@ -130,6 +130,16 @@ public static class JSearchClient
 
     private static string JoinArr(JsonElement a)
         => string.Join("; ", a.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()));
+
+    /// <summary>JSearch salaries come per <c>job_salary_period</c> (YEAR/MONTH/HOUR/...). Annualizes the unambiguous
+    /// ones; hourly/daily/weekly rates (contract work, no reliable annual equivalent) yield 0 = "no salary" instead
+    /// of a "$25–35" rate being read as a €30/yr salary and penalized as below the floor.</summary>
+    private static double AnnualFactor(JsonElement e) => Str(e, "job_salary_period").ToUpperInvariant() switch
+    {
+        "" or "YEAR" or "YEARLY" or "ANNUAL" => 1,
+        "MONTH" or "MONTHLY" => 12,
+        _ => 0,
+    };
 
     private static bool HasSalary(JsonElement e) => Num(e, "job_min_salary") > 0 || Num(e, "job_max_salary") > 0;
 

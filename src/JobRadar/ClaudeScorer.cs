@@ -67,40 +67,69 @@ The candidate's salary floor is €{_floorEur:N0}/yr and target is €{_targetEu
 
     private static string Trunc(string s, int n) => s.Length > n ? s[..n] : s;
 
-    /// <summary>Parses the JSON array of per-job scores into <paramref name="results"/>, mapping each object by
-    /// its "i" field (falling back to position). Missing/garbled entries stay null. Tolerates a loosened parse
-    /// and a single-object reply for a batch of one.</summary>
-    private static void ParseBatch(string raw, AiResult?[] results)
+    /// <summary>Parses the model's per-job scores into <paramref name="results"/>, mapping each object by its "i"
+    /// field (falling back to position). Missing/garbled entries stay null. Tolerant of: a loosened parse (bare
+    /// keys), a single bare object for a batch of one, a 0-based "i", and a TRUNCATED reply: when the array doesn't
+    /// parse as a whole, every complete top-level object is still recovered, so a reply cut off inside job 5 keeps
+    /// jobs 1-4 instead of losing the whole batch.</summary>
+    internal static void ParseBatch(string raw, AiResult?[] results)
     {
-        int a = raw.IndexOf('['), b = raw.LastIndexOf(']');
-        string block = (a >= 0 && b > a) ? raw.Substring(a, b - a + 1) : "";
-        var doc = TryDoc(block) ?? TryDoc(LoosenJson(block));
-        if (doc is not null && doc.RootElement.ValueKind == JsonValueKind.Array)
+        var elements = new List<JsonElement>();
+        var docs = new List<JsonDocument>();
+        try
         {
-            using (doc)
+            int a = raw.IndexOf('['), b = raw.LastIndexOf(']');
+            string block = (a >= 0 && b > a) ? raw.Substring(a, b - a + 1) : "";
+            var doc = TryDoc(block) ?? TryDoc(LoosenJson(block));
+            if (doc is not null && doc.RootElement.ValueKind == JsonValueKind.Array)
             {
-                int idx = 0;
-                foreach (var el in doc.RootElement.EnumerateArray())
+                docs.Add(doc);
+                elements.AddRange(doc.RootElement.EnumerateArray().Where(e => e.ValueKind == JsonValueKind.Object));
+            }
+            else
+            {
+                doc?.Dispose();
+                foreach (var obj in TopLevelObjects(a >= 0 ? raw[(a + 1)..] : raw))
                 {
-                    int slot = el.TryGetProperty("i", out var ie) && ie.TryGetInt32(out var iv) ? iv - 1 : idx;
-                    idx++;
-                    if (slot >= 0 && slot < results.Length) results[slot] = ReadOne(el);
+                    var od = TryDoc(obj) ?? TryDoc(LoosenJson(obj));
+                    if (od is null) continue;
+                    docs.Add(od);
+                    if (od.RootElement.ValueKind == JsonValueKind.Object) elements.Add(od.RootElement);
                 }
             }
-            return;
-        }
-        doc?.Dispose();
 
-        // Fallback: a batch of one the model returned as a bare object instead of an array.
-        if (results.Length == 1)
-        {
-            int oa = raw.IndexOf('{'), ob = raw.LastIndexOf('}');
-            if (oa >= 0 && ob > oa)
+            // The prompt says "i" is 1-based; a local model counting from 0 would otherwise shift every score onto
+            // the wrong job without any error.
+            var ids = elements.Select(e => e.TryGetProperty("i", out var ie) && ie.TryGetInt32(out var iv) ? iv : (int?)null).ToList();
+            int offset = ids.Any(i => i == 0) ? 0 : 1;
+            for (int n = 0; n < elements.Count; n++)
             {
-                string one = raw.Substring(oa, ob - oa + 1);
-                var od = TryDoc(one) ?? TryDoc(LoosenJson(one));
-                if (od is not null) { using (od) results[0] = ReadOne(od.RootElement); }
+                int slot = ids[n] is int id ? id - offset : n;
+                if (slot >= 0 && slot < results.Length) results[slot] = ReadOne(elements[n]);
             }
+        }
+        finally { foreach (var d in docs) d.Dispose(); }
+    }
+
+    /// <summary>Yields each balanced top-level {...} object in the text. String-aware, so braces inside quoted
+    /// text don't count; an object cut off by truncation never balances and is skipped.</summary>
+    private static IEnumerable<string> TopLevelObjects(string s)
+    {
+        int depth = 0, start = -1;
+        bool inStr = false, esc = false;
+        for (int i = 0; i < s.Length; i++)
+        {
+            char c = s[i];
+            if (inStr)
+            {
+                if (esc) esc = false;
+                else if (c == '\\') esc = true;
+                else if (c == '"') inStr = false;
+                continue;
+            }
+            if (c == '"') inStr = true;
+            else if (c == '{') { if (depth++ == 0) start = i; }
+            else if (c == '}' && depth > 0 && --depth == 0) yield return s.Substring(start, i - start + 1);
         }
     }
 
@@ -108,8 +137,9 @@ The candidate's salary floor is €{_floorEur:N0}/yr and target is €{_targetEu
     {
         int score = 0;
         if (el.TryGetProperty("score", out var se))
-            score = se.ValueKind == JsonValueKind.Number && se.TryGetInt32(out var sv) ? sv
-                  : se.ValueKind == JsonValueKind.String && int.TryParse(se.GetString(), out var ss) ? ss : 0;
+            score = se.ValueKind == JsonValueKind.Number && se.TryGetDouble(out var sv) ? (int)Math.Round(sv) // 73.5 too
+                  : se.ValueKind == JsonValueKind.String && double.TryParse(se.GetString(), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var ss) ? (int)Math.Round(ss) : 0;
         string verdict = el.TryGetProperty("verdict", out var ve) && ve.ValueKind == JsonValueKind.String ? ve.GetString() ?? "" : "";
         return new AiResult(Math.Clamp(score, 0, 100), verdict, ReadArr(el, "reasons"), ReadArr(el, "redFlags"));
     }
@@ -123,6 +153,7 @@ The candidate's salary floor is €{_floorEur:N0}/yr and target is €{_targetEu
 
     private static string[] ReadArr(JsonElement root, string name)
         => root.TryGetProperty(name, out var e) && e.ValueKind == JsonValueKind.Array
-            ? e.EnumerateArray().Select(x => x.GetString() ?? "").Where(s => s.Length > 0).ToArray()
+            ? e.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String) // a stray number/object must not throw
+                .Select(x => x.GetString() ?? "").Where(s => s.Length > 0).ToArray()
             : Array.Empty<string>();
 }

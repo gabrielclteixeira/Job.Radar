@@ -152,8 +152,7 @@ double-quoted keys/values, shape:
 
     // ===== Split synthesis (local models): build the plan in small parts that complete reliably =====
 
-    private static bool IsLocal(ClaudeConfig cfg)
-        => (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http";
+    private static bool IsLocal(ClaudeConfig cfg) => LlmClient.IsLocal(cfg);
 
     /// <summary>The "already done" section reinjected on a regenerate so the model advances from completed work
     /// instead of listing it again. Empty when nothing is done yet.</summary>
@@ -324,7 +323,7 @@ $@"You are a candid career coach. {coherence}From the research snippets, output 
         try
         {
             c.SavedUtc = DateTime.UtcNow.ToString("o");
-            File.WriteAllText(path, JsonSerializer.Serialize(c, new JsonSerializerOptions { WriteIndented = true }));
+            SafeFile.WriteAllText(path, JsonSerializer.Serialize(c, new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* best-effort */ }
     }
@@ -740,7 +739,7 @@ Write in {lang}.
         if (string.IsNullOrWhiteSpace(path) || snippets.Count == 0) return;
         try
         {
-            File.WriteAllText(path, JsonSerializer.Serialize(
+            SafeFile.WriteAllText(path, JsonSerializer.Serialize(
                 new CareerResearch { SavedUtc = DateTime.UtcNow.ToString("o"), ProfileSig = sig, Snippets = snippets },
                 new JsonSerializerOptions { WriteIndented = true }));
         }

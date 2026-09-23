@@ -58,7 +58,7 @@ public static class LinkedInImport
         int added = 0;
         foreach (var j in jobs)
             if (seen.Add(Key(j))) { existing.Add(j); added++; }
-        File.WriteAllText(path, JsonSerializer.Serialize(existing, J));
+        SafeFile.WriteAllText(path, JsonSerializer.Serialize(existing, J));
         return (added, existing.Count);
     }
 

@@ -27,17 +27,22 @@ public static class Pipeline
     private const int ScoreBatchSize = 5;
 
     /// <summary>Scores <paramref name="toScore"/> in batches, persisting + streaming each result as its batch
-    /// lands. Shared by RunAsync / RescoreAsync / ScoreRemainingAsync. A job the model omits falls back to its
-    /// pre-score. Cancellation is honoured between batches (a batch in flight finishes first).</summary>
+    /// lands. Shared by RunAsync / RescoreAsync / ScoreRemainingAsync. A job the model omits keeps
+    /// <c>AiScore == null</c> (the UI shows its keyword pre-score, labelled KW) so the next run retries it: writing
+    /// the pre-score INTO AiScore used to disguise a failed call as an AI score that was never retried.
+    /// A batch that comes back empty because the engine errored (or two empty batches in a row) stops the loop
+    /// with an exception the UI shows, instead of burning a timeout per remaining batch. Cancellation is
+    /// honoured between batches (a batch in flight finishes first).</summary>
     private static async Task ScoreLoopAsync(RadarDb db, ClaudeScorer scorer, List<JobEntity> toScore,
         IProgress<string>? log, IProgress<JobEntity>? onJob, CancellationToken ct)
     {
-        int done = 0;
+        int done = 0, emptyInARow = 0;
         for (int start = 0; start < toScore.Count; start += ScoreBatchSize)
         {
             ct.ThrowIfCancellationRequested();
             var batch = toScore.GetRange(start, Math.Min(ScoreBatchSize, toScore.Count - start));
             var results = await scorer.ScoreBatchAsync(batch, ct);
+            int got = 0;
             for (int k = 0; k < batch.Count; k++)
             {
                 var j = batch[k];
@@ -47,12 +52,49 @@ public static class Pipeline
                     j.AiScore = res.Score; j.AiVerdict = res.Verdict;
                     j.AiReasons = JsonSerializer.Serialize(res.Reasons);
                     j.AiRedFlags = JsonSerializer.Serialize(res.RedFlags);
+                    got++;
                 }
-                else j.AiScore = j.PreScore;
-                log?.Report($"  [{j.AiScore,3}] {j.Title} @ {j.Company}  ({++done}/{toScore.Count})");
+                string shown = res is null ? $"KW {j.PreScore}" : $"{j.AiScore}";
+                log?.Report($"  [{shown,3}] {j.Title} @ {j.Company}  ({++done}/{toScore.Count})");
             }
             await db.SaveChangesAsync(ct);
             foreach (var j in batch) onJob?.Report(j);
+
+            emptyInARow = got == 0 ? emptyInARow + 1 : 0;
+            string? err = got == 0 ? LlmClient.LastError : null;
+            if (got == 0 && (!string.IsNullOrWhiteSpace(err) || emptyInARow >= 2))
+            {
+                // Show the rest with their keyword score (still unscored, so retried next run), then surface why.
+                foreach (var j in toScore.Skip(start + batch.Count)) onJob?.Report(j);
+                throw new InvalidOperationException(Loc.Instance.F("scoring.aborted",
+                    string.IsNullOrWhiteSpace(err) ? Loc.Instance.T("llm.empty") : err));
+            }
+        }
+    }
+
+    /// <summary>Opens the cache DB and repairs rows written by the old failure path (pre-score copied into
+    /// AiScore with no reasons at all; a real AI result always serializes its reasons, even as "[]"), so those
+    /// jobs are scored for real on the next run. Idempotent and cheap.</summary>
+    private static async Task<RadarDb> OpenDbAsync(string dbPath, CancellationToken ct)
+    {
+        var db = new RadarDb(dbPath);
+        await db.Database.EnsureCreatedAsync(ct);
+        await db.Database.ExecuteSqlRawAsync(
+            "UPDATE Jobs SET AiScore = NULL, AiVerdict = NULL WHERE AiScore IS NOT NULL AND AiReasons IS NULL", ct);
+        return db;
+    }
+
+    /// <summary>Reads a JSON list of jobs, tolerating a truncated/corrupt file (logged, treated as empty) so one
+    /// bad file can't block every search until it's deleted by hand.</summary>
+    private static List<T> ReadJobsFile<T>(string path, IProgress<string>? log)
+    {
+        if (!File.Exists(path)) return new();
+        try { return JsonSerializer.Deserialize<List<T>>(File.ReadAllText(path), J) ?? new(); }
+        catch (Exception ex)
+        {
+            Diag.Error($"unreadable jobs file ignored: {Path.GetFileName(path)}", ex);
+            log?.Report(Loc.Instance.F("pipe.badFile", Path.GetFileName(path)));
+            return new();
         }
     }
 
@@ -93,16 +135,14 @@ public static class Pipeline
         L(Loc.Instance.T("pipe.fetching"));
         string rawPath = R(cfg.RawJobsPath);
         await FetcherRunner.EnsureJobsAsync(root, cfgPath, rawPath, log, ct);
-        var raw = File.Exists(rawPath)
-            ? JsonSerializer.Deserialize<List<RawJob>>(File.ReadAllText(rawPath), J) ?? new()
-            : new();
+        var raw = ReadJobsFile<RawJob>(rawPath, log);
         L(Loc.Instance.F("pipe.collected", raw.Count));
 
         // Optional manual LinkedIn pass.
         string liPath = R(cfg.LinkedInJobsPath);
         if (File.Exists(liPath))
         {
-            var li = JsonSerializer.Deserialize<List<LinkedInJob>>(File.ReadAllText(liPath), J) ?? new();
+            var li = ReadJobsFile<LinkedInJob>(liPath, log);
             foreach (var l in li)
             {
                 string loc = l.Location ?? "";
@@ -138,13 +178,33 @@ public static class Pipeline
         // The SQLite cache has no migrations; if the entity schema changed, recreate it.
         string dbPath = R(cfg.DbPath);
         string marker = dbPath + ".schema";
+        // Only stamp the new schema once the old file is really gone: stamping after a failed (locked) delete
+        // left the old schema under a "current" marker, so every later run failed on missing columns.
         if (File.Exists(dbPath) && (!File.Exists(marker) || File.ReadAllText(marker) != SchemaVersion))
         {
-            try { File.Delete(dbPath); } catch { /* in use — EnsureCreated will surface it */ }
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            foreach (var p in new[] { dbPath, dbPath + "-wal", dbPath + "-shm" })
+                try { if (File.Exists(p)) File.Delete(p); } catch { /* in use — checked below */ }
+            if (File.Exists(dbPath))
+                throw new IOException(Loc.Instance.F("pipe.dbLocked", Path.GetFileName(dbPath)));
         }
-        using var db = new RadarDb(dbPath);
-        await db.Database.EnsureCreatedAsync(ct);
+        using var db = await OpenDbAsync(dbPath, ct);
         try { File.WriteAllText(marker, SchemaVersion); } catch { }
+
+        // Re-evaluate what's already stored: relevance/pre-score/salary were computed once at insert, so a profile
+        // change (new stack, location, deal-breakers) or a filter fix never reached old rows: irrelevant jobs kept
+        // showing and newly-relevant ones stayed hidden. Keyword-only and cheap; AI scores are left untouched.
+        int reevaluated = 0;
+        foreach (var e in await db.Jobs.ToListAsync(ct))
+        {
+            ct.ThrowIfCancellationRequested();
+            e.SalaryAnnualEur = null; e.SalaryText = "";
+            SalaryParser.Apply(e, cfg.Salary);
+            var (rel, pre, expl, bv) = ProfileFilter.Evaluate(e, profile, cfg);
+            if (rel != e.Relevant || pre != e.PreScore) reevaluated++;
+            e.Relevant = rel; e.PreScore = pre; e.PreScoreExplanation = expl; e.BaseVerdict = bv;
+        }
+        if (reevaluated > 0) L(Loc.Instance.F("pipe.reevaluated", reevaluated));
 
         int added = 0;
         // Dedupe within THIS batch too: AnyAsync only sees rows already in the DB, but SaveChanges runs once
@@ -211,7 +271,7 @@ public static class Pipeline
             int floor = profile.SalaryFloorEur > 0 ? profile.SalaryFloorEur : cfg.Salary.FloorEur;
             int target = profile.SalaryTargetEur > 0 ? profile.SalaryTargetEur : cfg.Salary.TargetEur;
             var scorer = new ClaudeScorer(cfg.Claude, profile.ToScoringText(), floor, target);
-            string engine = string.Equals(cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase)
+            string engine = LlmClient.IsLocal(cfg.Claude)
                 ? Loc.Instance.F("engine.local", string.IsNullOrWhiteSpace(cfg.Claude.Model) ? "OpenAI-compatible" : cfg.Claude.Model)
                 : Loc.Instance.T("engine.claude");
             L(Loc.Instance.F("scoring.with", toScore.Count, engine));
@@ -225,7 +285,6 @@ public static class Pipeline
         return new PipelineResult(ranked, added, false);
     }
 
-    /// <summary>Returns the jobs already in the local cache (relevant, ranked) without fetching or scoring.</summary>
     /// <summary>Deletes the cached jobs store (SQLite db + schema marker + WAL/SHM). After this,
     /// "View jobs" shows nothing until a fresh search. Best-effort; pools are flushed so the file unlocks.</summary>
     public static void ClearCache(AppConfig cfg, string root)
@@ -236,6 +295,7 @@ public static class Pipeline
             try { if (File.Exists(p)) File.Delete(p); } catch { /* may be locked — best-effort */ }
     }
 
+    /// <summary>Returns the jobs already in the local cache (relevant, ranked) without fetching or scoring.</summary>
     public static async Task<PipelineResult> LoadCachedAsync(
         AppConfig cfg, string root, IProgress<JobEntity>? onJob = null, CancellationToken ct = default)
     {
@@ -245,8 +305,7 @@ public static class Pipeline
         if (!File.Exists(dbPath) || !File.Exists(marker) || File.ReadAllText(marker) != SchemaVersion)
             return new PipelineResult(new(), 0, false);
 
-        using var db = new RadarDb(dbPath);
-        await db.Database.EnsureCreatedAsync(ct);
+        using var db = await OpenDbAsync(dbPath, ct);
         var ranked = await db.Jobs.Where(j => j.Relevant)
             .OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt)
             .ToListAsync(ct);
@@ -269,8 +328,7 @@ public static class Pipeline
             return new PipelineResult(new(), 0, false);
         }
 
-        using var db = new RadarDb(dbPath);
-        await db.Database.EnsureCreatedAsync(ct);
+        using var db = await OpenDbAsync(dbPath, ct);
         var allRelevant = await db.Jobs.Where(j => j.Relevant)
             .OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt).ToListAsync(ct);
 
@@ -308,8 +366,7 @@ public static class Pipeline
         if (!File.Exists(dbPath) || !File.Exists(marker) || File.ReadAllText(marker) != SchemaVersion)
             return new PipelineResult(new(), 0, false);
 
-        using var db = new RadarDb(dbPath);
-        await db.Database.EnsureCreatedAsync(ct);
+        using var db = await OpenDbAsync(dbPath, ct);
         var allRelevant = await db.Jobs.Where(j => j.Relevant)
             .OrderByDescending(j => j.AiScore ?? j.PreScore).ThenByDescending(j => j.PostedAt).ToListAsync(ct);
 
@@ -352,7 +409,7 @@ public static class Pipeline
             if (root["arbeitnow"] is null) root["arbeitnow"] = true;
             if (root["adzuna"] is null) root["adzuna"] = new JsonObject { ["appId"] = "", ["appKey"] = "", ["country"] = "pt" };
 
-            File.WriteAllText(cfgPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+            SafeFile.WriteAllText(cfgPath, root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
             log?.Report($"Pesquisa: {string.Join(", ", profile.RoleQueries())}");
         }
         catch (Exception ex) { log?.Report($"(aviso) não consegui gerar a config do fetcher: {ex.Message}"); }

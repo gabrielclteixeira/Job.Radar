@@ -34,7 +34,7 @@ public static class CompanyCache
     public static void Save(string? path, Dictionary<string, CompanyReport> map)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        try { File.WriteAllText(path, JsonSerializer.Serialize(map, J)); }
+        try { SafeFile.WriteAllText(path, JsonSerializer.Serialize(map, J)); }
         catch { /* best-effort */ }
     }
 
@@ -75,7 +75,7 @@ public static class BriefCache
     public static void Save(string? path, Dictionary<string, CompanyBrief> map)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
-        try { File.WriteAllText(path, JsonSerializer.Serialize(map, J)); }
+        try { SafeFile.WriteAllText(path, JsonSerializer.Serialize(map, J)); }
         catch { /* best-effort */ }
     }
 

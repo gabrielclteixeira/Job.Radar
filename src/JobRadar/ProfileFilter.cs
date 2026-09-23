@@ -32,11 +32,12 @@ public static class ProfileFilter
         var seniority = SeniorityExcludes(profile.SeniorityTarget, cfg);
         var locations = Lower(profile.Locations);
 
-        // Hard exclusions.
+        // Hard exclusions — whole words: a substring test let "intern" drop "International"/"Internal Tools" and a
+        // "java" deal-breaker drop every JavaScript job.
         foreach (var ex in excludes)
-            if (ex.Length > 1 && hay.Contains(ex)) return (false, 0, "", "");
+            if (ex.Length > 1 && WordIn(hay, ex)) return (false, 0, "", "");
         foreach (var sx in seniority)
-            if (title.Contains(sx)) return (false, 0, "", "");
+            if (WordIn(title, sx)) return (false, 0, "", "");
 
         if (tokens.Count == 0) return (false, 0, "", ""); // no profile yet
 
@@ -46,7 +47,7 @@ public static class ProfileFilter
         // where the real requirements often live. Ambiguous short skills (e.g. "go" — also the English verb)
         // count only in the title; longer/symbol skills (".net", "c#", "docker") count in the description too.
         var matched = tokens.Where(t => WordIn(title, t)).ToList();
-        var stackHits = core.Where(s => s.Length >= 3 || s.Contains('#') || s.Contains('.') ? WordIn(hay, s) : WordIn(title, s)).ToList();
+        var stackHits = core.Where(s => SkillIn(hay, title, s)).ToList();
         if (matched.Count == 0 && stackHits.Count < 2) return (false, 0, "", "");
 
         // Role-specificity: a shared GENERIC word ("engineer"/"developer") with NO core stack anywhere is an
@@ -74,8 +75,8 @@ public static class ProfileFilter
         int score = matched.Count * 5;
         parts.Add($"{matched.Count} termo(s) ({Trunc(string.Join(", ", matched), 60)}) +{matched.Count * 5}");
 
-        var coreHits = core.Where(s => WordIn(hay, s)).ToList();
-        if (coreHits.Count > 0) { score += cfg.StackBonus; parts.Add($"competências-chave ({string.Join(", ", coreHits)}) +{cfg.StackBonus}"); }
+        var coreHits = core.SelectMany(s => SkillTerms(s).Where(t => WordIn(TermScope(t, hay, title), t)).Take(1)).ToList();
+        if (coreHits.Count > 0) { score += cfg.StackBonus; parts.Add($"competências-chave ({Trunc(string.Join(", ", coreHits), 60)}) +{cfg.StackBonus}"); }
         else { score -= cfg.OffStackPenalty; parts.Add($"sem competência-chave −{cfg.OffStackPenalty}"); }
 
         if (isRemote) { score += 12; parts.Add("remoto +12"); }
@@ -142,23 +143,67 @@ public static class ProfileFilter
 
     /// <summary>
     /// True if <paramref name="token"/> occurs in <paramref name="text"/> as a whole word
-    /// (no alphanumeric neighbour). Handles tokens with symbols like "c#"/".net" since the
-    /// boundary test only looks at letters/digits. Prevents "go" matching "good"/"category".
+    /// (no alphanumeric neighbour). Handles tokens with symbols like "c#"/".net": the boundary is only
+    /// enforced on an edge where the token itself is alphanumeric, so ".net" is found inside "asp.net" and
+    /// "c#" inside "c#/.net". Prevents "go" matching "good"/"category".
     /// Shared with <see cref="JobMarket"/> so skill matching is defined in one place.
     /// </summary>
     internal static bool WordIn(string text, string token)
     {
+        if (string.IsNullOrEmpty(token)) return false;
+        bool checkLeft = char.IsLetterOrDigit(token[0]);
+        bool checkRight = char.IsLetterOrDigit(token[^1]);
         int i = 0;
         while ((i = text.IndexOf(token, i, StringComparison.Ordinal)) >= 0)
         {
-            bool leftOk = i == 0 || !char.IsLetterOrDigit(text[i - 1]);
+            bool leftOk = !checkLeft || i == 0 || !char.IsLetterOrDigit(text[i - 1]);
             int end = i + token.Length;
-            bool rightOk = end >= text.Length || !char.IsLetterOrDigit(text[end]);
+            bool rightOk = !checkRight || end >= text.Length || !char.IsLetterOrDigit(text[end]);
             if (leftOk && rightOk) return true;
-            i = end;
+            i++;
         }
         return false;
     }
+
+    /// <summary>True if any alternative of <paramref name="skill"/> (see <see cref="SkillTerms"/>) is in the job.
+    /// Short ambiguous terms ("go", "r") count only in the title; longer or symbol terms anywhere.</summary>
+    internal static bool SkillIn(string hay, string title, string skill)
+        => SkillTerms(skill).Any(t => WordIn(TermScope(t, hay, title), t));
+
+    /// <summary>Where a term may match: short plain words ("go" — also the English verb, "go-to") only in the title.</summary>
+    private static string TermScope(string term, string hay, string title)
+        => term.Length >= 3 || term.Contains('#') || term.Contains('.') || term.Contains('+') ? hay : title;
+
+    /// <summary>
+    /// The concrete terms a (possibly phrase-like) skill stands for, lower-cased. CV-derived core skills are often
+    /// phrases — "C# / .NET (ASP.NET Core, Blazor)", "AI agents &amp; LLM integration (MCP)" — which never occur
+    /// verbatim in a posting, so whole-phrase matching gave almost no stack hits. The phrase is split on
+    /// / , ( ) &amp; ; | into its alternatives ("c#", ".net", "asp.net core", "blazor"); alternatives made only of
+    /// generic words ("integration", "development") are dropped so they can't match every posting.
+    /// </summary>
+    internal static List<string> SkillTerms(string skill)
+    {
+        string s = (skill ?? "").Trim().ToLowerInvariant();
+        var terms = new List<string>();
+        if (s.Length == 0) return terms;
+        foreach (var part in s.Split(new[] { '/', ',', '(', ')', '&', ';', '|' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+        {
+            string t = part.TrimEnd('.', ' ', '-'); // keep a leading dot: ".net"
+            if (t.Length < 2) continue;
+            if (t.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(w => GenericRole.Contains(w) || GenericSkillWord.Contains(w) || Generic.Contains(w))) continue;
+            if (!terms.Contains(t)) terms.Add(t);
+        }
+        if (terms.Count == 0 && s.Length >= 2) terms.Add(s); // all-generic phrase: keep the old whole-phrase behaviour
+        return terms;
+    }
+
+    /// <summary>Words that are too broad to count as a skill on their own once a phrase is split.</summary>
+    private static readonly HashSet<string> GenericSkillWord = new()
+    {
+        "integration", "integrations", "automation", "development", "design", "services", "service", "support",
+        "testing", "solutions", "platforms", "platform", "apps", "applications", "application", "tools",
+        "backend", "frontend", "front-end", "back-end", "full-stack",
+    };
 
     private static List<string> Lower(IEnumerable<string> xs)
         => xs.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim().ToLowerInvariant()).ToList();

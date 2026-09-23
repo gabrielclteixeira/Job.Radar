@@ -60,3 +60,6 @@ score-schema.json
 fetcher/stderr.log
 schema-*.log
 schema-test.json
+# SafeFile: temp file of an interrupted atomic write + unreadable files moved aside (may hold personal data)
+*.tmp
+*.corrupt-*

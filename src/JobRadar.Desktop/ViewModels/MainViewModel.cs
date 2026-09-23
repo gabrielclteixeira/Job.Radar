@@ -238,7 +238,7 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            File.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(
+            SafeFile.WriteAllText(_uiSettingsPath, JsonSerializer.Serialize(
                 new { theme = ThemePref, zoom = Zoom, lang = LangModes[Math.Clamp(LanguageIndex, 0, 2)], critique = CritiqueModeIndex, pdfProgress = IncludeProgressInPdf },
                 new JsonSerializerOptions { WriteIndented = true }));
         }
@@ -607,35 +607,38 @@ public partial class MainViewModel : ObservableObject
             var p = JsonSerializer.Deserialize<CareerPlanResult>(File.ReadAllText(_planPath),
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (p is not null) Plan = p;
-            // Restore the last run's reasoning so the in-app panel + Copy/Save survive a restart.
-            if (File.Exists(_planReasoningPath)) PlanReasoning = File.ReadAllText(_planReasoningPath);
         }
-        catch { /* ignore a bad plan file */ }
+        catch (Exception ex) { SafeFile.Quarantine(_planPath, ex); } // set aside, never overwritten
+        // Restore the last run's reasoning so the in-app panel + Copy/Save survive a restart. Separate try: an
+        // error here must not quarantine career-plan.json.
+        try { if (File.Exists(_planReasoningPath)) PlanReasoning = File.ReadAllText(_planReasoningPath); }
+        catch (Exception ex) { Diag.Error("plan reasoning not restored", ex); }
     }
 
     private void SavePlan()
     {
         if (Plan is null || _isDemoProfile) return; // don't persist a plan built from the sample profile
-        try { File.WriteAllText(_planPath, JsonSerializer.Serialize(Plan, new JsonSerializerOptions { WriteIndented = true })); }
+        try { SafeFile.WriteAllText(_planPath, JsonSerializer.Serialize(Plan, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
-        try { if (!string.IsNullOrWhiteSpace(PlanReasoning)) File.WriteAllText(_planReasoningPath, PlanReasoning); }
+        try { if (!string.IsNullOrWhiteSpace(PlanReasoning)) SafeFile.WriteAllText(_planReasoningPath, PlanReasoning); }
         catch { /* best-effort */ }
     }
 
     // ---- growth history (each regenerate archives the plan it replaced) ----
     private void LoadPlanHistory()
     {
+        List<PlanSnapshot>? list;
         try
         {
             if (!File.Exists(_planHistoryPath)) return;
-            var list = JsonSerializer.Deserialize<List<PlanSnapshot>>(File.ReadAllText(_planHistoryPath),
+            list = JsonSerializer.Deserialize<List<PlanSnapshot>>(File.ReadAllText(_planHistoryPath),
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            if (list is null) return;
-            _planHistoryStore.Clear();
-            _planHistoryStore.AddRange(list);
-            RefreshPlanHistory();
         }
-        catch { /* ignore a bad history file */ }
+        catch (Exception ex) { SafeFile.Quarantine(_planHistoryPath, ex); return; } // only a parse failure sets it aside
+        if (list is null) return;
+        _planHistoryStore.Clear();
+        _planHistoryStore.AddRange(list);
+        RefreshPlanHistory();
     }
 
     private void ArchiveSnapshot(PlanSnapshot snap)
@@ -644,7 +647,7 @@ public partial class MainViewModel : ObservableObject
         _planHistoryStore.Insert(0, snap);   // newest first
         if (_planHistoryStore.Count > PlanHistoryCap) _planHistoryStore.RemoveRange(PlanHistoryCap, _planHistoryStore.Count - PlanHistoryCap);
         RefreshPlanHistory();
-        try { File.WriteAllText(_planHistoryPath, JsonSerializer.Serialize(_planHistoryStore, new JsonSerializerOptions { WriteIndented = true })); }
+        try { SafeFile.WriteAllText(_planHistoryPath, JsonSerializer.Serialize(_planHistoryStore, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 
@@ -867,7 +870,7 @@ public partial class MainViewModel : ObservableObject
 
     /// <summary>True when the active engine is a local OpenAI-compatible model — drives the "smaller models are
     /// less accurate" note on the plan/scoring screens.</summary>
-    public bool UsingLocalEngine => string.Equals(_cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase);
+    public bool UsingLocalEngine => LlmClient.IsLocal(_cfg.Claude);
 
     // ---- live model browser (Ollama discovery + one-click install) ----
     [ObservableProperty] private string _modelSearchText = "";
@@ -1241,18 +1244,32 @@ public partial class MainViewModel : ObservableObject
             string text = "";
             try { text = await Task.Run(() => CvProfiler.ExtractText(path)); } catch { }
 
+            UserProfile? built = null;
             if (string.IsNullOrWhiteSpace(text))
-            {
-                Status = "Não consegui extrair texto (PDF digitalizado?). Preenche à mão.";
-                _profile = new UserProfile();
-            }
+                Status = L("cv.noText");
             else
             {
                 Status = L("cv.building");
-                _profile = await CvProfiler.BuildProfileAsync(text, _cfg.Claude)
-                           ?? new UserProfile { Summary = "(IA indisponível — preenche à mão)" };
+                built = await CvProfiler.BuildProfileAsync(text, _cfg.Claude);
+                if (built is null)
+                    Status = Loc.Instance.F("cv.aiDown", LlmClient.LastError ?? L("llm.empty"));
             }
 
+            if (built is null)
+            {
+                // Keep (and don't re-save) the profile the user already has: saving a blank one here wiped a real
+                // saved profile whenever a scanned PDF was picked or the engine was down. With no profile yet, start
+                // a blank form to fill in by hand; it's saved on the next search like any manual edit.
+                if (_isDemoProfile && HasSavedProfile) LoadSavedProfile();   // back to the real profile, not a blank one
+                else if (!HasSavedProfile) { _profile = new UserProfile(); _isDemoProfile = false; }
+                if (_profile.SalaryTargetEur == 0) _profile.SalaryTargetEur = _cfg.Salary.TargetEur;
+                if (_profile.SalaryFloorEur == 0) _profile.SalaryFloorEur = _cfg.Salary.FloorEur;
+                LoadFormFromProfile();
+                ShowOnly(profile: true);
+                return;
+            }
+
+            _profile = built;
             if (_profile.SalaryTargetEur == 0) _profile.SalaryTargetEur = _cfg.Salary.TargetEur;
             if (_profile.SalaryFloorEur == 0) _profile.SalaryFloorEur = _cfg.Salary.FloorEur;
             _isDemoProfile = false; // a real CV the user picked
@@ -1307,13 +1324,35 @@ public partial class MainViewModel : ObservableObject
             var p = JsonSerializer.Deserialize<UserProfile>(File.ReadAllText(_profilePath),
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (p is null) return;
+            // Persisting the repair is a follow-up write: its own try, so a failed write can never quarantine a
+            // profile.json that parsed fine.
+            if (RepairLists(p))
+                try { SafeFile.WriteAllText(_profilePath, JsonSerializer.Serialize(p, new JsonSerializerOptions { WriteIndented = true })); }
+                catch (Exception ex) { Diag.Error("profile list repair not saved", ex); }
             _profile = p;
             _isDemoProfile = false;
             LoadFormFromProfile();
             HasSavedProfile = true;
             SavedProfileLabel = string.IsNullOrWhiteSpace(p.Field) ? p.Name : $"{p.Name} · {p.Field}";
         }
-        catch { /* ignore a corrupt profile */ }
+        catch (Exception ex) { SafeFile.Quarantine(_profilePath, ex); }
+    }
+
+    /// <summary>Re-joins list items the old comma split cut inside brackets (see <see cref="TextLists"/>).
+    /// Returns true when anything changed.</summary>
+    private static bool RepairLists(UserProfile p)
+    {
+        bool changed = false;
+        List<string> Fix(List<string> xs)
+        {
+            var r = TextLists.RepairSplitItems(xs);
+            if (!r.SequenceEqual(xs)) changed = true;
+            return r;
+        }
+        p.JobTitles = Fix(p.JobTitles); p.CoreSkills = Fix(p.CoreSkills); p.Skills = Fix(p.Skills);
+        p.Locations = Fix(p.Locations); p.MustHaves = Fix(p.MustHaves); p.DealBreakers = Fix(p.DealBreakers);
+        p.Languages = Fix(p.Languages);
+        return changed;
     }
 
     private void SaveProfile()
@@ -1321,7 +1360,7 @@ public partial class MainViewModel : ObservableObject
         if (_isDemoProfile) return; // never overwrite the user's real saved profile with the sample
         try
         {
-            File.WriteAllText(_profilePath, JsonSerializer.Serialize(_profile, new JsonSerializerOptions { WriteIndented = true }));
+            SafeFile.WriteAllText(_profilePath, JsonSerializer.Serialize(_profile, new JsonSerializerOptions { WriteIndented = true }));
             HasSavedProfile = true;
             SavedProfileLabel = string.IsNullOrWhiteSpace(_profile.Field) ? _profile.Name : $"{_profile.Name} · {_profile.Field}";
         }
@@ -1428,7 +1467,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Loads the Save-backed settings fields from the live config (used on open and on discard).</summary>
     private void LoadSettingsFields()
     {
-        UseLocalModel = string.Equals(_cfg.Claude.Provider, "openai", StringComparison.OrdinalIgnoreCase);
+        UseLocalModel = LlmClient.IsLocal(_cfg.Claude);
         LlmBaseUrl = _cfg.Claude.BaseUrl;
         LlmApiKey = _cfg.Claude.ApiKey;
         ClaudeExe = string.IsNullOrWhiteSpace(_cfg.Claude.Exe) ? "claude" : _cfg.Claude.Exe;
@@ -2710,15 +2749,16 @@ public partial class MainViewModel : ObservableObject
     {
         if (_cvChatLoaded) return;
         _cvChatLoaded = true;
+        List<CoachStoredMessage>? msgs;
         try
         {
             if (!File.Exists(_cvChatPath)) return;
-            var msgs = JsonSerializer.Deserialize<List<CoachStoredMessage>>(File.ReadAllText(_cvChatPath));
-            if (msgs is null) return;
-            foreach (var m in msgs) CvChatTranscript.Add(new CoachMessageVm(m.IsUser, m.Text));
-            OnPropertyChanged(nameof(CvChatEmpty));
+            msgs = JsonSerializer.Deserialize<List<CoachStoredMessage>>(File.ReadAllText(_cvChatPath));
         }
-        catch { /* ignore a bad chat file */ }
+        catch (Exception ex) { SafeFile.Quarantine(_cvChatPath, ex); return; } // only a parse failure sets it aside
+        if (msgs is null) return;
+        foreach (var m in msgs) CvChatTranscript.Add(new CoachMessageVm(m.IsUser, m.Text));
+        OnPropertyChanged(nameof(CvChatEmpty));
     }
 
     private void SaveCvChat()
@@ -2727,7 +2767,7 @@ public partial class MainViewModel : ObservableObject
         {
             var msgs = CvChatTranscript.Where(m => !m.IsStreaming && m.Text.Length > 0)
                 .Select(m => new CoachStoredMessage { IsUser = m.IsUser, Text = m.Text }).ToList();
-            File.WriteAllText(_cvChatPath, JsonSerializer.Serialize(msgs, new JsonSerializerOptions { WriteIndented = true }));
+            SafeFile.WriteAllText(_cvChatPath, JsonSerializer.Serialize(msgs, new JsonSerializerOptions { WriteIndented = true }));
         }
         catch { /* best-effort */ }
     }
@@ -2828,7 +2868,7 @@ public partial class MainViewModel : ObservableObject
 
     private void SaveLlmSettings()
     {
-        try { File.WriteAllText(_llmSettingsPath, JsonSerializer.Serialize(_cfg.Claude, new JsonSerializerOptions { WriteIndented = true })); }
+        try { SafeFile.WriteAllText(_llmSettingsPath, JsonSerializer.Serialize(_cfg.Claude, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 
@@ -2847,7 +2887,7 @@ public partial class MainViewModel : ObservableObject
 
     private void SaveApifySettings()
     {
-        try { File.WriteAllText(_apifySettingsPath, JsonSerializer.Serialize(_cfg.Apify, new JsonSerializerOptions { WriteIndented = true })); }
+        try { SafeFile.WriteAllText(_apifySettingsPath, JsonSerializer.Serialize(_cfg.Apify, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 
@@ -2865,7 +2905,7 @@ public partial class MainViewModel : ObservableObject
 
     private void SaveJSearchSettings()
     {
-        try { File.WriteAllText(_jsearchSettingsPath, JsonSerializer.Serialize(_cfg.JSearch, new JsonSerializerOptions { WriteIndented = true })); }
+        try { SafeFile.WriteAllText(_jsearchSettingsPath, JsonSerializer.Serialize(_cfg.JSearch, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 
@@ -2883,7 +2923,7 @@ public partial class MainViewModel : ObservableObject
 
     private void SaveJobicySettings()
     {
-        try { File.WriteAllText(_jobicySettingsPath, JsonSerializer.Serialize(_cfg.Jobicy, new JsonSerializerOptions { WriteIndented = true })); }
+        try { SafeFile.WriteAllText(_jobicySettingsPath, JsonSerializer.Serialize(_cfg.Jobicy, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 
@@ -2901,7 +2941,7 @@ public partial class MainViewModel : ObservableObject
 
     private void SaveHimalayasSettings()
     {
-        try { File.WriteAllText(_himalayasSettingsPath, JsonSerializer.Serialize(_cfg.Himalayas, new JsonSerializerOptions { WriteIndented = true })); }
+        try { SafeFile.WriteAllText(_himalayasSettingsPath, JsonSerializer.Serialize(_cfg.Himalayas, new JsonSerializerOptions { WriteIndented = true })); }
         catch { /* best-effort */ }
     }
 
@@ -2918,6 +2958,7 @@ public partial class MainViewModel : ObservableObject
         Seniority = string.IsNullOrWhiteSpace(_profile.SeniorityTarget) ? "mid" : _profile.SeniorityTarget;
         SalaryFloorText = _profile.SalaryFloorEur > 0 ? _profile.SalaryFloorEur.ToString() : "";
         SalaryTargetText = _profile.SalaryTargetEur > 0 ? _profile.SalaryTargetEur.ToString() : "";
+        Remote = _profile.Remote; Hybrid = _profile.Hybrid; Onsite = _profile.Onsite;
     }
 
     private void CommitFormToProfile()
@@ -2936,8 +2977,8 @@ public partial class MainViewModel : ObservableObject
         _profile.Remote = Remote; _profile.Hybrid = Hybrid; _profile.Onsite = Onsite;
     }
 
-    private static List<string> Split(string s) =>
-        (s ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+    // Bracket-aware: "C# / .NET (ASP.NET Core, Blazor)" stays ONE item (a plain Split(',') cut it in two).
+    private static List<string> Split(string s) => TextLists.Split(s);
 
     private AppConfig LoadConfig()
     {
