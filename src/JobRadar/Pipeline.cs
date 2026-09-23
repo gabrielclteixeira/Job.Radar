@@ -162,6 +162,23 @@ public static class Pipeline
             L(Loc.Instance.F("pipe.linkedinMerged", li.Count));
         }
 
+        // Optional LinkedIn through a real browser (F1): public job pages only, no login, paced and capped.
+        if (cfg.LinkedInBrowser.Enabled)
+        {
+            try
+            {
+                raw.AddRange(await LinkedInBrowser.FetchJobsAsync(cfg.LinkedInBrowser, profile.RoleQueries(),
+                    profile.Locations.FirstOrDefault() ?? "", log, ct));
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                // A browser/driver problem must not sink the whole search: the other sources still run.
+                Diag.Error("linkedin-browser failed", ex);
+                L(Loc.Instance.F("lib.failed", ex.Message));
+            }
+        }
+
         // Optional paid LinkedIn connector (Apify). Cost is confirmed in the UI before the search runs.
         if (cfg.Apify.Enabled)
         {

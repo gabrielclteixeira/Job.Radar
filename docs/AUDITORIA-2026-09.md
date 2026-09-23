@@ -52,7 +52,7 @@ Cada item tem um ID estável para ser referido em commits e conversas. Atualiza 
 
 | P | Pequenos acertos | ✅ código feito · tag/README/branch no release | `sessao/2026-09-23-integridade-dados` |
 
-| F | Funcionalidades pedidas | 📌 decidido | — |
+| F | Funcionalidades pedidas | ✅ F1 (LinkedIn via Playwright) feito | `sessao/2026-09-23-integridade-dados` |
 
 
 
@@ -729,27 +729,38 @@ Proposta de mensagem: `feat(ux): engine status, one primary action per page, sec
 
 
 
-## Lote F: funcionalidades pedidas 📌
+## Lote F: funcionalidades pedidas ✅
 
+### F1 · Pesquisar vagas no LinkedIn com Playwright ✅ *verificado ao vivo e na app*
 
+- **Pedido.** Usar o Playwright para pesquisar vagas no LinkedIn, além do import por colagem e do conector pago Apify.
 
-### F1 · Pesquisar vagas no LinkedIn com Playwright 📌 *decidido pelo utilizador em 2026-09-23*
+- **Decisões do utilizador (2026-09-23):**
+  - o componente Playwright **instala-se a partir das Definições**, para o instalador da app não crescer;
+  - uma **área de opções nas Definições** para limitar e afinar a pesquisa.
 
-- **Pedido.** Usar o Playwright para pesquisar vagas no LinkedIn, em vez de (ou além de) colar o texto à mão, que é o import atual, e do conector pago Apify.
+- **Desenho final (mudou em relação à proposta):**
+  - **Sem login.** Em vez de usar a conta do utilizador, a app lê só as páginas públicas de vagas do LinkedIn (os mesmos endpoints que o site usa para quem não tem sessão). A conta nunca é tocada, por isso não pode ser restringida. O aviso sobre os Termos continua visível no cartão.
+  - **Browser real.** O Playwright conduz o Edge/Chrome/Chromium que já está instalado (`FindEdge`). Se não houver nenhum, há um botão para instalar o Chromium do Playwright (~150 MB).
+  - **Instalação a pedido** (`LinkedInBrowser.InstallAsync`):
+    - descarrega o Node.js `v24.18.1` (nodejs.org, verificado por SHA-256) e o `playwright-core 1.62.0` (npm, verificado por sha512), cerca de 40 MB;
+    - monta a estrutura `.playwright/{package,node}` na pasta de dados da app e aponta o `PLAYWRIGHT_DRIVER_SEARCH_PATH` para lá;
+    - a extração tem proteção contra *zip-slip*;
+    - `Directory.Build.props` define `PlaywrightPlatform=none`, por isso o build e o release não incluem o driver;
+    - os ZIPs de driver do CDN da Microsoft dão 404 para esta versão, daí as fontes oficiais nodejs.org e npm.
+  - **Pesquisa** (`FetchJobsAsync`): percorre os primeiros N títulos do perfil na localização do perfil, 10 vagas por página, com pausas aleatórias à volta do ritmo escolhido. Lê a descrição de cada vaga, se essa opção estiver ligada. Para ao receber HTTP 429/999 ou a página de login e guarda o que já tinha. O URL de cada vaga é o canónico `linkedin.com/jobs/view/<id>`, por isso o dedupe do S3 funciona.
+  - **Pipeline:** corre depois do import por colagem e antes do Apify. Uma falha do browser é registada e a pesquisa segue com as outras fontes; cancelar cancela mesmo.
 
-- **Ponto de partida.** O ROADMAP já previa esta ideia no backlog ("Playwright-assisted pass where the user logs in"). Hoje existem: o atalho que abre o LinkedIn já com a pesquisa preenchida (`MainViewModel`, cerca da linha 1545), o import por colagem com extração pela IA (`LinkedInImport.cs`, que grava `linkedin-jobs.json` e é integrado no Pipeline) e o Apify.
+- **Definições → cartão "LINKEDIN (BROWSER)":**
+  - estado do componente e do browser, com os botões Instalar, Instalar Chromium, Testar agora e Remover, e a linha de progresso;
+  - interruptor, desativado até o componente estar instalado;
+  - opções: máximo de vagas por título (20/50/75/100), número de títulos (1–4), data de publicação (qualquer/24 h/semana/mês), ritmo (~2/4/8 s), ler descrições, mostrar o browser;
+  - as opções ficam em `linkedin-browser-settings.json` (no `.gitignore`), como as outras definições locais.
 
-- **Desenho proposto (a validar antes de implementar):**
+- **Verificação:**
+  - 4 testes novos em `LinkedInBrowserTests`: parsing dos cartões e da descrição, com fixtures capturadas do site real; construção do URL; e a versão do pacote igual à do driver descarregado (se alguém atualizar o NuGet sem atualizar o driver, o teste falha);
+  - ao vivo: 20 vagas .NET reais no Porto, todas com descrição, em 56 s, com o Edge do utilizador;
+  - na app: "Testar agora" deu "Teste: 10 vagas encontradas." (screenshot);
+  - build limpo (sem avisos novos) e 76/76 testes.
 
-  - O utilizador faz login uma vez num browser visível, lançado pela app. A sessão fica num perfil persistente do Playwright, na pasta de dados da app, e a app nunca guarda a password.
-
-  - A app abre a pesquisa com os títulos e a localização do perfil, percorre algumas páginas a um ritmo humano e extrai título, empresa, local, URL e descrição. O resultado vai para `linkedin-jobs.json`, por isso entra no fluxo de dedupe e scoring que já existe.
-
-  - É opt-in e explica claramente os riscos: os Termos de Serviço do LinkedIn proíbem automação e a conta pode ser restringida. Terá limites baixos (páginas por pesquisa, intervalo entre pesquisas) e nunca corre em segundo plano sem o utilizador saber.
-
-  - Onde corre: .NET (`Microsoft.Playwright`, com o browser descarregado quando é preciso) ou Go no fetcher. Proposta: .NET, junto ao `LinkedInImport`, porque reaproveita a UI e o merge.
-
-  - Juntar a S3 (dedupe das vagas do LinkedIn por URL normalizado) antes ou junto com esta funcionalidade.
-
-- **Estado.** Por desenhar e implementar, depois dos lotes de correções.
-
+- **Limites conhecidos:** o LinkedIn pode mudar o HTML das páginas públicas. Se isso acontecer, o parser deixa de encontrar vagas (0 resultados, sem crash) e os fixtures têm de ser atualizados.

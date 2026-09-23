@@ -47,6 +47,7 @@ public partial class MainViewModel : ObservableObject
         _jsearchSettingsPath = Path.Combine(_root, "jsearch-settings.json");
         _jobicySettingsPath = Path.Combine(_root, "jobicy-settings.json");
         _himalayasSettingsPath = Path.Combine(_root, "himalayas-settings.json");
+        _libSettingsPath = Path.Combine(_root, "linkedin-browser-settings.json");
         _planPath = Path.Combine(_root, "career-plan.json");
         _planHistoryPath = Path.Combine(_root, "career-plan-history.json");
         _planPartsPath = Path.Combine(_root, "career-plan-parts.json");
@@ -63,6 +64,7 @@ public partial class MainViewModel : ObservableObject
         ApplyJSearchOverride();
         ApplyJobicyOverride();
         ApplyHimalayasOverride();
+        ApplyLinkedInBrowserOverride();
         LoadUiSettings();
         Loc.Instance.SetPreference(LangModes[Math.Clamp(_languageIndex, 0, 2)]);
         ApplyTheme();
@@ -824,6 +826,124 @@ public partial class MainViewModel : ObservableObject
         ? "https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch"
         : "https://app.openwebninja.com/";
     partial void OnJSearchProviderIndexChanged(int value) => OnPropertyChanged(nameof(JSearchKeyUrl));
+
+    // ---- F1: LinkedIn through a real browser (Playwright, installed on demand) ----
+    private readonly string _libSettingsPath;
+    [ObservableProperty] private bool _useLinkedInBrowser;
+    [ObservableProperty] private int _libMaxIndex = 1;
+    [ObservableProperty] private int _libQueriesIndex = 1;
+    [ObservableProperty] private int _libPostedIndex = 2;
+    [ObservableProperty] private int _libPaceIndex = 1;
+    [ObservableProperty] private bool _libReadDescriptions = true;
+    [ObservableProperty] private bool _libShowBrowser;
+    [ObservableProperty] private bool _isInstallingLib;
+    [ObservableProperty] private string _libActionStatus = "";
+    private static readonly int[] LibMaxValues = { 20, 50, 75, 100 };
+    private static readonly string[] LibPostedValues = { "", "r86400", "r604800", "r2592000" };
+    private static readonly int[] LibPaceValues = { 2, 4, 8 };
+    public int[] LibMaxOptions => LibMaxValues;
+    public string[] LibQueriesOptions => new[] { "1", "2", "3", "4" };
+    public string[] LibPostedOptions => new[] { L("opt.posted.any"), L("opt.posted.day"), L("opt.posted.week"), L("opt.posted.month") };
+    public string[] LibPaceOptions => new[] { L("opt.pace.fast"), L("opt.pace.normal"), L("opt.pace.slow") };
+    public bool LibInstalled => LinkedInBrowser.IsInstalled;
+    public bool LibNotInstalled => !LinkedInBrowser.IsInstalled;
+    public string LibStatusText => LinkedInBrowser.IsInstalled
+        ? Loc.Instance.F("settings.lib.installed", LinkedInBrowser.PlaywrightVersion, LinkedInBrowser.NodeVersion)
+        : L("settings.lib.notInstalled");
+    public bool LibHasBrowser => LinkedInBrowser.SystemBrowser is not null;
+    public bool LibNeedsChromium => LinkedInBrowser.IsInstalled && LinkedInBrowser.SystemBrowser is null;
+    public string LibBrowserText => LinkedInBrowser.SystemBrowser is { } b
+        ? Loc.Instance.F("settings.lib.browser", Path.GetFileNameWithoutExtension(b))
+        : L("settings.lib.noBrowser");
+    private void RefreshLibStatus()
+    {
+        foreach (var n in new[] { nameof(LibInstalled), nameof(LibNotInstalled), nameof(LibStatusText), nameof(LibHasBrowser), nameof(LibNeedsChromium), nameof(LibBrowserText) })
+            OnPropertyChanged(n);
+    }
+
+    [RelayCommand]
+    private async Task InstallLib()
+    {
+        if (IsInstallingLib) return;
+        IsInstallingLib = true; LibActionStatus = "";
+        try
+        {
+            await LinkedInBrowser.InstallAsync(new Progress<string>(m => LibActionStatus = m), CancellationToken.None);
+            LibActionStatus = L("lib.install.done");
+        }
+        catch (Exception ex) { LibActionStatus = Loc.Instance.F("lib.install.failed", ex.Message); Diag.Error("linkedin-browser install failed", ex); }
+        finally { IsInstallingLib = false; RefreshLibStatus(); }
+    }
+
+    [RelayCommand]
+    private async Task InstallChromium()
+    {
+        if (IsInstallingLib) return;
+        IsInstallingLib = true; LibActionStatus = L("lib.install.extract");
+        try
+        {
+            int code = await LinkedInBrowser.InstallChromiumAsync();
+            LibActionStatus = code == 0 ? L("lib.install.done") : Loc.Instance.F("lib.install.failed", $"exit {code}");
+        }
+        catch (Exception ex) { LibActionStatus = Loc.Instance.F("lib.install.failed", ex.Message); }
+        finally { IsInstallingLib = false; RefreshLibStatus(); }
+    }
+
+    [RelayCommand]
+    private void UninstallLib()
+    {
+        LinkedInBrowser.Uninstall();
+        LibActionStatus = "";
+        RefreshLibStatus();
+    }
+
+    /// <summary>Short live check with the current (unsaved) options: one title, one request, nothing stored.</summary>
+    [RelayCommand]
+    private async Task TestLib()
+    {
+        if (IsInstallingLib) return;
+        IsInstallingLib = true; LibActionStatus = "";
+        try
+        {
+            var cfg = LibConfigFromFields();
+            cfg.Queries = 1; cfg.MaxPerQuery = 10; cfg.ReadDescriptions = false;
+            string title = _profile.RoleQueries().FirstOrDefault() ?? "Software Developer";
+            var jobs = await LinkedInBrowser.FetchJobsAsync(cfg, new[] { title }, _profile.Locations.FirstOrDefault() ?? "",
+                new Progress<string>(m => LibActionStatus = m), CancellationToken.None);
+            LibActionStatus = Loc.Instance.F("lib.test.result", jobs.Count);
+        }
+        catch (Exception ex) { LibActionStatus = Loc.Instance.F("lib.failed", ex.Message); }
+        finally { IsInstallingLib = false; }
+    }
+
+    private LinkedInBrowserConfig LibConfigFromFields() => new()
+    {
+        Enabled = UseLinkedInBrowser,
+        MaxPerQuery = LibMaxValues[Math.Clamp(LibMaxIndex, 0, LibMaxValues.Length - 1)],
+        Queries = Math.Clamp(LibQueriesIndex + 1, 1, 4),
+        Posted = LibPostedValues[Math.Clamp(LibPostedIndex, 0, LibPostedValues.Length - 1)],
+        PaceSeconds = LibPaceValues[Math.Clamp(LibPaceIndex, 0, LibPaceValues.Length - 1)],
+        ReadDescriptions = LibReadDescriptions,
+        ShowBrowser = LibShowBrowser,
+    };
+
+    private void ApplyLinkedInBrowserOverride()
+    {
+        try
+        {
+            if (!File.Exists(_libSettingsPath)) return;
+            var c = JsonSerializer.Deserialize<LinkedInBrowserConfig>(File.ReadAllText(_libSettingsPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (c is not null) _cfg.LinkedInBrowser = c;
+        }
+        catch { /* ignore */ }
+    }
+
+    private void SaveLinkedInBrowserSettings()
+    {
+        try { SafeFile.WriteAllText(_libSettingsPath, JsonSerializer.Serialize(_cfg.LinkedInBrowser, new JsonSerializerOptions { WriteIndented = true })); }
+        catch { /* best-effort */ }
+    }
 
     // Keyless remote-jobs sources (free, no key) — Jobicy + Himalayas.
     [ObservableProperty] private bool _useJobicy;
@@ -1611,6 +1731,15 @@ public partial class MainViewModel : ObservableObject
         JobicyMax = _cfg.Jobicy.MaxItems > 0 ? _cfg.Jobicy.MaxItems.ToString() : "50";
         UseHimalayas = _cfg.Himalayas.Enabled;
         HimalayasMax = _cfg.Himalayas.MaxItems > 0 ? _cfg.Himalayas.MaxItems.ToString() : "40";
+        var lib = _cfg.LinkedInBrowser;
+        UseLinkedInBrowser = lib.Enabled;
+        LibMaxIndex = Array.IndexOf(LibMaxValues, lib.MaxPerQuery) is var mi && mi >= 0 ? mi : 1;
+        LibQueriesIndex = Math.Clamp(lib.Queries, 1, 4) - 1;
+        LibPostedIndex = Array.IndexOf(LibPostedValues, lib.Posted ?? "") is var pi && pi >= 0 ? pi : 2;
+        LibPaceIndex = Array.IndexOf(LibPaceValues, lib.PaceSeconds) is var ci && ci >= 0 ? ci : 1;
+        LibReadDescriptions = lib.ReadDescriptions;
+        LibShowBrowser = lib.ShowBrowser;
+        RefreshLibStatus();
     }
 
     /// <summary>A stable fingerprint of every Save-backed setting — used to detect unsaved edits.
@@ -1619,7 +1748,8 @@ public partial class MainViewModel : ObservableObject
         UseLocalModel, LlmBaseUrl, LlmModel, LlmApiKey, LlmMaxTokens, LlmTimeoutSeconds, ClaudeExe,
         UseApify, ApifyToken, ApifyActor, ApifyMax,
         UseJSearch, JSearchProviderIndex, JSearchKey, JSearchCountry, JSearchMax,
-        UseJobicy, JobicyRegionIndex, JobicyMax, UseHimalayas, HimalayasMax);
+        UseJobicy, JobicyRegionIndex, JobicyMax, UseHimalayas, HimalayasMax,
+        UseLinkedInBrowser, LibMaxIndex, LibQueriesIndex, LibPostedIndex, LibPaceIndex, LibReadDescriptions, LibShowBrowser);
 
     private string _settingsSnapshot = "";
 
@@ -1658,6 +1788,8 @@ public partial class MainViewModel : ObservableObject
         _cfg.Himalayas.Enabled = UseHimalayas;
         _cfg.Himalayas.MaxItems = int.TryParse(HimalayasMax, out var hm) && hm > 0 ? hm : 40;
         SaveHimalayasSettings();
+        _cfg.LinkedInBrowser = LibConfigFromFields();
+        SaveLinkedInBrowserSettings();
         _settingsSnapshot = SettingsSignature();
         OnPropertyChanged(nameof(UsingLocalEngine));
         Status = L("settings.saved");

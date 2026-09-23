@@ -30,6 +30,8 @@ jsearch-settings.json
 # Keyless connector toggles (machine-local)
 jobicy-settings.json
 himalayas-settings.json
+# LinkedIn (browser) source settings (machine-local)
+linkedin-browser-settings.json
 # saved career plan (built from the personal profile, machine-local)
 career-plan.json
 # growth history — archived past plans (machine-local)

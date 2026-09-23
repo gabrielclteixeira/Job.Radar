@@ -1,0 +1,8 @@
+<Project>
+  <!-- Microsoft.Playwright copies its driver (Node + playwright-core, ~100-130 MB per platform) into the build and
+       publish output by default. Job Radar installs that driver on demand from Settings instead (LinkedInBrowser
+       .InstallAsync), so the installer stays small. -->
+  <PropertyGroup>
+    <PlaywrightPlatform>none</PlaywrightPlatform>
+  </PropertyGroup>
+</Project>

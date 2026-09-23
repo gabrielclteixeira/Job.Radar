@@ -2066,6 +2066,66 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- LinkedIn through a real browser (F1): public pages only, Playwright installed on demand -->
+                    <Border Classes="card" Margin="0,12,0,0">
+                        <StackPanel Spacing="12">
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,0,2">
+                                <TextBlock Classes="fld" Text="{l:T settings.lib}" Margin="0" VerticalAlignment="Center"/>
+                                <Border Background="{DynamicResource SignalSoft}" CornerRadius="{DynamicResource PillRadius}" Padding="8,2" VerticalAlignment="Center">
+                                    <TextBlock Text="{l:T settings.lib.chip}" Foreground="{DynamicResource Signal}" FontSize="{DynamicResource FontMicro}" FontWeight="SemiBold"/>
+                                </Border>
+                            </StackPanel>
+                            <Border BorderBrush="{DynamicResource Amber}" BorderThickness="1" Background="{DynamicResource Panel2}" CornerRadius="{DynamicResource CtrlRadius}" Padding="12">
+                                <TextBlock TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Amber}">
+                                    <Run Text="{l:T settings.lib.warnBold}" FontWeight="Bold"/><Run Text="{l:T settings.lib.warn}"/>
+                                </TextBlock>
+                            </Border>
+
+                            <!-- component (driver) install: kept out of the app installer on purpose -->
+                            <TextBlock Classes="fld" Text="{l:T settings.lib.component}" Margin="0,4,0,0"/>
+                            <TextBlock Classes="sub" TextWrapping="Wrap" Text="{Binding LibStatusText}"/>
+                            <TextBlock Classes="sub" Text="{Binding LibBrowserText}" IsVisible="{Binding LibInstalled}"/>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button AutomationProperties.Name="{l:T settings.lib.install}" Classes="accent" Command="{Binding InstallLibCommand}" IsVisible="{Binding LibNotInstalled}" IsEnabled="{Binding !IsInstallingLib}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T settings.lib.install}"/></StackPanel>
+                                </Button>
+                                <Button AutomationProperties.Name="{l:T settings.lib.installChromium}" Classes="ghost" Command="{Binding InstallChromiumCommand}" IsVisible="{Binding LibNeedsChromium}" IsEnabled="{Binding !IsInstallingLib}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Download"/><TextBlock Text="{l:T settings.lib.installChromium}"/></StackPanel>
+                                </Button>
+                                <Button AutomationProperties.Name="{l:T settings.lib.test}" Classes="ghost" Command="{Binding TestLibCommand}" IsVisible="{Binding LibInstalled}" IsEnabled="{Binding !IsInstallingLib}" ToolTip.Tip="{l:T settings.lib.test.tip}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Play"/><TextBlock Text="{l:T settings.lib.test}"/></StackPanel>
+                                </Button>
+                                <Button AutomationProperties.Name="{l:T settings.lib.uninstall}" Classes="ghost" Command="{Binding UninstallLibCommand}" IsVisible="{Binding LibInstalled}" IsEnabled="{Binding !IsInstallingLib}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Delete"/><TextBlock Text="{l:T settings.lib.uninstall}"/></StackPanel>
+                                </Button>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding LibActionStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <ui:ProgressRing IsIndeterminate="{Binding IsInstallingLib}" IsVisible="{Binding IsInstallingLib}" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="{Binding LibActionStatus}" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource AccentText}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <ToggleSwitch IsChecked="{Binding UseLinkedInBrowser}" OnContent="{l:T settings.on}" OffContent="{l:T settings.off}" IsEnabled="{Binding LibInstalled}"/>
+                            <Grid ColumnDefinitions="*,16,*" IsVisible="{Binding UseLinkedInBrowser}">
+                                <StackPanel Grid.Column="0" Spacing="4">
+                                    <TextBlock Classes="fld" Text="{l:T settings.lib.max}"/>
+                                    <ComboBox ItemsSource="{Binding LibMaxOptions}" SelectedIndex="{Binding LibMaxIndex}" HorizontalAlignment="Stretch"/>
+                                    <TextBlock Classes="fld" Text="{l:T settings.lib.posted}"/>
+                                    <ComboBox ItemsSource="{Binding LibPostedOptions}" SelectedIndex="{Binding LibPostedIndex}" HorizontalAlignment="Stretch"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="4">
+                                    <TextBlock Classes="fld" Text="{l:T settings.lib.queries}"/>
+                                    <ComboBox ItemsSource="{Binding LibQueriesOptions}" SelectedIndex="{Binding LibQueriesIndex}" HorizontalAlignment="Stretch"/>
+                                    <TextBlock Classes="fld" Text="{l:T settings.lib.pace}"/>
+                                    <ComboBox ItemsSource="{Binding LibPaceOptions}" SelectedIndex="{Binding LibPaceIndex}" HorizontalAlignment="Stretch"/>
+                                </StackPanel>
+                            </Grid>
+                            <StackPanel Spacing="4" IsVisible="{Binding UseLinkedInBrowser}">
+                                <CheckBox IsChecked="{Binding LibReadDescriptions}" Content="{l:T settings.lib.descriptions}"/>
+                                <CheckBox IsChecked="{Binding LibShowBrowser}" Content="{l:T settings.lib.show}"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <!-- JSearch (RapidAPI) connector -->
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel Spacing="12">

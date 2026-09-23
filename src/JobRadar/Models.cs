@@ -68,6 +68,7 @@ public class AppConfig
     public ApifyConfig Apify { get; set; } = new();
     public JSearchConfig JSearch { get; set; } = new();
     public JobicyConfig Jobicy { get; set; } = new();
+    public LinkedInBrowserConfig LinkedInBrowser { get; set; } = new();
     public HimalayasConfig Himalayas { get; set; } = new();
 }
 
