@@ -148,7 +148,7 @@
 
         <!-- ================= CONTENT ================= -->
         <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled">
-          <Border MaxWidth="{DynamicResource PageMaxWidth}" HorizontalAlignment="Left" Margin="44,36,44,52">
+          <Border x:Name="ContentHost" MaxWidth="{DynamicResource PageMaxWidth}" HorizontalAlignment="Left" Margin="44,36,44,52">
             <Grid>
 
                 <!-- ============ HOME ============ -->
@@ -171,6 +171,15 @@
                             <Button AutomationProperties.Name="{l:T home.engine.setup}" Grid.Column="2" Classes="ghost" Margin="12,0,0,0" Command="{Binding NavigateCommand}" CommandParameter="settings">
                                 <StackPanel Orientation="Horizontal" Spacing="8"><ui:SymbolIcon Symbol="Settings"/><TextBlock Text="{l:T home.engine.setup}"/></StackPanel>
                             </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Sample profile active: say so, and offer the way back (the flag used to stick for the whole session) -->
+                    <Border Background="{DynamicResource AccentSoft}" CornerRadius="{DynamicResource CtrlRadius}" Padding="12,8" Margin="0,16,0,0" IsVisible="{Binding IsDemoProfile}">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <ui:SymbolIcon Grid.Column="0" Symbol="Important" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Grid.Column="1" Text="{l:T demo.banner}" TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                            <Button AutomationProperties.Name="{l:T demo.leave}" Grid.Column="2" Classes="ghost" Margin="12,0,0,0" Command="{Binding LeaveDemoProfileCommand}" Content="{l:T demo.leave}"/>
                         </Grid>
                     </Border>
 
@@ -236,6 +245,14 @@
                 <StackPanel Classes="page" IsVisible="{Binding IsProfile}" Spacing="8">
                     <TextBlock Classes="h1" Text="{l:T profile.title}"/>
                     <TextBlock Classes="sub" Text="{l:T profile.sub}"/>
+                    <!-- Sample profile active: say so, and offer the way back (the flag used to stick for the whole session) -->
+                    <Border Background="{DynamicResource AccentSoft}" CornerRadius="{DynamicResource CtrlRadius}" Padding="12,8" Margin="0,16,0,0" IsVisible="{Binding IsDemoProfile}">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
+                            <ui:SymbolIcon Grid.Column="0" Symbol="Important" Foreground="{DynamicResource AccentText}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Grid.Column="1" Text="{l:T demo.banner}" TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Text}" VerticalAlignment="Center"/>
+                            <Button AutomationProperties.Name="{l:T demo.leave}" Grid.Column="2" Classes="ghost" Margin="12,0,0,0" Command="{Binding LeaveDemoProfileCommand}" Content="{l:T demo.leave}"/>
+                        </Grid>
+                    </Border>
                     <Border Classes="card" Margin="0,12,0,0">
                         <StackPanel>
                             <Grid ColumnDefinitions="*,24,*">
@@ -1015,6 +1032,9 @@
                             <CheckBox IsChecked="{Binding IncludeProgressInPdf}" Content="{l:T plan.includeProgress}" VerticalAlignment="Center"
                                       IsVisible="{Binding HasPlanProgress}" ToolTip.Tip="{l:T plan.includeProgress.tip}"/>
                         </StackPanel>
+                        <Border Classes="banner danger" IsVisible="{Binding ShowPlanErrorWithPlan}">
+                            <TextBlock Text="{Binding PlanError}" TextWrapping="Wrap" FontSize="{DynamicResource FontSmall}" Foreground="{DynamicResource Text}"/>
+                        </Border>
 
                         <!-- Progresso: o plano como checklist que percorres -->
                         <Border IsVisible="{Binding HasPlanProgress}" Classes="card" Padding="12,12">

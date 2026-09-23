@@ -46,7 +46,7 @@ Cada item tem um ID estável para ser referido em commits e conversas. Atualiza 
 
 | B | Claude CLI / camada LLM | ✅ B1–B3 feitos (B4 pendente), por commitar | `sessao/2026-09-23-integridade-dados` |
 
-| C | Estado e concorrência na UI | ⏳ (C1, C8 no U3 · C3 no S) | — |
+| C | Estado e concorrência na UI | ✅ 8/8 feitos (C1, C8 no U3 · C3 no S), por commitar | `sessao/2026-09-23-integridade-dados` |
 
 | S | Serviços externos | ✅ S2, S3 feitos · S1 (Ollama) adiado, por commitar | `sessao/2026-09-23-integridade-dados` |
 
@@ -640,27 +640,32 @@ Proposta de mensagem: `feat(ux): engine status, one primary action per page, sec
 ### B4 · `LlmClient.LastError` partilhado ⏳
 - Continua estático e partilhado entre operações em paralelo. Exige mudar a assinatura para devolver o erro com o resultado em cerca de 15 sítios. Fica para outro lote.
 
-## Lote C: estado e concorrência na UI ⏳ *(reportado pela revisão, a confirmar um a um)*
+## Lote C: estado e concorrência na UI ✅
 
+**Branch:** `sessao/2026-09-23-integridade-dados`. Proposta de mensagem: `fix(ui-state): busy counter, no lost CV edits, contained demo profile, stable company VMs (C)`.
 
+**Verificação:**
+- Build limpo e 58 testes.
+- Com a app real, via UI Automation, numa pasta isolada:
+  - **gravar ao fechar:** escrevi no nome do CV, fechei a janela normalmente (`CloseMainWindow`) e `cv-data.json` ficou com o texto. O ficheiro original foi reposto depois;
+  - **perfil de exemplo:** aparece o aviso e "Voltar ao meu perfil" repõe o perfil;
+  - **largura das páginas:** Perfil vazio, Definições e Empresas acabam todos no mesmo píxel.
 
-- ✅ **C1** (feito no U3.6) O botão Research do Jobs e do Companies ficava desativado enquanto corria, por isso "clicar outra vez para cancelar" não funcionava.
-
-- **C2** A flag `Busy` é partilhada e não reentrante: importar um CV durante uma pesquisa volta a ativar o "Reclassificar", que lança um segundo pipeline em paralelo.
-
-- ✅ **C3** (feito no lote S) "Ver vagas" duplicava todos os cartões: o Progress e o `Dispatcher.Post` faziam um salto duplo para a thread de UI.
-
-- **C4** CV Studio: a resposta do assistente sobrepõe o que escreveste durante a chamada, e não há gravação ao fechar a janela.
-
-- **C5** O modo demo fica ativo a sessão toda: a pesquisa classifica como John Doe e escreve na BD real.
-
-- **C6** `BuildCompanies` recria as VMs, por isso uma pesquisa de empresa em curso desaparece da vista.
-
-- **C7** Carregar em Settings estando já em Settings descarta as edições sem aviso.
-
-- ✅ **C8** (feito no U3) O `ScrollToMaxTokensRequested` ficava subscrito a cada troca de idioma (fuga de handlers).
-
-
+- ✅ **C1** (no U3.6) O botão Investigar ficava desativado enquanto corria, por isso "clicar outra vez para cancelar" não funcionava.
+- ✅ **C2** A flag `Busy` passou a ser um contador (`BeginBusy`/`EndBusy`, 14 pares). Uma operação curta que termina (importar um CV, exportar, listar modelos…) já não reativa "Procurar / Pontuar de novo" a meio de uma pontuação. `RunPipeline`, `Rescore`, `ViewJobs` e `ResumeScoring` recusam-se a arrancar se já houver uma pontuação a correr.
+- ✅ **C3** (no lote S) Cada vaga aparecia duas vezes na lista.
+- ✅ **C4** Edições do CV que se perdiam:
+  - se escreves ou importas enquanto o assistente responde, a resposta **não é aplicada** e aparece a nota `cv.chat.editedMeanwhile`. Antes, sobrepunha as tuas edições;
+  - "Começar a partir do perfil" e "Importar" fazem commit dos editores antes do snapshot de anular;
+  - ao fechar a janela, o CV e o perfil abertos são gravados (`SaveOnExit`).
+- ✅ **C5** Perfil de exemplo contido:
+  - aparece um aviso no Início e no Perfil, com o botão **Voltar ao meu perfil**;
+  - uma pesquisa com o perfil de exemplo usa só palavras-chave, para não gravar pontuações de IA do John Doe na tua BD.
+- ✅ **C6** `BuildCompanies` reutiliza os `CompanyVm` existentes (`JobCount` passou a ser atualizável). Uma investigação em curso já não desaparece ao voltar à página.
+- ✅ **C7** Carregar outra vez na página onde já estás (Definições ou Perfil) já não recarrega o formulário, que descartava as edições.
+- ✅ **C8** (no U3) Fuga de handlers na troca de idioma. Também o novo `PropertyChanged` do zoom é removido ao fechar a janela.
+- ✅ **Extra: plano de carreira.** Se a regeneração falhar, o plano anterior volta ao ecrã (antes desaparecia até reiniciar a app), com o erro num banner junto às ações do plano.
+- ✅ **Extra: largura das páginas (complemento do U1.4).** A coluna de conteúdo encolhia com o conteúdo; o Perfil vazio ficava mais estreito. Agora tem sempre `PageMaxWidth`, ou a largura disponível em janelas pequenas, e é recalculada com o redimensionar e com o zoom.
 
 ## Lote S: serviços externos ✅ (S2, S3) · S1 adiado
 

@@ -106,6 +106,22 @@ public partial class MainViewModel : ObservableObject
         EngineChecked = true;
     }
 
+    /// <summary>Called by the window when it closes: the CV editors and the profile form only committed on
+    /// navigation, so closing the app with the CV or Profile page open lost the last edits.</summary>
+    public void SaveOnExit()
+    {
+        try
+        {
+            if (Nav == "cv" && _cvDoc is not null) { CommitCvEditors(); SaveCvDoc(false); }
+            if (Nav == "profile" && !_isDemoProfile)
+            {
+                CommitFormToProfile();
+                if (HasSavedProfile || !string.IsNullOrWhiteSpace(_profile.Name) || _profile.JobTitles.Count > 0) SaveProfile();
+            }
+        }
+        catch (Exception ex) { Diag.Error("save on exit failed", ex); }
+    }
+
     // ---- navigation (sidebar) ----
     [ObservableProperty] private string _nav = "home";
     public bool IsNavHome => Nav == "home";
@@ -127,6 +143,8 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task Navigate(string page)
     {
+        // Re-clicking the page you're on used to reload Settings/Profile from disk, silently discarding edits.
+        if (page == Nav && page is "settings" or "profile") return;
         // Guard: leaving Settings with unsaved Save-backed changes → prompt save/discard/cancel.
         if (page != "settings" && SettingsDirty() && ConfirmLeaveSettingsAsync is not null)
         {
@@ -295,6 +313,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool _isRunning;
     [ObservableProperty] private bool _isResults;
     [ObservableProperty] private bool _busy;
+    // Busy is shared by many short operations (import, export, model list…). As a plain bool, the first one to
+    // finish re-enabled Search/Re-score while a long scoring run was still going, so a second pipeline could start
+    // on top of it (two scoring loops, duplicate streaming, double token spend). It is now a nesting counter.
+    private int _busyCount;
+    private void BeginBusy() { _busyCount++; Busy = true; }
+    private void EndBusy() { _busyCount = Math.Max(0, _busyCount - 1); Busy = _busyCount > 0; }
     [ObservableProperty] private string _status = "";
     [ObservableProperty] private string _exportMsg = "";
     [ObservableProperty] private bool _hasSavedProfile;
@@ -321,10 +345,11 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task ResumeScoring()
     {
+        if (IsScoring) return;   // one scoring run at a time
         if (IsScoring) return;
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = ""; ScoringError = "";
         Paused = false; ResultsTitle = L("title.jobs"); ScoringStatus = L("scoring.resuming");
-        MinScore = 0; IsScoring = true; ShowOnly(results: true); Busy = true;
+        MinScore = 0; IsScoring = true; ShowOnly(results: true); BeginBusy();
         _scoreCts = new CancellationTokenSource();
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
         var jobProg = new Progress<JobEntity>(AddStreamed);
@@ -335,7 +360,7 @@ public partial class MainViewModel : ObservableObject
         }
         catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
         catch (Exception ex) { ScoringError = ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
-        finally { IsScoring = false; Busy = false; }
+        finally { IsScoring = false; EndBusy(); }
     }
     [ObservableProperty] private bool _hasJobs;
     [ObservableProperty] private bool _isSettings;
@@ -391,7 +416,7 @@ public partial class MainViewModel : ObservableObject
     }
     partial void OnPlanChanged(CareerPlanResult? value)
     {
-        OnPropertyChanged(nameof(HasPlan)); OnPropertyChanged(nameof(ShowGenerateIntro));
+        OnPropertyChanged(nameof(HasPlan)); OnPropertyChanged(nameof(ShowGenerateIntro)); OnPropertyChanged(nameof(ShowPlanErrorWithPlan));
         NotifyCritique();
         SubscribePlanItems(value);   // keep progress live + persist as the user ticks items off
         NotifyProgress();
@@ -464,6 +489,10 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand] private Task GeneratePlan() => RunPlanAsync(resume: false);
     [RelayCommand] private Task ResumePlan() => RunPlanAsync(resume: true);
 
+    private CareerPlanResult? _planBeforeRun;
+    /// <summary>Plan error while a plan is on screen (the generate card that normally shows errors is hidden then).</summary>
+    public bool ShowPlanErrorWithPlan => HasPlan && !string.IsNullOrWhiteSpace(PlanError);
+
     private async Task RunPlanAsync(bool resume)
     {
         if (IsPlanning || IsCritiquing) return;
@@ -501,6 +530,7 @@ public partial class MainViewModel : ObservableObject
             foreach (var s in target.Steps) if (prevDoneKeys.Contains(PlanDiff.Key(s.Title))) s.Done = true;
         }
 
+        _planBeforeRun = Plan;   // restored if this attempt fails (it used to vanish until a restart)
         PlanError = ""; Plan = null; PlanChanges = null; PlanPaused = false;
         PlanStatus = L(resume ? "plan.resuming" : "plan.preparing");
         PlanReasoning = "";
@@ -515,6 +545,7 @@ public partial class MainViewModel : ObservableObject
             {
                 PlanError = string.IsNullOrWhiteSpace(error) ? L("plan.error.insufficient") : error;
                 Diag.Warn("plan: generate failed — " + PlanError);
+                Plan ??= _planBeforeRun;
                 return;
             }
 
@@ -538,7 +569,7 @@ public partial class MainViewModel : ObservableObject
         {
             PlanPaused = true; PlanStatus = L("plan.paused"); Diag.Info("plan: paused (resumable — completed parts kept)");
         }
-        catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); Diag.Error("plan: generate threw", ex); }
+        catch (Exception ex) { PlanError = Loc.Instance.F("error.generic", ex.Message); Diag.Error("plan: generate threw", ex); Plan ??= _planBeforeRun; }
         finally { IsPlanning = false; IsCritiquing = false; SaveReasoningRecord(); }
     }
 
@@ -1070,7 +1101,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task ProbeApify()
     {
-        Busy = true; ApifyStatus = L("apify.validating");
+        BeginBusy(); ApifyStatus = L("apify.validating");
         try
         {
             var (ok, msg, actors) = await ApifyClient.ProbeAsync(ApifyToken.Trim());
@@ -1081,7 +1112,7 @@ public partial class MainViewModel : ObservableObject
             if (!string.IsNullOrWhiteSpace(current) && !ApifyActorOptions.Contains(current)) ApifyActorOptions.Add(current);
             if (ok && string.IsNullOrWhiteSpace(ApifyActor) && ApifyActorOptions.Count > 0) ApifyActor = ApifyActorOptions[0];
         }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     // Ollama operations (pull, /api/tags) must hit the Ollama server — NOT whatever the scoring Base URL is
@@ -1308,7 +1339,7 @@ public partial class MainViewModel : ObservableObject
     // ---- CV → profile (called by the view after the file picker) ----
     public async Task LoadCvAsync(string path)
     {
-        Busy = true; Status = L("cv.reading");
+        BeginBusy(); Status = L("cv.reading");
         try
         {
             string text = "";
@@ -1348,7 +1379,7 @@ public partial class MainViewModel : ObservableObject
             _lastCvPath = path; SaveUiSettings(); OnPropertyChanged(nameof(HasLastCvPdf)); OnPropertyChanged(nameof(UseLastCvLabel));
             ShowOnly(profile: true);
         }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     /// <summary>Loads a ready-made sample profile (John Doe) so people can try the app instantly,
@@ -1356,11 +1387,27 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void LoadDemoCv()
     {
+        OnPropertyChanged(nameof(IsDemoProfile));
         _profile = DemoProfile();
         _isDemoProfile = true;
+        OnPropertyChanged(nameof(IsDemoProfile));
         LoadFormFromProfile();
         Status = L("demo.profile.status");
         ShowOnly(profile: true);
+    }
+
+    /// <summary>True while the sample profile is loaded (banner + "back to my profile").</summary>
+    public bool IsDemoProfile => _isDemoProfile;
+
+    /// <summary>Leaves the sample profile and reloads the user's own.</summary>
+    [RelayCommand]
+    private void LeaveDemoProfile()
+    {
+        if (!_isDemoProfile) return;
+        _isDemoProfile = false;
+        if (HasSavedProfile) LoadSavedProfile(); else { _profile = new UserProfile(); LoadFormFromProfile(); }
+        Status = "";
+        OnPropertyChanged(nameof(IsDemoProfile));
     }
 
     private static UserProfile DemoProfile() => new()
@@ -1448,7 +1495,9 @@ public partial class MainViewModel : ObservableObject
         bool jsearchOn = _cfg.JSearch.Enabled && !string.IsNullOrWhiteSpace(_cfg.JSearch.ApiKey);
         if ((apifyOn || jsearchOn) && ConfirmCostAsync is not null)
             if (!await ConfirmCostAsync()) return;
-        await RunPipeline(useAi: UseAi, demo: false);
+        // With the sample (John Doe) profile, search runs keyword-only: AI scores are stored per job in the real
+        // cache and would later show as YOUR scores. Keywords are re-evaluated for the real profile anyway (A8).
+        await RunPipeline(useAi: UseAi && !_isDemoProfile, demo: false);
     }
 
     [RelayCommand]
@@ -1458,10 +1507,11 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task ViewJobs()
     {
+        if (IsScoring) return;   // one scoring run at a time
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = ""; ScoringError = "";
         ResultsTitle = L("title.saved");
         ScoringStatus = L("scoring.loadingSaved"); MinScore = 0; IsScoring = true; Paused = false;
-        ShowOnly(results: true); Busy = true;
+        ShowOnly(results: true); BeginBusy();
         _scoreCts = new CancellationTokenSource();
         var jobProg = new Progress<JobEntity>(AddStreamed);
         try
@@ -1472,7 +1522,7 @@ public partial class MainViewModel : ObservableObject
         }
         catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
         catch (Exception ex) { ScoringError = ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
-        finally { IsScoring = false; Busy = false; }
+        finally { IsScoring = false; EndBusy(); }
     }
 
     /// <summary>Set by the View: confirms before deleting all saved jobs. Returns true to proceed.</summary>
@@ -1496,9 +1546,10 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task Rescore()
     {
+        if (IsScoring) return;   // one scoring run at a time
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = ""; ScoringError = "";
         ResultsTitle = L("title.jobs"); ScoringStatus = L("scoring.rescoring");
-        MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); Busy = true;
+        MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); BeginBusy();
         _scoreCts = new CancellationTokenSource();
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
         var jobProg = new Progress<JobEntity>(AddStreamed);
@@ -1510,7 +1561,7 @@ public partial class MainViewModel : ObservableObject
         }
         catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
         catch (Exception ex) { ScoringError = ScoringStatus = Loc.Instance.F("error.generic", ex.Message); Diag.Error("scoring failed", ex); }
-        finally { IsScoring = false; Busy = false; }
+        finally { IsScoring = false; EndBusy(); }
     }
 
     /// <summary>Back to the home screen (keeps the loaded results in memory).</summary>
@@ -1630,7 +1681,7 @@ public partial class MainViewModel : ObservableObject
     private async Task LoadModels()
     {
         if (!UseLocalModel) { RefreshModelOptions(); return; }
-        Busy = true; Status = L("models.loading");
+        BeginBusy(); Status = L("models.loading");
         try
         {
             var models = await LlmClient.ListOpenAiModelsAsync(LlmBaseUrl, LlmApiKey);
@@ -1641,7 +1692,7 @@ public partial class MainViewModel : ObservableObject
             if (models.Count == 0) Status = L("models.none");
             else { Status = Loc.Instance.F("models.found", models.Count); if (string.IsNullOrWhiteSpace(LlmModel)) LlmModel = models[0]; }
         }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     /// <summary>Opens LinkedIn Jobs in the default browser, pre-filled from the profile (ToS-safe: no scraping).</summary>
@@ -1727,10 +1778,11 @@ public partial class MainViewModel : ObservableObject
     /// </summary>
     private async Task RunPipeline(bool useAi, bool demo)
     {
+        if (IsScoring) return;   // one scoring run at a time
         Log.Clear(); _all = new(); Jobs.Clear(); HasJobs = false; ExportMsg = ""; ScoringError = "";
         ResultsTitle = demo ? L("title.demo") : L("title.jobs");
         ScoringStatus = demo ? L("scoring.loadingDemo") : L("scoring.searching");
-        MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); Busy = true;
+        MinScore = 0; IsScoring = true; Paused = false; ShowOnly(results: true); BeginBusy();
         _scoreCts = new CancellationTokenSource();
 
         var logProg = new Progress<string>(m => Dispatcher.UIThread.Post(() => { Log.Add(m); ScoringStatus = m; }));
@@ -1743,7 +1795,7 @@ public partial class MainViewModel : ObservableObject
         }
         catch (OperationCanceledException) { Paused = true; ScoringStatus = L("scoring.paused"); }
         catch (Exception ex) { var m = Loc.Instance.F("error.generic", ex.Message); Log.Add(m); ScoringError = ScoringStatus = m; Diag.Error("search/score run failed", ex); }
-        finally { IsScoring = false; Busy = false; }
+        finally { IsScoring = false; EndBusy(); }
     }
 
     /// <summary>"Discard changes": reloads the form from the saved profile (after confirmation). It used to be
@@ -1759,7 +1811,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task Export()
     {
-        Busy = true;
+        BeginBusy();
         try
         {
             string outDir = Path.Combine(_root, "output");
@@ -1776,7 +1828,7 @@ public partial class MainViewModel : ObservableObject
             ExportMsg = ok ? Loc.Instance.F("export.done", pdf) : Loc.Instance.F("export.doneNoPdf", outDir);
         }
         catch (Exception ex) { ExportMsg = Loc.Instance.F("export.failed", ex.Message); }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     /// <summary>Profile-page "Create CV…" — CV Studio supersedes the old one-page CvPdf export.</summary>
@@ -1793,7 +1845,7 @@ public partial class MainViewModel : ObservableObject
     private async Task ExportPlan()
     {
         if (Plan is null || Busy) return;
-        Busy = true;
+        BeginBusy();
         try
         {
             string outDir = Path.Combine(_root, "output");
@@ -1808,7 +1860,7 @@ public partial class MainViewModel : ObservableObject
             }
             else Status = L("plan.exportFailed");
         }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     // ---- diagnostics ----
@@ -1830,7 +1882,7 @@ public partial class MainViewModel : ObservableObject
     private async Task ExportDiagnostics()
     {
         if (Busy) return;
-        Busy = true;
+        BeginBusy();
         try
         {
             string text = BuildDiagnosticsBundle();
@@ -1843,7 +1895,7 @@ public partial class MainViewModel : ObservableObject
             catch { /* opening is best-effort */ }
         }
         catch (Exception ex) { Status = Loc.Instance.F("error.generic", ex.Message); Diag.Error("export diagnostics failed", ex); }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     /// <summary>Builds the redacted bundle. NEVER includes API keys, tokens, prompts, replies or CV text.</summary>
@@ -1903,7 +1955,7 @@ public partial class MainViewModel : ObservableObject
     private async Task SaveReasoning()
     {
         if (string.IsNullOrWhiteSpace(PlanReasoning) || Busy) return;
-        Busy = true;
+        BeginBusy();
         try
         {
             string outDir = Path.Combine(_root, "output");
@@ -1914,7 +1966,7 @@ public partial class MainViewModel : ObservableObject
             catch { /* opening is best-effort */ }
         }
         catch (Exception ex) { Status = Loc.Instance.F("error.generic", ex.Message); Diag.Error("save reasoning failed", ex); }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     /// <summary>Archives this generation's run record (config + this run's per-call metadata + the full reasoning)
@@ -2093,9 +2145,18 @@ public partial class MainViewModel : ObservableObject
             .Where(c => c.JobCount == 0 && !grouped.Any(g => string.Equals(g.Name, c.Name, StringComparison.OrdinalIgnoreCase)))
             .Select(c => c.Name).ToList();
 
+        // Reuse the existing VM for a company: recreating it dropped an in-flight research (the batch kept running
+        // unseen and a second click started a duplicate paid call).
+        var existing = _companyMaster.GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        CompanyVm Get(string name, int count)
+        {
+            if (existing.TryGetValue(name, out var vm)) { vm.JobCount = count; return vm; }
+            return MakeCompanyVm(name, count);
+        }
         var vms = new List<CompanyVm>();
-        foreach (var (name, count) in grouped) vms.Add(MakeCompanyVm(name, count));
-        foreach (var name in manual) vms.Add(MakeCompanyVm(name, 0));
+        foreach (var (name, count) in grouped) vms.Add(Get(name, count));
+        foreach (var name in manual) vms.Add(Get(name, 0));
 
         _companyMaster.Clear();
         _companyMaster.AddRange(OrderCompanies(vms));
@@ -2239,7 +2300,7 @@ public partial class MainViewModel : ObservableObject
     {
         var reports = _companyMaster.Where(c => c.Report is not null).Select(c => c.Report!).ToList();
         if (reports.Count == 0) { ExportMsg = L("researcher.export.none"); return; }
-        Busy = true;
+        BeginBusy();
         try
         {
             string outDir = Path.Combine(_root, "output");
@@ -2255,7 +2316,7 @@ public partial class MainViewModel : ObservableObject
             ExportMsg = ok ? Loc.Instance.F("export.done", pdf) : Loc.Instance.F("export.doneNoPdf", outDir);
         }
         catch (Exception ex) { ExportMsg = Loc.Instance.F("export.failed", ex.Message); }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     // ---- Coach (grounded chat: applications / salary / interviews, with screenshots) ----
@@ -2627,7 +2688,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void SeedCvFromProfile()
     {
-        if (_cvDoc is not null) PushCvUndo();
+        if (_cvDoc is not null) { CommitCvEditors(); PushCvUndo(); }   // undo must include unsaved typing
         _cvDoc = CvStudio.FromProfile(_profile);
         LoadCvEditors();
         SaveCvDoc(false);
@@ -2644,7 +2705,7 @@ public partial class MainViewModel : ObservableObject
 
     public async Task ImportCvForStudioAsync(string path)
     {
-        Busy = true; CvStatus = L("cv.importing");
+        BeginBusy(); CvStatus = L("cv.importing");
         try
         {
             string text = "";
@@ -2657,13 +2718,13 @@ public partial class MainViewModel : ObservableObject
                     (string.IsNullOrWhiteSpace(LlmClient.LastError) ? "" : $" ({LlmClient.LastError})");
                 return;
             }
-            if (_cvDoc is not null) PushCvUndo();
+            if (_cvDoc is not null) { CommitCvEditors(); PushCvUndo(); }   // undo must include unsaved typing
             _cvDoc = doc;
             LoadCvEditors();
             SaveCvDoc(false);
             CvStatus = "";
         }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     private string CvSafeName()
@@ -2740,7 +2801,7 @@ public partial class MainViewModel : ObservableObject
     {
         if (_cvDoc is null) return;
         CommitCvEditors(); SaveCvDoc(false);
-        Busy = true;
+        BeginBusy();
         try
         {
             string outDir = Path.Combine(_root, "output");
@@ -2766,7 +2827,7 @@ public partial class MainViewModel : ObservableObject
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo { FileName = open, UseShellExecute = true });
         }
         catch (Exception ex) { CvStatus = Loc.Instance.F("cv.export.failed", ex.Message); }
-        finally { Busy = false; }
+        finally { EndBusy(); }
     }
 
     // Row commands (Filters pattern): add / remove / move ±1 per section.
@@ -2923,6 +2984,7 @@ public partial class MainViewModel : ObservableObject
         userText = (userText ?? "").Trim();
         if (IsCvChatSending || _cvDoc is null || userText.Length == 0) return;
         CommitCvEditors(); SaveCvDoc(false);              // the assistant sees exactly what's on screen
+        string sentDoc = JsonSerializer.Serialize(_cvDoc);   // to detect edits made while the model is answering
         CvChatError = ""; CvChangeNote = "";
         CvChatTranscript.Add(new CoachMessageVm(isUser: true, userText));
         CvChatInput = "";
@@ -2950,6 +3012,15 @@ public partial class MainViewModel : ObservableObject
             }
             var (reply, newCv, triedButInvalid) = CvStudio.ParseChatReply(raw, _cvDoc);
             answerVm.Text = reply.Length > 0 ? reply : L("cv.chat.notApplied");
+            CommitCvEditors();
+            if (newCv is not null && JsonSerializer.Serialize(_cvDoc) != sentDoc)
+            {
+                // The user edited (or imported) the CV while the model was answering: applying the model's full
+                // document would silently overwrite those edits, so keep the user's version and say so.
+                answerVm.Text += "\n\n" + L("cv.chat.editedMeanwhile");
+                SaveCvDoc(false);
+                newCv = null;
+            }
             if (newCv is not null)
             {
                 var sections = CvStudio.ChangedSections(_cvDoc, newCv);

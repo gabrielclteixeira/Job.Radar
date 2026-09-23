@@ -16,7 +16,13 @@ public partial class CompanyVm : ObservableObject
     private CancellationTokenSource? _cts;
 
     public string Name { get; }
-    public int JobCount { get; }
+    private int _jobCount;
+    /// <summary>Settable: the list is rebuilt in place (VM reused) when the jobs change.</summary>
+    public int JobCount
+    {
+        get => _jobCount;
+        set { if (SetProperty(ref _jobCount, value)) OnPropertyChanged(nameof(JobCountLabel)); }
+    }
 
     /// <summary>Raised after a successful research so the owner can persist the cache + re-sort.</summary>
     public event Action<CompanyVm>? Researched;

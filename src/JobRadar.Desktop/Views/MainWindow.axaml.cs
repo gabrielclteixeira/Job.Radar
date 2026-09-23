@@ -18,10 +18,17 @@ public partial class MainWindow : Window
         // bubble handler never sees it — tunneling fires first and e.Handled stops the newline.
         CoachInputBox.AddHandler(KeyDownEvent, OnCoachInputKeyDown, RoutingStrategies.Tunnel);
         CvChatInputBox.AddHandler(KeyDownEvent, OnCvChatInputKeyDown, RoutingStrategies.Tunnel);
-        SizeChanged += (_, _) => FitCoachHeight();
+        SizeChanged += (_, _) => { FitCoachHeight(); FitContentWidth(); };
         // The window is rebuilt on a language switch: drop this window's VM subscription so closed windows don't
         // keep receiving (and leaking) ScrollToMaxTokens events.
-        Closed += (_, _) => { if (DataContext is MainViewModel v) v.ScrollToMaxTokensRequested -= ScrollToMaxTokens; };
+        Closed += (_, _) =>
+        {
+            if (DataContext is not MainViewModel v) return;
+            v.ScrollToMaxTokensRequested -= ScrollToMaxTokens;
+            v.PropertyChanged -= OnVmPropertyChanged;
+        };
+        // Commit the CV / profile editors before the app exits (they only committed on navigation).
+        Closing += (_, _) => { if (DataContext is MainViewModel v) v.SaveOnExit(); };
         DataContextChanged += (_, _) =>
         {
             if (DataContext is MainViewModel vm)
@@ -33,7 +40,8 @@ public partial class MainWindow : Window
                 vm.ConfirmDeleteJobsAsync = ConfirmDeleteJobsAsync;
                 vm.ConfirmAsync = ConfirmActionAsync;
                 vm.ScrollToMaxTokensRequested += ScrollToMaxTokens;
-                FitCoachHeight();
+                vm.PropertyChanged += OnVmPropertyChanged;
+                FitCoachHeight(); FitContentWidth();
                 vm.CopyToClipboardAsync = async text =>
                 {
                     if (TopLevel.GetTopLevel(this)?.Clipboard is { } cb) await cb.SetTextAsync(text);
@@ -209,6 +217,22 @@ public partial class MainWindow : Window
         if (CoachScroll is null) return;
         double zoom = DataContext is MainViewModel vm && vm.Zoom > 0 ? vm.Zoom : 1;
         CoachScroll.MaxHeight = Math.Max(260, Bounds.Height / zoom - 330);
+    }
+
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainViewModel.Zoom)) { FitCoachHeight(); FitContentWidth(); }
+    }
+
+    /// <summary>Every page is exactly PageMaxWidth wide (or the available width on a small window). Left to
+    /// itself the content column sized to its content, so e.g. an empty profile form rendered narrower.</summary>
+    private void FitContentWidth()
+    {
+        if (ContentHost is null) return;
+        double zoom = DataContext is MainViewModel vm && vm.Zoom > 0 ? vm.Zoom : 1;
+        double max = this.TryFindResource("PageMaxWidth", out var r) && r is double d ? d : 860;
+        const double sidebar = 244, margins = 88, scrollbar = 18;
+        ContentHost.Width = Math.Max(320, Math.Min(max, Bounds.Width / zoom - sidebar - margins - scrollbar));
     }
 
     private async Task<bool> ConfirmDeleteJobsAsync()
