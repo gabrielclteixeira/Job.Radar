@@ -15,9 +15,9 @@ A native desktop app that reads your CV, builds your profile with AI, then scans
 ![BYOK](https://img.shields.io/badge/BYOK-local--first-3DDC97?style=flat-square)
 ![License MIT](https://img.shields.io/badge/license-MIT-8E8AA3?style=flat-square)
 
-<img src="docs/demo.gif" width="820" alt="Job Radar — sample CV → search demonstration"/>
+<img src="docs/screenshots/jobs-dark.png" width="820" alt="Job Radar — jobs scored against the profile, one expanded with the reasons behind its score"/>
 
-<sub>Sample CV → search demonstration · mission-control dark theme (a light theme ships too)</sub>
+<sub>Jobs scored against the sample profile, with the reasons behind a score · mission-control dark theme (a light theme ships too)</sub>
 
 </div>
 
@@ -73,6 +73,21 @@ the **Claude CLI** or point it at a local model in **Definições** (without one
 - 🧭 **Reliable, key-free web search** — company research and the career plan search the web through
   **Jina Reader** (renders the results server-side, so it isn't blocked like a raw scrape) — no key, no setup.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/home.png" alt="Home — start from a CV, the sample CV or the demo"/><br/><sub><b>Home</b> — start from your CV PDF, the sample CV or a no-AI demo; shows whether the AI engine is ready.</sub></td>
+    <td width="50%"><img src="docs/screenshots/profile.png" alt="Profile form built from the CV"/><br/><sub><b>Profile</b> — what the AI extracted from the CV, plus what a CV doesn't say (salary, work mode).</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/cv-studio.png" alt="CV Studio section editor"/><br/><sub><b>CV Studio</b> — a structured, ATS-safe CV with templates, an AI assistant and PDF export.</sub></td>
+    <td width="50%"><img src="docs/screenshots/linkedin-browser.png" alt="LinkedIn (browser) settings card"/><br/><sub><b>LinkedIn (browser)</b> — installed from Settings on demand, with limits and pace you choose.</sub></td>
+  </tr>
+</table>
+
+<sub>Screenshots use the bundled sample profile (John Doe) and sample jobs — no personal data.</sub>
+
 ## Local-first & BYOK
 
 The AI runs on **your** machine — your **Claude CLI** *or* any **OpenAI-compatible local model**
@@ -91,7 +106,7 @@ A deliberate **"mission control"** identity built around the product's name.
 | **Themes** | dark-first **+** light, system-aware with an in-app toggle (design tokens via Avalonia `ThemeDictionaries`) |
 | **Voice** | concise, European-Portuguese UI; errors and empty states guide rather than apologise |
 
-<div align="center"><img src="docs/screenshot-light.png" width="760" alt="Job Radar — light"/><br/><sub>Light theme</sub></div>
+<div align="center"><img src="docs/screenshots/jobs-light.png" width="760" alt="Job Radar — jobs page in the light theme"/><br/><sub>Light theme</sub></div>
 
 ## Architecture
 
