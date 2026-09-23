@@ -19,9 +19,28 @@ public static class LlmClient
     // silently overrides the configured timeout — killing any scoring/plan call that needs >100s at 100s.
     private static readonly HttpClient Http = new() { Timeout = Timeout.InfiniteTimeSpan };
 
-    /// <summary>Reason for the last failed completion (CLI stderr, HTTP status, timeout…). Null on success.
-    /// Surfaced in the UI so the user can tell e.g. a Claude usage-limit from a local-model-down.</summary>
-    public static string? LastError { get; private set; }
+    /// <summary>
+    /// Reason for the last failed completion (CLI stderr, HTTP status, timeout…). Null on success. Surfaced in the
+    /// UI so the user can tell e.g. a Claude usage limit from a local model being down.
+    /// Scoped per async flow: it used to be one static shared by everything, so with scoring, the coach and a plan
+    /// running at once each could show another operation's error. Every public call starts a fresh "error box" in
+    /// the CALLER's execution context (the entry points below are deliberately non-async, so the AsyncLocal they
+    /// set is visible to the caller after the await). Reads outside any call (e.g. diagnostics) get the global last
+    /// error.
+    /// </summary>
+    public static string? LastError
+    {
+        get => _flowError.Value is { } box ? box.Error : _globalError;
+        private set
+        {
+            if (_flowError.Value is { } box) box.Error = value;
+            _globalError = value;
+        }
+    }
+    private sealed class ErrorBox { public string? Error; }
+    private static readonly AsyncLocal<ErrorBox?> _flowError = new();
+    private static volatile string? _globalError;
+    private static void BeginCall() => _flowError.Value = new ErrorBox();
 
     private static string? Trim(string? s)
     {
@@ -68,11 +87,14 @@ public static class LlmClient
         => (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http";
 
     public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, CancellationToken ct = default, bool json = false)
-        => (cfg.Provider?.Trim().ToLowerInvariant()) switch
+    {
+        BeginCall();
+        return (cfg.Provider?.Trim().ToLowerInvariant()) switch
         {
             "openai" or "local" or "http" => OpenAiAsync(cfg, prompt, json, ct),
             _ => ClaudeCliAsync(cfg, prompt, ct),
         };
+    }
 
     /// <summary>
     /// Same as <see cref="CompleteAsync(ClaudeConfig,string,CancellationToken)"/> but, for the OpenAI-compatible
@@ -82,9 +104,12 @@ public static class LlmClient
     /// For the Claude CLI (no token stream in JSON mode) it falls back to the non-streaming call.
     /// </summary>
     public static Task<string?> CompleteAsync(ClaudeConfig cfg, string prompt, IProgress<string>? onReasoning, CancellationToken ct = default, bool json = false)
-        => (onReasoning is not null && (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http")
+    {
+        BeginCall();
+        return (onReasoning is not null && (cfg.Provider?.Trim().ToLowerInvariant()) is "openai" or "local" or "http")
             ? OpenAiStreamingAsync(cfg, prompt, onReasoning, json, ct)
             : CompleteAsync(cfg, prompt, ct, json);
+    }
 
     /// <summary>
     /// Multi-turn chat with a system prompt and optional per-message images (the Coach view).
@@ -95,11 +120,14 @@ public static class LlmClient
     /// </summary>
     public static Task<string?> ChatAsync(ClaudeConfig cfg, string system,
         IReadOnlyList<ChatMessage> messages, IProgress<string>? onDelta, CancellationToken ct = default)
-        => (cfg.Provider?.Trim().ToLowerInvariant()) switch
+    {
+        BeginCall();
+        return (cfg.Provider?.Trim().ToLowerInvariant()) switch
         {
             "openai" or "local" or "http" => OpenAiChatAsync(cfg, system, messages, onDelta, ct),
             _ => ClaudeCliChatAsync(cfg, system, messages, ct),
         };
+    }
 
     /// <summary>Chat sibling of <see cref="OpenAiStreamingAsync"/> with a different streaming contract:
     /// ANSWER deltas go to <paramref name="onDelta"/> (reasoning is swallowed), and the transcript is a

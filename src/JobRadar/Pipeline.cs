@@ -61,7 +61,7 @@ public static class Pipeline
             foreach (var j in batch) onJob?.Report(j);
 
             emptyInARow = got == 0 ? emptyInARow + 1 : 0;
-            string? err = got == 0 ? LlmClient.LastError : null;
+            string? err = got == 0 ? scorer.LastBatchError : null;
             if (got == 0 && (!string.IsNullOrWhiteSpace(err) || emptyInARow >= 2))
             {
                 // Show the rest with their keyword score (still unscored, so retried next run), then surface why.

@@ -18,6 +18,9 @@ public class ClaudeScorer
     private readonly int _floorEur;
     private readonly int _targetEur;
 
+    /// <summary>Engine error of the most recent batch call (null when it answered).</summary>
+    public string? LastBatchError { get; private set; }
+
     public ClaudeScorer(ClaudeConfig cfg, string profile, int floorEur, int targetEur)
     { _cfg = cfg; _profile = profile; _floorEur = floorEur; _targetEur = targetEur; }
 
@@ -62,6 +65,7 @@ The candidate's salary floor is €{_floorEur:N0}/yr and target is €{_targetEu
         }
 
         string? text = await LlmClient.CompleteAsync(_cfg, sb.ToString(), ct);
+        LastBatchError = text is null ? LlmClient.LastError : null;   // read in this flow: the error of THIS call
         if (!string.IsNullOrWhiteSpace(text)) ParseBatch(text!, results);
         return results;
     }

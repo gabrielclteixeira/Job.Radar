@@ -44,7 +44,7 @@ Cada item tem um ID estável para ser referido em commits e conversas. Atualiza 
 
 | U3 | UI: fluxos e usabilidade | ✅ 9/10 feitos (U3.8 parcial), por commitar | `sessao/2026-09-23-integridade-dados` |
 
-| B | Claude CLI / camada LLM | ✅ B1–B3 feitos (B4 pendente), por commitar | `sessao/2026-09-23-integridade-dados` |
+| B | Claude CLI / camada LLM | ✅ 4/4 feitos | `sessao/2026-09-23-integridade-dados` |
 
 | C | Estado e concorrência na UI | ✅ 8/8 feitos (C1, C8 no U3 · C3 no S), por commitar | `sessao/2026-09-23-integridade-dados` |
 
@@ -602,7 +602,7 @@ Proposta de mensagem: `feat(ux): engine status, one primary action per page, sec
 - O combo "Modelo" do Claude CLI aparece vazio nas Definições em vez de "(predefinido)". O problema já existia antes; confirmar se o `RefreshModelOptions` corre ao carregar.
 - Ainda não há um botão "Cancelar" separado ao lado da ProgressRing da investigação por vaga (continua o clicar outra vez, que agora funciona).
 
-## Lote B: Claude CLI ✅ (B1–B3) · B4 pendente
+## Lote B: Claude CLI ✅
 
 **Âmbito:** só o caminho do **Claude CLI**, que é o motor que o utilizador usa. Os modelos locais ficaram de fora por decisão do utilizador (2026-09-23).
 **Branch:** `sessao/2026-09-23-integridade-dados`. Proposta de mensagem: `perf(llm): lean Claude CLI calls, honour is_error, real cancel (B1–B3)`.
@@ -637,8 +637,13 @@ Proposta de mensagem: `feat(ux): engine status, one primary action per page, sec
 - `CareerPlan`: três `catch` genéricos (crítica, leitura de páginas, perguntas de aprofundamento) passaram a relançar o cancelamento, porque senão a geração continuava depois de pausada.
 - O timeout próprio da chamada usa a mensagem localizada `llm.timeout`.
 
-### B4 · `LlmClient.LastError` partilhado ⏳
-- Continua estático e partilhado entre operações em paralelo. Exige mudar a assinatura para devolver o erro com o resultado em cerca de 15 sítios. Fica para outro lote.
+### B4 · `LlmClient.LastError` por operação ✅ *verificado com teste de concorrência*
+- **Problema.** Era um estático partilhado. Com a pontuação, o Coach e o plano a correr ao mesmo tempo, cada um podia mostrar o erro de outra operação.
+- **Correção.**
+  - Cada chamada pública (`CompleteAsync`, `ChatAsync`) abre uma "caixa de erro" `AsyncLocal` no contexto de quem chama. Os métodos de entrada são deliberadamente não-`async`, para que a caixa fique visível ao chamador depois do `await`.
+  - Uma leitura fora de qualquer chamada (o diagnóstico, por exemplo) devolve o último erro global.
+  - O scorer guarda o erro do seu próprio lote (`LastBatchError`), porque a chamada acontece dentro de um método `async` dele.
+- **Teste** (`LastErrorScopeTests`): duas chamadas em paralelo a CLIs falsos com erros diferentes, e a mais rápida só lê o erro depois de a outra falhar. **Falha com o código antigo** (confirmado com `git stash`) e passa com o novo.
 
 ## Lote C: estado e concorrência na UI ✅
 
