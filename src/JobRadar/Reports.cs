@@ -18,21 +18,15 @@ public static class Reports
         foreach (var j in jobs)
             sb.AppendLine(string.Join(",", new[]
             {
-                j.FinalScore.ToString(), j.AiScore?.ToString() ?? "", j.PreScore.ToString(),
+                CsvText.Num(j.FinalScore), CsvText.Num(j.AiScore), CsvText.Num(j.PreScore),
                 Csv(j.Title), Csv(j.Company), Csv(j.Location), Csv(j.Remote),
-                Csv(j.SalaryText), j.SalaryAnnualEur?.ToString() ?? "",
+                Csv(j.SalaryText), CsvText.Num(j.SalaryAnnualEur),
                 Csv(j.Source), Csv(j.Status), Csv(j.AiVerdict ?? ""), Csv(j.Url),
             }));
         File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true)); // BOM so Excel reads UTF-8
     }
 
-    private static string Csv(string? s)
-    {
-        s ??= "";
-        return s.Contains(',') || s.Contains('"') || s.Contains('\n')
-            ? "\"" + s.Replace("\"", "\"\"") + "\""
-            : s;
-    }
+    private static string Csv(string? s) => CsvText.Cell(s);
 
     public static void WriteHtml(string path, IReadOnlyList<JobEntity> jobs, int newCount, string day)
     {
@@ -133,21 +127,50 @@ h1{{font-size:24px;font-weight:800;margin:0;letter-spacing:-.02em;}}
             psi.ArgumentList.Add("--disable-gpu");
             psi.ArgumentList.Add("--no-pdf-header-footer");
             psi.ArgumentList.Add($"--print-to-pdf={pdfPath}");
-            psi.ArgumentList.Add("file:///" + htmlPath.Replace('\\', '/'));
+            psi.ArgumentList.Add(new Uri(Path.GetFullPath(htmlPath)).AbsoluteUri);   // escapes spaces, '#', '%'
             using var p = Process.Start(psi);
-            return p is not null && p.WaitForExit(30000) && File.Exists(pdfPath);
+            if (p is null) return false;
+            if (!p.WaitForExit(30000))
+            {
+                try { p.Kill(true); } catch { }   // a stuck headless browser kept the PDF locked
+                return false;
+            }
+            return File.Exists(pdfPath);
         }
         catch { return false; }
     }
 
+    /// <summary>A Chromium-based browser that can print HTML to PDF headlessly: Edge, Chrome or Chromium, on
+    /// Windows, macOS or Linux. Only Windows' Edge paths were checked before, so the macOS/Linux builds always
+    /// fell back to HTML.</summary>
     public static string? FindEdge()
     {
-        foreach (var p in new[]
+        string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+        string pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var candidates = new List<string>();
+        if (OperatingSystem.IsWindows())
+            candidates.AddRange(new[]
+            {
+                Path.Combine(pf, @"Microsoft\Edge\Application\msedge.exe"),
+                Path.Combine(pf86, @"Microsoft\Edge\Application\msedge.exe"),
+                Path.Combine(pf, @"Google\Chrome\Application\chrome.exe"),
+                Path.Combine(pf86, @"Google\Chrome\Application\chrome.exe"),
+                Path.Combine(local, @"Google\Chrome\Application\chrome.exe"),
+            });
+        else if (OperatingSystem.IsMacOS())
+            candidates.AddRange(new[]
+            {
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            });
+        else
         {
-            @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-            @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-        })
-            if (File.Exists(p)) return p;
-        return null;
+            var dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var name in new[] { "microsoft-edge", "microsoft-edge-stable", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser" })
+                candidates.AddRange(dirs.Select(d => Path.Combine(d, name)));
+        }
+        return candidates.FirstOrDefault(File.Exists);
     }
 }

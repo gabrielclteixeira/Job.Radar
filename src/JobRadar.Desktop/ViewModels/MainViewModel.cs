@@ -1565,7 +1565,6 @@ public partial class MainViewModel : ObservableObject
     }
 
     /// <summary>Back to the home screen (keeps the loaded results in memory).</summary>
-    [RelayCommand] private void GoHome() => ShowOnly(welcome: true);
 
     // ---- settings ----
     private void OpenSettings()
@@ -1767,7 +1766,6 @@ public partial class MainViewModel : ObservableObject
         LinkedInImportStatus = L("linkedin.import.cleared");
     }
 
-    [RelayCommand] private void CloseSettings() => ShowOnly(welcome: true);
     [RelayCommand] private void UseLmStudioPreset() { UseLocalModel = true; LlmBaseUrl = "http://localhost:1234/v1"; }
     [RelayCommand] private void UseOllamaPreset() { UseLocalModel = true; LlmBaseUrl = "http://localhost:11434/v1"; }
 

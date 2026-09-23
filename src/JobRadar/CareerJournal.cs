@@ -128,9 +128,14 @@ internal static class PlanText
         if (string.IsNullOrWhiteSpace(s)) return null;
         var m = Regex.Match(s, @"(\d[\d\s.,]*)\s*(k|K)?");
         if (!m.Success) return null;
-        string digits = Regex.Replace(m.Groups[1].Value, @"[\s.,]", "");
-        if (!int.TryParse(digits, out int n) || n <= 0) return null;
         bool k = m.Groups[2].Value.Length > 0;
+        string raw = m.Groups[1].Value.Trim().TrimEnd('.', ',');
+        // "52.5k" / "52,5k": a decimal before k (stripping separators made it 525 000)
+        var dec = Regex.Match(raw, @"^(\d{1,3})[.,](\d{1,2})$");
+        if (k && dec.Success)
+            return (int)Math.Round(double.Parse($"{dec.Groups[1].Value}.{dec.Groups[2].Value}", CultureInfo.InvariantCulture) * 1000);
+        string digits = Regex.Replace(raw, @"[\s.,]", "");
+        if (!int.TryParse(digits, out int n) || n <= 0) return null;
         if (k) n *= 1000;
         // "35" meaning 35k is common in shorthand bands; treat small figures as thousands.
         else if (n < 1000) n *= 1000;

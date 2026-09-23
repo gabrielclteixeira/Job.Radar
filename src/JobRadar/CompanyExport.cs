@@ -18,12 +18,12 @@ public static class CompanyExport
             sb.AppendLine(string.Join(",", new[]
             {
                 Csv(r.Company),
-                r.Rating?.ToString("0.0") ?? "", r.Rating is > 0 ? r.RatingScale.ToString("0") : "",
-                r.ReviewCount?.ToString() ?? "", Csv(r.RatingSource),
-                r.RecommendPct?.ToString() ?? "", r.CeoApprovalPct?.ToString() ?? "", r.ENps?.ToString() ?? "",
-                r.WorkLifeRating?.ToString("0.0") ?? "", r.CultureRating?.ToString("0.0") ?? "",
-                r.CareerRating?.ToString("0.0") ?? "", r.ManagementRating?.ToString("0.0") ?? "",
-                r.CompensationRating?.ToString("0.0") ?? "", r.DiversityRating?.ToString("0.0") ?? "",
+                CsvText.Num(r.Rating), r.Rating is > 0 ? CsvText.Num(r.RatingScale, "0") : "",
+                CsvText.Num(r.ReviewCount), Csv(r.RatingSource),
+                CsvText.Num(r.RecommendPct), CsvText.Num(r.CeoApprovalPct), CsvText.Num(r.ENps),
+                CsvText.Num(r.WorkLifeRating), CsvText.Num(r.CultureRating),
+                CsvText.Num(r.CareerRating), CsvText.Num(r.ManagementRating),
+                CsvText.Num(r.CompensationRating), CsvText.Num(r.DiversityRating),
                 Csv(r.InterviewDifficulty),
                 Csv(r.PayBand), Csv(r.PayRole), Csv(r.Tenure),
                 Csv(r.Industry), Csv(r.CompanySize), Csv(r.Headquarters),
@@ -37,13 +37,7 @@ public static class CompanyExport
         File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true)); // BOM so Excel reads UTF-8
     }
 
-    private static string Csv(string? s)
-    {
-        s ??= "";
-        return s.Contains(',') || s.Contains('"') || s.Contains('\n')
-            ? "\"" + s.Replace("\"", "\"\"") + "\""
-            : s;
-    }
+    private static string Csv(string? s) => CsvText.Cell(s);
 
     public static void WriteHtml(string path, IReadOnlyList<CompanyReport> reports, string day)
     {

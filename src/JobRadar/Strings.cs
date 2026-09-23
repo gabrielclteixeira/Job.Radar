@@ -279,7 +279,7 @@ internal static class Strings
         ["researcher.export.tip"] = "Guarda as empresas investigadas em CSV + HTML + PDF (na pasta output)",
         ["researcher.export.none"] = "Investiga pelo menos uma empresa antes de exportar.",
         ["export.done"] = "Exportado: {0}",
-        ["export.doneNoPdf"] = "Exportado CSV+HTML em {0} (PDF: Edge não encontrado).",
+        ["export.doneNoPdf"] = "Exportado CSV+HTML em {0} (PDF: não encontrei o Edge, o Chrome nem o Chromium).",
         ["export.failed"] = "Falha a exportar: {0}",
 
         // improve
@@ -964,7 +964,7 @@ internal static class Strings
         ["researcher.export.tip"] = "Save the researched companies to CSV + HTML + PDF (in the output folder)",
         ["researcher.export.none"] = "Research at least one company before exporting.",
         ["export.done"] = "Exported: {0}",
-        ["export.doneNoPdf"] = "Exported CSV+HTML to {0} (PDF: Edge not found).",
+        ["export.doneNoPdf"] = "Exported CSV+HTML to {0} (PDF: Edge, Chrome or Chromium not found).",
         ["export.failed"] = "Export failed: {0}",
 
         ["improve.sub"] = "A career plan from your profile and the market the radar has already seen — with research and sources.",

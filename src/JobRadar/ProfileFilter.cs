@@ -52,7 +52,10 @@ public static class ProfileFilter
 
         // Role-specificity: a shared GENERIC word ("engineer"/"developer") with NO core stack anywhere is an
         // off-stack role, not a fit. A distinctive title term, or any stack hit (incl. from the description), keeps it.
-        if (core.Count > 0 && !matched.Any(t => !GenericRole.Contains(t)) && stackHits.Count == 0)
+        // Short title tokens ("ai", "ui", "qa") aren't distinctive on their own: "AI Cinematic Video Editor" matched
+        // the candidate's "AI agents" skill word and passed as relevant. Real short skills ("go") still count via
+        // stackHits, which already scopes them to the title.
+        if (core.Count > 0 && !matched.Any(t => !GenericRole.Contains(t) && t.Length > 2) && stackHits.Count == 0)
             return (false, 0, "", "");
 
         // Location gate honouring the user's prefs. Read remote/hybrid from the STRUCTURED signal + title/location
@@ -60,7 +63,7 @@ public static class ProfileFilter
         // jobs (e.g. Berlin) as remote, slipping them past the gate when the user accepts remote.
         bool isRemote = j.Remote == "remote" || titleLoc.Contains("remote") || titleLoc.Contains("remoto");
         bool isHybrid = j.Remote == "hybrid" || titleLoc.Contains("hybrid") || titleLoc.Contains("híbrido");
-        bool locMatch = locations.Any(l => l.Length > 1 && titleLoc.Contains(l));
+        bool locMatch = locations.Any(l => l.Length > 1 && LocationIn(titleLoc, l));
         // A remote job only counts if its location is flexible for this candidate — our location, a region-wide
         // marker (Europe/EMEA/Worldwide), or unknown. A specific foreign city (e.g. "Remote — Berlin") is dropped.
         bool remoteGeoOk = locMatch || RemoteFlexible(j);
@@ -109,6 +112,21 @@ public static class ProfileFilter
         string baseVerdict = $"{tier} — {string.Join("; ", bits)}.";
 
         return (true, final, explanation, baseVerdict);
+    }
+
+    /// <summary>Other places whose name starts with a common profile location ("Porto" ⊂ "Porto Alegre").</summary>
+    private static readonly string[] AmbiguousPlaces =
+        { "porto alegre", "porto velho", "porto seguro", "porto de galinhas", "porto nacional", "lisbon, ohio", "braga paulista" };
+
+    /// <summary>The profile location appears in the job's location/title — but not only as part of a different,
+    /// longer place name (a "Porto Alegre, Brazil" job used to count as the candidate's Porto).</summary>
+    private static bool LocationIn(string titleLoc, string loc)
+    {
+        if (!titleLoc.Contains(loc)) return false;
+        string rest = titleLoc;
+        foreach (var a in AmbiguousPlaces.Where(a => a.StartsWith(loc, StringComparison.Ordinal)))
+            rest = rest.Replace(a, " ");
+        return rest.Contains(loc);
     }
 
     /// <summary>Region-wide / "open to anyone" location markers a Portugal-based candidate can take remotely.</summary>

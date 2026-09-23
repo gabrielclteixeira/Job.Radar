@@ -114,7 +114,7 @@ Role: {role} · {cand} · location {location ?? "—"}
         await Gather($"{company} glassdoor rating reviews out of 5", 6);
         await Gather($"{company} employee reviews comparably kununu indeed", 5);
         await Gather($"{company} {role} salary levels.fyi", 4);
-        await Gather($"{company} layoffs OR funding OR acquisition OR \"hiring freeze\" news 2026", 5);
+        await Gather($"{company} layoffs OR funding OR acquisition OR \"hiring freeze\" news {DateTime.Now.Year}", 5);
         results = results.Take(16).ToList();
         if (results.Count == 0) return (null, Loc.Instance.T("research.noWeb"));
 

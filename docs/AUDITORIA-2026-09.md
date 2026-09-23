@@ -50,7 +50,7 @@ Cada item tem um ID estável para ser referido em commits e conversas. Atualiza 
 
 | S | Serviços externos | ✅ S2, S3 feitos · S1 (Ollama) adiado, por commitar | `sessao/2026-09-23-integridade-dados` |
 
-| P | Pequenos acertos | ⏳ | — |
+| P | Pequenos acertos | ✅ código feito · tag/README/branch no release | `sessao/2026-09-23-integridade-dados` |
 
 | F | Funcionalidades pedidas | 📌 decidido | — |
 
@@ -697,29 +697,28 @@ Proposta de mensagem: `feat(ux): engine status, one primary action per page, sec
 - **Causa.** O `Progress` já entrega os eventos na thread da UI, e cada evento fazia ainda um segundo `Dispatcher.Post`. Assim, os `AddStreamed` corriam depois do `FinalizeResults`, que já tinha montado a lista a partir do resultado, e cada vaga entrava duas vezes.
 - **Correção.** O `Progress` passou a chamar `AddStreamed` diretamente (em 4 sítios), e o `AddStreamed` ignora vagas que já estão na lista (mesma linha ou mesma chave).
 
-## Lote P: pequenos acertos ⏳
+## Lote P: pequenos acertos ✅ (código) · o resto fica para o release
 
+**Verificação:** build limpo e 71 testes, 13 deles novos em `SmallFixesTests`. Os filtros foram confrontados com uma cópia da BD real: a regra nova só retirou a vaga de Porto Alegre.
 
-
-- `PlanText.FirstEur("€52.5k")` dá 525000 e distorce o "o que mudou" no Grow.
-
-- O ano "2026" está fixo na query de notícias do `CompanyResearch`.
-
-- O CSV depende da cultura ("3,9" em pt) e não protege contra fórmulas (`= + - @`).
-
-- O Edge não é terminado quando o PDF passa do tempo limite, e o caminho não é codificado como URI. O `FindEdge` só funciona no Windows.
-
-- O filtro não distingue "Porto" de "Porto Alegre", e um título só com o token "ai" passa como relevante.
-
-- Tag git solta `0.2.0` (aponta para o mesmo commit que a `v0.1.0`). Nunca foi criada a tag `v0.8.0`.
-
-- A secção "Next up" do README está desatualizada.
-
-- `CvPdf.cs` não é usado. `IsRunning`, `Log`, `GoHome`, `CloseSettings` e `PullSuggested` não estão ligados à UI.
-
-- O branch `sessao/2026-06-27-roadmap-local-model-catalog` só tem um commit de docs: integrar ou apagar.
-
-
+- ✅ **FirstEur:** "€52.5k" dava 525 000 e distorcia o "o que mudou" do Evoluir. Agora os decimais antes de "k" são lidos corretamente.
+- ✅ **Ano da pesquisa de notícias:** usa o ano atual em vez de "2026" fixo.
+- ✅ **CSV** (`CsvText`, novo):
+  - os números são escritos sempre com ponto; em pt-PT, "3,9" partia a coluna;
+  - as células começadas por `= + - @` levam um `'` à frente, o que impede a injeção de fórmulas vinda dos títulos das vagas;
+  - vale para as vagas e para as empresas.
+- ✅ **PDF:**
+  - o browser headless é terminado se passar dos 30 s;
+  - o caminho vai como URI (espaços, `#`, `%`);
+  - `FindEdge` passou a procurar Edge, Chrome ou Chromium no Windows, no macOS e no Linux (PATH). Antes, os builds de macOS e Linux caíam sempre para HTML.
+- ✅ **Filtro:**
+  - "Porto" já não conta como "Porto Alegre" nem outros nomes parecidos (`AmbiguousPlaces`);
+  - um título que só coincide num token curto ("ai", "ui") sem nenhuma competência do perfil já não passa como relevante (ex.: "AI Cinematic Video Editor"). O "Go" e o "C#" continuam a contar através das competências.
+- ✅ **Código morto removido:** `CvPdf.cs` (o renderizador antigo, sem referências) e os comandos `GoHome`/`CloseSettings`, que não estavam ligados à interface.
+- ⏳ **No release** (mexem em git, no remoto ou em docs públicas):
+  - apagar a tag solta `0.2.0`;
+  - decidir o que fazer ao branch `sessao/2026-06-27-roadmap-local-model-catalog`, que só tem um commit de docs sobre o catálogo de modelos locais e fica em espera, tal como o LLM local;
+  - atualizar o README ("Next up" desatualizado) e o ROADMAP com tudo o que foi feito.
 
 ---
 
