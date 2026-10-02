@@ -97,7 +97,9 @@ your own Claude CLI, and a token-free path (demo/cached) is kept wherever it mak
   token-by-token and a best-effort vision check warns when the local model can't see images (Claude CLI reads
   them natively). Conversations are **per-company threads** — the company dropdown doubles as the thread
   selector — persisted across restarts (machine-local, with the pasted screenshots); "clear conversation"
-  wipes only the active company's thread.
+  wipes only the active company's thread. **Ask coach** on any job card opens that company's thread with the
+  posting pinned as context (description, salary, fit score, reasons and red flags) and a starter question
+  pre-filled — never auto-sent.
 - **CV Studio** — an 8th view superseding the old one-page profile PDF: a **fully structured CV** (header +
   links, summary, work history, education, projects, certifications, skill groups, languages) imported from
   the CV PDF by the user's own engine ("copy facts exactly — never invent") or seeded from the profile, with a

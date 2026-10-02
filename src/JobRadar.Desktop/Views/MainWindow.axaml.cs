@@ -49,6 +49,11 @@ public partial class MainWindow : Window
                 // Background priority: layout runs first so ScrollToEnd sees the new extent.
                 vm.ScrollCoachToEnd = () => Dispatcher.UIThread.Post(
                     () => CoachScroll?.ScrollToEnd(), DispatcherPriority.Background);
+                vm.FocusCoachInput = () => Dispatcher.UIThread.Post(() =>
+                {
+                    CoachInputBox.Focus();
+                    CoachInputBox.CaretIndex = CoachInputBox.Text?.Length ?? 0;
+                }, DispatcherPriority.Background);
                 vm.ScrollCvChatToEnd = () => Dispatcher.UIThread.Post(
                     () => CvChatScroll?.ScrollToEnd(), DispatcherPriority.Background);
             }

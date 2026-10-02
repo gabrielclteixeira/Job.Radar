@@ -2142,7 +2142,7 @@ public partial class MainViewModel : ObservableObject
     /// <summary>Creates the presentation VM for a job, restoring a cached (≤7-day-old) employer briefing.</summary>
     private JobVm NewJobVm(JobEntity j)
     {
-        var vm = new JobVm(j, ResearchCompanyAsync);
+        var vm = new JobVm(j, ResearchCompanyAsync, job => _ = AskCoachAboutAsync(job));
         if (!string.IsNullOrWhiteSpace(j.Company) && _briefCache.TryGetValue(CompanyCache.Key(j.Company), out var cached))
             vm.Brief = cached;
         return vm;
@@ -2540,6 +2540,7 @@ public partial class MainViewModel : ObservableObject
     private void LoadCoachThread(string key)
     {
         _coachThreadKey = key;
+        CoachJob = _coachJobs.GetValueOrDefault(key);
         CoachTranscript.Clear();
         if (_coachThreads.TryGetValue(key, out var msgs))
             foreach (var m in msgs)
@@ -2578,7 +2579,8 @@ public partial class MainViewModel : ObservableObject
             _briefCache.TryGetValue(companyKey, out var brief);
             companyBlock = Coach.FormatCompanyContext(companyName, rep, brief);
         }
-        string system = Coach.BuildSystemPrompt(_profile, _coachMarket, companyBlock);
+        string? jobBlock = CoachJob is { } pinned ? Coach.FormatJobContext(pinned) : null;
+        string system = Coach.BuildSystemPrompt(_profile, _coachMarket, companyBlock, jobBlock);
         var history = CoachTranscript
             .Select(m => new ChatMessage(m.IsUser ? "user" : "assistant", m.Text, m.ImagePaths))
             .ToList();
@@ -2622,6 +2624,51 @@ public partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand] private void StopCoach() => _coachCts?.Cancel();
+
+    // ---- "Ask coach" from a job card: the company's thread, with the posting pinned as context ----
+    // Pins live per thread for the session only; the conversation itself is persisted as usual.
+    private readonly Dictionary<string, JobEntity> _coachJobs = new(StringComparer.OrdinalIgnoreCase);
+    private string _coachStarter = "";                                // last pre-filled question, replaced on the next job
+    public Action? FocusCoachInput;
+
+    [ObservableProperty] private JobEntity? _coachJob;
+    public bool HasCoachJob => CoachJob is not null;
+    public string CoachJobText => CoachJob is { } j
+        ? Loc.Instance.F("coach.job.about", string.IsNullOrWhiteSpace(j.Company) ? j.Title : $"{j.Title} · {j.Company}")
+        : "";
+    partial void OnCoachJobChanged(JobEntity? value)
+    {
+        OnPropertyChanged(nameof(HasCoachJob));
+        OnPropertyChanged(nameof(CoachJobText));
+    }
+
+    private async Task AskCoachAboutAsync(JobVm job)
+    {
+        await NavigateCommand.ExecuteAsync("coach");
+        // Mid-answer the picker is locked (a thread switch would drop the reply) — just show the Coach.
+        if (Nav != "coach" || IsCoachSending) return;
+        var j = job.Entity;
+        string key = CompanyCache.Key(j.Company);
+        string none = L("coach.company.none");
+        string? option = key.Length == 0 ? none
+            : CoachCompanyOptions.FirstOrDefault(o => o != none && CompanyCache.Key(o) == key);
+        if (option is null) { option = j.Company.Trim(); CoachCompanyOptions.Add(option); }
+        CoachCompanyPick = option;                 // switches to that company's thread (no-op if already there)
+        _coachJobs[_coachThreadKey] = j;
+        CoachJob = j;
+        // Pre-fill a starter question, never send it: the user decides when tokens are spent.
+        if (string.IsNullOrWhiteSpace(CoachInput) || CoachInput == _coachStarter)
+            CoachInput = _coachStarter = Loc.Instance.F("coach.job.starter", j.Title);
+        FocusCoachInput?.Invoke();
+    }
+
+    [RelayCommand]
+    private void ClearCoachJob()
+    {
+        _coachJobs.Remove(_coachThreadKey);
+        CoachJob = null;
+        if (CoachInput == _coachStarter) CoachInput = "";   // the untouched starter was about that job
+    }
 
     /// <summary>Clears the ACTIVE company's conversation only (threads are per-company). Pasted
     /// screenshots referenced only by this thread are deleted; picker-attached originals are never touched.</summary>

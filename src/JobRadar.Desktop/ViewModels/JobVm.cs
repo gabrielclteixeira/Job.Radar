@@ -13,14 +13,21 @@ public partial class JobVm : ObservableObject
 {
     private readonly JobEntity _j;
     private readonly Func<JobEntity, IProgress<string>, CancellationToken, Task<(CompanyBrief? brief, string? error)>>? _research;
+    private readonly Action<JobVm>? _askCoach;
     private CancellationTokenSource? _researchCts;
 
-    public JobVm(JobEntity j, Func<JobEntity, IProgress<string>, CancellationToken, Task<(CompanyBrief? brief, string? error)>>? research = null)
+    public JobVm(JobEntity j, Func<JobEntity, IProgress<string>, CancellationToken, Task<(CompanyBrief? brief, string? error)>>? research = null,
+        Action<JobVm>? askCoach = null)
     {
         _j = j;
         _research = research;
+        _askCoach = askCoach;
         OpenCommand = new RelayCommand(Open);
     }
+
+    /// <summary>Opens the Coach on this company's thread with this posting as context.</summary>
+    [RelayCommand]
+    private void AskCoach() => _askCoach?.Invoke(this);
 
     [ObservableProperty] private CompanyBrief? _brief;
     [ObservableProperty] private bool _isResearching;
