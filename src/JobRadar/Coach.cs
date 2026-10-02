@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace JobRadar;
 
@@ -25,7 +27,8 @@ public static class Coach
     public const int TurnCharCap = 4_000;
 
     /// <summary>Persona + grounding blocks. Empty market/company blocks are simply omitted.</summary>
-    public static string BuildSystemPrompt(UserProfile profile, string marketContext, string? companyContext)
+    public static string BuildSystemPrompt(UserProfile profile, string marketContext, string? companyContext,
+        string? jobContext = null)
     {
         var sb = new StringBuilder();
         sb.AppendLine("You are a candid, practical career coach helping a job seeker with applications, " +
@@ -46,6 +49,12 @@ public static class Coach
             sb.AppendLine();
             sb.AppendLine("== COMPANY UNDER DISCUSSION (cached research, may be up to 7 days old) ==");
             sb.AppendLine(companyContext.Trim());
+        }
+        if (!string.IsNullOrWhiteSpace(jobContext))
+        {
+            sb.AppendLine();
+            sb.AppendLine("== JOB UNDER DISCUSSION (the posting the user opened the chat from; the fit score is this app's estimate) ==");
+            sb.AppendLine(jobContext.Trim());
         }
         sb.AppendLine();
         sb.AppendLine("If the user shares a screenshot of an application question, draft the answer AS the " +
@@ -93,6 +102,53 @@ public static class Coach
         }
         string text = sb.ToString().Trim();
         return text.Length > 2_500 ? text[..2_500] : text;
+    }
+
+    public const int JobDescriptionCap = 3_000;
+
+    /// <summary>Plain-text block for one job posting (~4k chars max): the facts, this app's fit score with its
+    /// reasons and red flags, and the description without HTML.</summary>
+    public static string FormatJobContext(JobEntity j)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Title: {j.Title}");
+        if (!string.IsNullOrWhiteSpace(j.Company)) sb.AppendLine($"Company: {j.Company}");
+        string where = string.Join(" · ", new[] { j.Location, j.Remote }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        if (where.Length > 0) sb.AppendLine($"Location: {where}");
+        if (!string.IsNullOrWhiteSpace(j.SalaryText)) sb.AppendLine($"Salary: {j.SalaryText}");
+        if (!string.IsNullOrWhiteSpace(j.Url)) sb.AppendLine($"Link: {j.Url}");
+        sb.AppendLine($"Fit score: {j.FinalScore}/100 ({(j.AiScore.HasValue ? "AI" : "keyword-only")})");
+        string verdict = !string.IsNullOrWhiteSpace(j.AiVerdict) ? j.AiVerdict! : j.BaseVerdict ?? "";
+        if (verdict.Length > 0) sb.AppendLine($"Verdict: {verdict}");
+        foreach (var r in JsonList(j.AiReasons)) sb.AppendLine($"+ {r}");
+        foreach (var r in JsonList(j.AiRedFlags)) sb.AppendLine($"! {r}");
+        string desc = PlainText(j.Description);
+        if (desc.Length > 0)
+        {
+            sb.AppendLine("Description:");
+            sb.AppendLine(desc.Length > JobDescriptionCap ? desc[..JobDescriptionCap] + " …" : desc);
+        }
+        return sb.ToString().Trim();
+    }
+
+    private static string[] JsonList(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
+        try { return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>(); }
+        catch { return Array.Empty<string>(); }
+    }
+
+    /// <summary>Descriptions come as HTML from some sources: tags become spaces/line breaks, whitespace collapses.</summary>
+    private static string PlainText(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return "";
+        string s = Regex.Replace(html, @"<\s*(br|/p|/li|/h\d|/div)\b[^>]*>", "\n",
+            RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, "<[^>]+>", " ");
+        s = TextClean.Clean(s);
+        s = Regex.Replace(s, @"[^\S\n]+", " ");   // any run of spaces/tabs/NBSP, keeping line breaks
+        s = Regex.Replace(s, @"\s*\n\s*(\n\s*)*", "\n");
+        return s.Trim();
     }
 
     /// <summary>

@@ -33,6 +33,10 @@ internal static class Strings
         ["coach.empty.body"] = "Pergunta sobre uma candidatura, salário ou entrevista. Podes colar (Ctrl+V) um screenshot de uma pergunta de candidatura — a resposta sai calibrada ao teu perfil.",
         ["coach.vision.no"] = "O modelo atual não parece suportar imagens — instala um modelo de visão (ex.: llama3.2-vision) ou remove a imagem.",
         ["coach.vision.unknown"] = "Não foi possível confirmar se o modelo suporta imagens — a resposta pode ignorá-las.",
+        ["coach.job.about"] = "Sobre a vaga: {0}",
+        ["coach.job.tip"] = "O coach recebe esta vaga (descrição, salário, pontuação e motivos) como contexto.",
+        ["coach.job.remove"] = "Tirar a vaga do contexto",
+        ["coach.job.starter"] = "Devo candidatar-me a «{0}»? O que devo destacar na candidatura e o que devo perguntar na entrevista?",
 
         // CV Studio
         ["nav.cv"] = "CV",
@@ -217,6 +221,8 @@ internal static class Strings
         ["job.research.again"] = "Investigar de novo",
         ["job.research.tip"] = "Procura avaliações e salários comparáveis na web e resume com o teu modelo",
         ["job.research.cancel"] = "Cancelar",
+        ["job.askCoach"] = "Perguntar ao coach",
+        ["job.askCoach.tip"] = "Abre o Coach na conversa desta empresa, com esta vaga como contexto",
         ["job.researching"] = "A investigar a empresa…",
         ["brief.asof"] = "Análise de {0} · guardada até 7 dias",
         ["brief.reputation"] = "REPUTAÇÃO",
@@ -760,6 +766,10 @@ internal static class Strings
         ["coach.empty.body"] = "Ask about an application, salary or interview. You can paste (Ctrl+V) a screenshot of an application question — the answer comes calibrated to your profile.",
         ["coach.vision.no"] = "The current model doesn't seem to support images — install a vision model (e.g. llama3.2-vision) or remove the image.",
         ["coach.vision.unknown"] = "Couldn't confirm whether the model supports images — the reply may ignore them.",
+        ["coach.job.about"] = "About the job: {0}",
+        ["coach.job.tip"] = "The coach gets this job (description, salary, score and reasons) as context.",
+        ["coach.job.remove"] = "Remove the job from the context",
+        ["coach.job.starter"] = "Should I apply to \"{0}\"? What should I highlight in my application, and what should I ask in the interview?",
 
         // CV Studio
         ["nav.cv"] = "CV",
@@ -941,6 +951,8 @@ internal static class Strings
         ["job.research.again"] = "Research again",
         ["job.research.tip"] = "Searches the web for reviews and comparable salaries and summarises with your model",
         ["job.research.cancel"] = "Cancel",
+        ["job.askCoach"] = "Ask coach",
+        ["job.askCoach.tip"] = "Opens the Coach on this company's conversation, with this job as context",
         ["job.researching"] = "Researching the company…",
         ["brief.asof"] = "Researched {0} · kept up to 7 days",
         ["brief.reputation"] = "REPUTATION",
